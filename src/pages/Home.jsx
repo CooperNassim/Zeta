@@ -172,11 +172,115 @@ const Home = () => {
                 className="relative"
                 style={{ width: '500px', height: '500px' }}
               >
+                {/* 背部火焰效果 - 最低层级，左下角 */}
+                <motion.div
+                  className="absolute"
+                  style={{
+                    bottom: '15%',
+                    left: '25%',
+                    width: '250px',
+                    height: '350px',
+                    zIndex: -1,
+                    transform: 'rotate(-45deg)',
+                  }}
+                >
+                  {/* 单条大的喷射火焰 */}
+                  <motion.svg
+                    className="absolute bottom-0 left-1/2 -translate-x-1/2"
+                    width="100"
+                    height="300"
+                    viewBox="0 0 100 300"
+                    style={{ filter: 'blur(4px)' }}
+                  >
+                    <defs>
+                      {/* 主火焰渐变 - 从喷射口向上 */}
+                      <linearGradient id="flameGradient" x1="50%" y1="0%" x2="50%" y2="100%">
+                        <stop offset="0%" stopColor="#06b6d4" stopOpacity="0" />
+                        <stop offset="25%" stopColor="#7dd3fc" stopOpacity="0.4" />
+                        <stop offset="50%" stopColor="#38bdf8" stopOpacity="0.7" />
+                        <stop offset="75%" stopColor="#22d3ee" stopOpacity="0.9" />
+                        <stop offset="100%" stopColor="#06b6d4" stopOpacity="1" />
+                      </linearGradient>
+
+                      {/* 核心火焰渐变 */}
+                      <linearGradient id="coreGradient" x1="50%" y1="0%" x2="50%" y2="100%">
+                        <stop offset="0%" stopColor="#7dd3fc" stopOpacity="0" />
+                        <stop offset="35%" stopColor="#38bdf8" stopOpacity="0.6" />
+                        <stop offset="65%" stopColor="#22d3ee" stopOpacity="0.85" />
+                        <stop offset="100%" stopColor="#06b6d4" stopOpacity="1" />
+                      </linearGradient>
+
+                      {/* 外部光晕渐变 */}
+                      <radialGradient id="glowGradient" cx="50%" cy="85%" r="50%">
+                        <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.4" />
+                        <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+                      </radialGradient>
+                    </defs>
+
+                    {/* 外部光晕 */}
+                    <motion.ellipse
+                      cx="50"
+                      cy="260"
+                      rx="40"
+                      ry="15"
+                      fill="url(#glowGradient)"
+                      animate={{
+                        rx: [40, 45, 40],
+                        ry: [15, 18, 15],
+                      }}
+                      transition={{
+                        duration: 0.5,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                    />
+
+                    {/* 主火焰 - 单条大的拖尾 */}
+                    <motion.path
+                      d="M50 300 L55 250 Q80 200 70 150 Q85 100 75 60 Q90 40 85 20 Q88 10 85 0 Q82 5 80 15 Q75 30 72 45 Q80 70 75 95 Q85 120 78 150 Q68 180 72 210 Q62 240 65 270 Q50 285 35 270 Q38 240 28 210 Q18 180 25 150 Q20 120 30 95 Q25 70 28 45 Q22 30 18 15 Q15 5 12 0 Q10 10 7 20 Q5 40 20 60 Q10 100 25 150 Q15 200 30 250 L50 300 Z"
+                      fill="url(#flameGradient)"
+                      animate={{
+                        d: [
+                          "M50 300 L55 250 Q80 200 70 150 Q85 100 75 60 Q90 40 85 20 Q88 10 85 0 Q82 5 80 15 Q75 30 72 45 Q80 70 75 95 Q85 120 78 150 Q68 180 72 210 Q62 240 65 270 Q50 285 35 270 Q38 240 28 210 Q18 180 25 150 Q20 120 30 95 Q25 70 28 45 Q22 30 18 15 Q15 5 12 0 Q10 10 7 20 Q5 40 20 60 Q10 100 25 150 Q15 200 30 250 L50 300 Z",
+                          "M50 300 L58 248 Q82 198 72 148 Q87 98 77 58 Q92 38 87 18 Q90 8 87 -2 Q84 3 82 13 Q77 28 74 43 Q82 68 77 93 Q87 118 80 148 Q70 178 74 208 Q64 238 67 268 Q50 283 33 268 Q36 238 26 208 Q16 178 23 148 Q18 118 28 93 Q23 68 26 43 Q20 28 16 13 Q13 3 10 -2 Q8 8 5 18 Q3 38 18 58 Q8 98 23 148 Q13 198 28 248 L50 300 Z",
+                          "M50 300 L52 252 Q78 202 68 152 Q83 102 73 62 Q88 42 83 22 Q86 12 83 2 Q80 7 78 17 Q73 32 70 47 Q78 72 73 97 Q83 122 76 152 Q66 182 70 212 Q60 242 63 272 Q50 287 37 272 Q40 242 30 212 Q20 182 27 152 Q22 122 32 97 Q27 72 30 47 Q24 32 20 17 Q17 7 14 2 Q12 12 9 22 Q7 42 22 62 Q12 102 27 152 Q17 202 42 252 L50 300 Z",
+                          "M50 300 L55 250 Q80 200 70 150 Q85 100 75 60 Q90 40 85 20 Q88 10 85 0 Q82 5 80 15 Q75 30 72 45 Q80 70 75 95 Q85 120 78 150 Q68 180 72 210 Q62 240 65 270 Q50 285 35 270 Q38 240 28 210 Q18 180 25 150 Q20 120 30 95 Q25 70 28 45 Q22 30 18 15 Q15 5 12 0 Q10 10 7 20 Q5 40 20 60 Q10 100 25 150 Q15 200 30 250 L50 300 Z"
+                        ]
+                      }}
+                      transition={{
+                        duration: 0.3,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                    />
+
+                    {/* 核心火焰 - 更亮更集中的拖尾 */}
+                    <motion.path
+                      d="M50 300 L53 260 Q68 220 62 175 Q75 140 68 105 Q78 85 74 60 Q77 50 74 40 Q76 45 74 50 Q71 60 69 70 Q76 85 72 100 Q82 125 76 160 Q68 190 72 220 Q64 250 66 275 Q50 288 34 275 Q36 250 28 220 Q20 190 24 160 Q18 125 28 100 Q24 85 21 70 Q19 60 16 50 Q18 45 20 40 Q17 50 14 60 Q12 85 22 105 Q8 140 12 175 Q6 220 17 260 L50 300 Z"
+                      fill="url(#coreGradient)"
+                      animate={{
+                        d: [
+                          "M50 300 L53 260 Q68 220 62 175 Q75 140 68 105 Q78 85 74 60 Q77 50 74 40 Q76 45 74 50 Q71 60 69 70 Q76 85 72 100 Q82 125 76 160 Q68 190 72 220 Q64 250 66 275 Q50 288 34 275 Q36 250 28 220 Q20 190 24 160 Q18 125 28 100 Q24 85 21 70 Q19 60 16 50 Q18 45 20 40 Q17 50 14 60 Q12 85 22 105 Q8 140 12 175 Q6 220 17 260 L50 300 Z",
+                          "M50 300 L56 258 Q71 218 65 173 Q78 138 71 103 Q81 83 77 58 Q80 48 77 38 Q79 43 77 48 Q74 58 72 68 Q79 83 75 98 Q85 123 79 158 Q71 188 75 218 Q67 248 69 273 Q50 286 31 273 Q33 248 25 218 Q17 188 21 158 Q15 123 25 98 Q21 83 18 68 Q16 58 13 48 Q15 43 17 38 Q14 48 11 58 Q9 83 19 103 Q5 138 9 173 Q3 218 14 258 L50 300 Z",
+                          "M50 300 L51 259 Q66 219 60 174 Q73 139 66 104 Q76 84 72 59 Q75 49 72 39 Q74 44 72 49 Q69 59 67 69 Q74 84 70 99 Q80 124 74 159 Q66 189 70 219 Q62 249 64 274 Q50 287 36 274 Q38 249 30 219 Q22 189 26 159 Q20 124 30 99 Q26 84 23 69 Q21 59 18 49 Q20 44 22 39 Q19 49 16 59 Q14 84 24 104 Q10 139 14 174 Q8 219 19 259 L50 300 Z",
+                          "M50 300 L53 260 Q68 220 62 175 Q75 140 68 105 Q78 85 74 60 Q77 50 74 40 Q76 45 74 50 Q71 60 69 70 Q76 85 72 100 Q82 125 76 160 Q68 190 72 220 Q64 250 66 275 Q50 288 34 275 Q36 250 28 220 Q20 190 24 160 Q18 125 28 100 Q24 85 21 70 Q19 60 16 50 Q18 45 20 40 Q17 50 14 60 Q12 85 22 105 Q8 140 12 175 Q6 220 17 260 L50 300 Z"
+                        ]
+                      }}
+                      transition={{
+                        duration: 0.25,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                    />
+                  </motion.svg>
+                </motion.div>
+
                 {/* 机器人图片 */}
                 <motion.img
-                  src="/Robot2.png"
+                  src="/Robot3.png"
                   alt="AI Robot"
-                  className="w-full h-full object-contain"
+                  className="relative w-full h-full object-contain"
+                  style={{ zIndex: 1 }}
                   animate={{
                     y: [0, -15, 0],
                   }}

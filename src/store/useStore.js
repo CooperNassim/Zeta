@@ -97,8 +97,8 @@ const useStore = create(
         totalProfit: 0
       },
 
-      // 全球资产价格
-      assetPrices: [],
+      // 每日功课数据（26个字段）
+      dailyWorkData: [],
 
       // 心理测试指标
       psychologicalIndicators: [...initialPsychologicalIndicators],
@@ -129,14 +129,31 @@ const useStore = create(
         }
       })),
 
-      // 添加资产价格
-      addAssetPrice: (price) => set((state) => ({
-        assetPrices: [...state.assetPrices, { ...price, id: Date.now() }]
+      // 添加每日功课数据
+      addDailyWorkData: (data) => set((state) => ({
+        dailyWorkData: [...state.dailyWorkData, { ...data, id: Date.now() }]
       })),
 
-      // 删除资产价格
-      deleteAssetPrice: (id) => set((state) => ({
-        assetPrices: state.assetPrices.filter(p => p.id !== id)
+      // 批量导入每日功课数据
+      importDailyWorkData: (dataList) => set((state) => ({
+        dailyWorkData: [...dataList.map(d => ({ ...d, id: Date.now() + Math.random() }))]
+      })),
+
+      // 删除每日功课数据
+      deleteDailyWorkData: (id) => set((state) => ({
+        dailyWorkData: state.dailyWorkData.filter(d => d.id !== id)
+      })),
+
+      // 批量删除每日功课数据
+      deleteMultipleDailyWorkData: (ids) => set((state) => ({
+        dailyWorkData: state.dailyWorkData.filter(d => !ids.includes(d.id))
+      })),
+
+      // 更新每日功课数据
+      updateDailyWorkData: (id, data) => set((state) => ({
+        dailyWorkData: state.dailyWorkData.map(d =>
+          d.id === id ? { ...d, ...data } : d
+        )
       })),
 
       // 添加心理测试
@@ -252,7 +269,7 @@ const useStore = create(
       // 重置所有数据
       resetData: () => set({
         account: { balance: 100000, totalInvested: 0, totalProfit: 0 },
-        assetPrices: [],
+        dailyWorkData: [],
         psychologicalTests: [],
         orders: [],
         transactions: [],

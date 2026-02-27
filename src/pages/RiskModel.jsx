@@ -82,7 +82,7 @@ const RiskModel = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pt-20 px-4 md:px-6 lg:pl-64">
       {/* 头部 */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}

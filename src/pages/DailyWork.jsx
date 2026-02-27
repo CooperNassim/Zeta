@@ -1,290 +1,561 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Trash2, TrendingUp, TrendingDown, Calendar, DollarSign } from 'lucide-react'
+import { Plus, Trash2, Upload, Download, Globe, Calendar, BarChart3, FileText } from 'lucide-react'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
 import Counter from '../components/Counter'
 import ScrollAnimation from '../components/ScrollAnimation'
+import * as XLSX from 'xlsx'
+
+// 字段定义
+const FIELDS = [
+  { key: 'date', label: '日期', category: 'date' },
+  { key: 'nasdaq', label: '纳斯达克', category: 'global' },
+  { key: 'ftse', label: '英国富时', category: 'global' },
+  { key: 'dax', label: '德国DAX', category: 'global' },
+  { key: 'n225', label: '日经N225', category: 'global' },
+  { key: 'hsi', label: '恒生指数', category: 'global' },
+  { key: 'bitcoin', label: '比特币', category: 'crypto' },
+  { key: 'eurusd', label: '欧元兑美元', category: 'forex' },
+  { key: 'usdjpy', label: '美元兑日元', category: 'forex' },
+  { key: 'usdcny', label: '美元兑人民币', category: 'forex' },
+  { key: 'oil', label: '布伦特原油', category: 'commodity' },
+  { key: 'gold', label: '伦敦黄金', category: 'commodity' },
+  { key: 'bond', label: '国债指数', category: 'bond' },
+  { key: 'consecutive', label: '昨日连板', category: 'aStock' },
+  { key: 'a50', label: '富时A50', category: 'aStock' },
+  { key: 'shIndex', label: '上证指数', category: 'aStock' },
+  { key: 'sh2dayPower', label: '上证2日强力(亿)', category: 'capital' },
+  { key: 'sh13dayPower', label: '上证13日强力(亿)', category: 'capital' },
+  { key: 'upCount', label: '大盘涨家', category: 'stats' },
+  { key: 'limitUp', label: '涨停', category: 'stats' },
+  { key: 'downCount', label: '大盘跌家', category: 'stats' },
+  { key: 'limitDown', label: '跌停', category: 'stats' },
+  { key: 'volume', label: '大盘成交(亿)', category: 'stats' },
+  { key: 'sentiment', label: '大盘情绪', category: 'sentiment' },
+  { key: 'prediction', label: '预测当日', category: 'prediction' },
+  { key: 'tradeStatus', label: '交易状态', category: 'decision' },
+]
 
 const DailyWork = () => {
   const [showModal, setShowModal] = useState(false)
-  const [formData, setFormData] = useState({
-    symbol: '',
-    name: '',
-    price: '',
-    change: '',
-    type: 'stock'
-  })
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [formData, setFormData] = useState({})
+  const [selectedIds, setSelectedIds] = useState([])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [jumpToPage, setJumpToPage] = useState(1)
+  const pageSize = 20
 
-  const assetPrices = useStore(state => state.assetPrices)
-  const addAssetPrice = useStore(state => state.addAssetPrice)
-  const deleteAssetPrice = useStore(state => state.deleteAssetPrice)
+  const dailyWorkData = useStore(state => state.dailyWorkData)
+  const addDailyWorkData = useStore(state => state.addDailyWorkData)
+  const deleteDailyWorkData = useStore(state => state.deleteDailyWorkData)
+  const deleteMultipleDailyWorkData = useStore(state => state.deleteMultipleDailyWorkData)
+  const importDailyWorkData = useStore(state => state.importDailyWorkData)
+
+  // 初始化表单数据
+  useEffect(() => {
+    const initialData = {}
+    FIELDS.forEach(field => {
+      initialData[field.key] = ''
+    })
+    setFormData(initialData)
+  }, [])
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    addAssetPrice({
-      ...formData,
-      price: parseFloat(formData.price),
-      change: parseFloat(formData.change),
-      date: new Date().toISOString()
-    })
+    addDailyWorkData(formData)
     setShowModal(false)
-    setFormData({ symbol: '', name: '', price: '', change: '', type: 'stock' })
+    // 重置表单
+    const initialData = {}
+    FIELDS.forEach(field => {
+      initialData[field.key] = ''
+    })
+    setFormData(initialData)
   }
 
-  const sortedPrices = [...assetPrices].sort((a, b) => new Date(b.date) - new Date(a.date))
+  const handleImport = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+
+    reader.onload = (event) => {
+      try {
+        const data = new Uint8Array(event.target.result)
+        const workbook = XLSX.read(data, { type: 'array' })
+
+        const firstSheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[firstSheetName]
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+
+        console.log('读取到的数据:', jsonData)
+
+        if (jsonData.length < 2) {
+          alert('文件格式不正确或没有数据')
+          return
+        }
+
+        const headers = jsonData[0]
+        console.log('文件表头:', headers)
+
+        const dataList = []
+
+        for (let i = 1; i < jsonData.length; i++) {
+          const values = jsonData[i]
+          const data = {}
+
+          headers.forEach((header, index) => {
+            const field = FIELDS.find(f => f.label === header)
+            if (field) {
+              data[field.key] = values[index] !== undefined ? String(values[index]) : ''
+            }
+          })
+
+          console.log(`第 ${i} 行数据:`, data)
+
+          if (data.date) {
+            dataList.push(data)
+          }
+        }
+
+        console.log('有效数据条数:', dataList.length)
+
+        if (dataList.length > 0) {
+          importDailyWorkData(dataList)
+          setShowImportModal(false)
+          alert(`成功导入 ${dataList.length} 条数据`)
+        } else {
+          alert('未找到有效的数据，请检查文件内容。确保第一列为日期。')
+        }
+      } catch (error) {
+        console.error('导入失败:', error)
+        alert('导入失败：' + error.message)
+      }
+    }
+
+    reader.onerror = () => {
+      alert('文件读取失败，请重试')
+    }
+
+    reader.readAsArrayBuffer(file)
+  }
+
+  const handleDownloadTemplate = () => {
+    const headers = FIELDS.map(f => f.label)
+    const worksheet = XLSX.utils.aoa_to_sheet([headers])
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, '模板')
+    XLSX.writeFile(workbook, '每日功课_导入模板.xlsx')
+  }
+
+  const handleExport = () => {
+    if (dailyWorkData.length === 0) {
+      alert('暂无数据可导出')
+      return
+    }
+
+    const headers = FIELDS.map(f => f.label)
+    const rows = sortedData.map(data =>
+      FIELDS.map(f => data[f.key] || '')
+    )
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, '每日功课')
+    XLSX.writeFile(workbook, `每日功课_${format(new Date(), 'yyyyMMdd')}.xlsx`)
+  }
+
+  const sortedData = [...dailyWorkData].sort((a, b) => {
+    const dateA = new Date(a.date)
+    const dateB = new Date(b.date)
+    return dateB - dateA
+  })
+
+  const latestData = sortedData[0]
+
+  const totalPages = Math.ceil(sortedData.length / pageSize)
+  const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page)
+    setJumpToPage(page)
+  }
+
+  const getSentimentColor = (sentiment) => {
+    if (!sentiment) return 'bg-gray-50 text-gray-600'
+    if (sentiment.includes('沸点')) return 'bg-red-100 text-red-600'
+    if (sentiment.includes('过热')) return 'bg-orange-100 text-orange-600'
+    if (sentiment.includes('微冷')) return 'bg-blue-100 text-blue-600'
+    if (sentiment.includes('过冷')) return 'bg-cyan-100 text-cyan-600'
+    return 'bg-gray-50 text-gray-600'
+  }
+
+  const getPredictionColor = (prediction) => {
+    if (!prediction) return 'text-gray-600'
+    if (prediction.includes('看涨')) return 'text-green-600'
+    if (prediction.includes('看跌')) return 'text-red-600'
+    return 'text-gray-600'
+  }
+
+  const getTradeStatusColor = (status) => {
+    if (!status) return 'bg-gray-50 text-gray-600'
+    if (status.includes('积极地')) return 'bg-green-100 text-green-600'
+    if (status.includes('保守地')) return 'bg-blue-100 text-blue-600'
+    if (status.includes('防御地')) return 'bg-yellow-100 text-yellow-600'
+    return 'bg-gray-50 text-gray-600'
+  }
+
+  const handleSelectAll = (checked) => {
+    if (checked) {
+      setSelectedIds(paginatedData.map(d => d.id))
+    } else {
+      setSelectedIds([])
+    }
+  }
+
+  const handleSelectOne = (id, checked) => {
+    if (checked) {
+      setSelectedIds([...selectedIds, id])
+    } else {
+      setSelectedIds(selectedIds.filter(sid => sid !== id))
+    }
+  }
+
+  const handleDelete = () => {
+    if (selectedIds.length === 0) {
+      alert('请先选择要删除的记录')
+      return
+    }
+    setShowDeleteModal(true)
+  }
+
+  const confirmDelete = () => {
+    deleteMultipleDailyWorkData(selectedIds)
+    setSelectedIds([])
+    setShowDeleteModal(false)
+    alert(`已删除 ${selectedIds.length} 条记录`)
+  }
 
   return (
-    <div className="space-y-6">
-      {/* 头部 */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
-      >
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">每日功课</h1>
-          <p className="text-gray-600">维护全球资产价格指数，及时更新市场动态</p>
+    <div style={{ position: 'absolute', top: '80px', left: '186px', right: '0', bottom: '0' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* 工具栏 */}
+        <div style={{ flexShrink: 0, marginBottom: '16px' }}>
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex gap-2">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setShowImportModal(true)}
+                className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2"
+              >
+                <Upload className="w-4 h-4" />
+                导入
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleExport}
+                className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                导出
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleDelete}
+                className="px-4 py-2 bg-white border border-red-300 rounded text-red-600 hover:border-red-500 hover:text-red-500 transition-colors text-sm flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                删除
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setShowModal(true)}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                添加记录
+              </motion.button>
+            </div>
+            <div className="text-sm text-gray-500">
+              共 {dailyWorkData.length} 条记录
+            </div>
+          </div>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setShowModal(true)}
-          className="px-6 py-3 bg-primary-500 rounded-lg text-gray-900 font-medium hover:bg-primary-600 transition-all duration-300 inline-flex items-center"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          添加资产价格
-        </motion.button>
-      </motion.div>
 
-      {/* 统计卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <ScrollAnimation delay={0.1}>
-          <motion.div className="glass rounded-xl p-6 border border-gray-200 hover-float cursor-pointer" whileHover={{ scale: 1.02 }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">总资产数</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  <Counter end={assetPrices.length} duration={1} />
-                </p>
-              </div>
-              <motion.div
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                <TrendingUp className="w-10 h-10 text-primary-500" />
-              </motion.div>
-            </div>
-          </motion.div>
-        </ScrollAnimation>
-        <ScrollAnimation delay={0.2}>
-          <motion.div className="glass rounded-xl p-6 border border-gray-200 hover-float cursor-pointer" whileHover={{ scale: 1.02 }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">上涨资产</p>
-                <p className="text-3xl font-bold text-green-600">
-                  <Counter end={assetPrices.filter(p => p.change > 0).length} duration={1} />
-                </p>
-              </div>
-              <motion.div
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 2, repeat: Infinity, delay: 0.2 }}
-              >
-                <TrendingUp className="w-10 h-10 text-green-600" />
-              </motion.div>
-            </div>
-          </motion.div>
-        </ScrollAnimation>
-        <ScrollAnimation delay={0.3}>
-          <motion.div className="glass rounded-xl p-6 border border-gray-200 hover-float cursor-pointer" whileHover={{ scale: 1.02 }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">下跌资产</p>
-                <p className="text-3xl font-bold text-red-600">
-                  <Counter end={assetPrices.filter(p => p.change < 0).length} duration={1} />
-                </p>
-              </div>
-              <motion.div
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 2, repeat: Infinity, delay: 0.4 }}
-              >
-                <TrendingDown className="w-10 h-10 text-red-600" />
-              </motion.div>
-            </div>
-          </motion.div>
-        </ScrollAnimation>
-        <ScrollAnimation delay={0.4}>
-          <motion.div className="glass rounded-xl p-6 border border-gray-200 hover-float cursor-pointer" whileHover={{ scale: 1.02 }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">最后更新</p>
-                <p className="text-lg font-bold text-gray-900">
-                  {assetPrices.length > 0 ? format(new Date(sortedPrices[0]?.date), 'MM-dd HH:mm') : '-'}
-                </p>
-              </div>
-              <motion.div
-                animate={{ rotate: [0, 5, -5, 0] }}
-                transition={{ duration: 3, repeat: Infinity, repeatDelay: 2 }}
-              >
-                <Calendar className="w-10 h-10 text-primary-500" />
-              </motion.div>
-            </div>
-          </motion.div>
-        </ScrollAnimation>
-      </div>
-
-      {/* 资产价格列表 */}
-      <ScrollAnimation delay={0.5}>
-        <div className="glass rounded-xl border border-gray-200 overflow-hidden hover:border-primary-200 transition-all duration-300">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900 flex items-center">
-            <DollarSign className="w-5 h-5 mr-2 text-primary-500" />
-            资产价格列表
-          </h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-gray-600 text-sm border-b border-gray-200">
-                <th className="px-6 py-4">日期</th>
-                <th className="px-6 py-4">代码</th>
-                <th className="px-6 py-4">名称</th>
-                <th className="px-6 py-4">类型</th>
-                <th className="px-6 py-4">价格</th>
-                <th className="px-6 py-4">涨跌</th>
-                <th className="px-6 py-4">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedPrices.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
-                    暂无资产价格数据，点击右上角添加
-                  </td>
+        {/* 数据表格 */}
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {/* 滚动容器 */}
+          <div className="overflow-y-auto overflow-x-auto" style={{ flex: 1, minHeight: 0 }}>
+            <table style={{ width: '1800px' }}>
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                  <th className="px-0 py-3 text-left text-sm font-normal text-gray-700 whitespace-nowrap w-12">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.length === paginatedData.length && paginatedData.length > 0}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                    />
+                  </th>
+                  {FIELDS.map(field => (
+                    <th key={field.key} className="px-4 py-3 text-left text-sm font-normal text-gray-700 whitespace-nowrap">
+                      {field.label}
+                    </th>
+                  ))}
                 </tr>
-              ) : (
-                sortedPrices.map((price, index) => (
-                  <motion.tr
-                    key={price.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3, delay: index * 0.05 }}
-                    className="border-b border-gray-200 hover:bg-white transition-colors"
-                  >
-                    <td className="px-6 py-4 text-gray-700">
-                      {format(new Date(price.date), 'yyyy-MM-dd HH:mm')}
-                    </td>
-                    <td className="px-6 py-4 font-medium text-gray-900">{price.symbol}</td>
-                    <td className="px-6 py-4 text-gray-700">{price.name}</td>
-                    <td className="px-6 py-4">
-                      <span className="px-2 py-1 rounded text-xs font-medium bg-primary-50 text-primary-500">
-                        {price.type === 'stock' ? '股票' : price.type === 'crypto' ? '加密货币' : '外汇'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 font-bold text-gray-900">
-                      ¥{price.price.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`flex items-center font-medium ${
-                        price.change > 0 ? 'text-green-600' : price.change < 0 ? 'text-red-600' : 'text-gray-600'
-                      }`}>
-                        {price.change > 0 ? <TrendingUp className="w-4 h-4 mr-1" /> : price.change < 0 ? <TrendingDown className="w-4 h-4 mr-1" /> : null}
-                        {price.change > 0 ? '+' : ''}{price.change.toFixed(2)}%
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => deleteAssetPrice(price.id)}
-                        className="p-2 text-red-600 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition-all"
+              </thead>
+              <tbody>
+                  {paginatedData.length === 0 ? (
+                    <tr>
+                      <td colSpan={FIELDS.length + 1} className="px-0 py-4 text-center text-gray-500 text-sm">
+                        <div className="flex flex-col items-center gap-3">
+                          <FileText className="w-12 h-12 text-gray-300" />
+                          <p>暂无数据，请导入文件或手动添加</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedData.map((data, index) => (
+                      <motion.tr
+                        key={data.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.3, delay: index * 0.02 }}
+                        className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                       >
-                        <Trash2 className="w-4 h-4" />
-                      </motion.button>
-                    </td>
-                  </motion.tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-        </div>
-      </ScrollAnimation>
+                        <td className="px-0 py-3 w-12">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(data.id)}
+                            onChange={(e) => handleSelectOne(data.id, e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                          />
+                        </td>
+                        {FIELDS.map(field => (
+                          <td key={field.key} className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                            {field.category === 'prediction' ? (
+                              <span className={`font-medium ${getPredictionColor(data[field.key])}`}>
+                                {data[field.key] || '-'}
+                              </span>
+                            ) : field.category === 'sentiment' ? (
+                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${getSentimentColor(data[field.key])}`}>
+                                {data[field.key] || '-'}
+                              </span>
+                            ) : field.category === 'decision' ? (
+                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${getTradeStatusColor(data[field.key])}`}>
+                                {data[field.key] || '-'}
+                              </span>
+                            ) : (
+                              <span className="font-medium text-gray-700">{data[field.key] || '-'}</span>
+                            )}
+                          </td>
+                        ))}
+                      </motion.tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-      {/* 添加资产价格弹窗 */}
+            {/* 分页器 */}
+            {totalPages > 1 && (
+              <div style={{ position: 'absolute', left: '10px', right: '10px', bottom: '0', height: '50px' }} className="py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between gap-4">
+                <div className="text-sm text-gray-500">
+                  已选{selectedIds.length}条/共{sortedData.length}条
+                </div>
+                <div className="flex items-center gap-2">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    上一页
+                  </motion.button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                    <motion.button
+                      key={page}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => handlePageChange(page)}
+                      className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                        currentPage === page
+                          ? 'bg-blue-500 text-white'
+                          : 'border border-gray-300 hover:bg-white'
+                      }`}
+                    >
+                      {page}
+                    </motion.button>
+                  ))}
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    下一页
+                  </motion.button>
+                  <div className="flex items-center gap-2 ml-4">
+                    <span className="text-sm text-gray-500">跳至</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max={totalPages}
+                      value={jumpToPage}
+                      onChange={(e) => setJumpToPage(Math.max(1, Math.min(totalPages, parseInt(e.target.value) || 1)))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handlePageChange(jumpToPage)
+                        }
+                      }}
+                      className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500 text-center"
+                    />
+                    <span className="text-sm text-gray-500">页</span>
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => handlePageChange(jumpToPage)}
+                      disabled={jumpToPage === currentPage}
+                      className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      跳转
+                    </motion.button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+      {/* 导入CSV弹窗 */}
+      {showImportModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowImportModal(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-lg w-full max-w-md p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-semibold text-gray-800 mb-4">导入</h3>
+            <div className="space-y-4">
+              <div>
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={handleImport}
+                  className="w-full px-4 py-3 border border-gray-300 rounded text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-blue-500 file:text-white hover:file:bg-blue-600 transition-all text-sm"
+                />
+              </div>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleDownloadTemplate}
+                className="w-full px-4 py-2 border border-blue-500 rounded text-blue-500 hover:bg-blue-50 transition-colors text-sm flex items-center justify-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                下载导入模板
+              </motion.button>
+              <p className="text-sm text-gray-500">
+                支持 Excel 和 CSV 格式，建议先下载模板再导入
+              </p>
+              <div className="flex gap-3 pt-2">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setShowImportModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  取消
+                </motion.button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* 删除确认弹窗 */}
+      {showDeleteModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowDeleteModal(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-lg w-full max-w-sm p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-semibold text-gray-800 mb-4">确认删除</h3>
+            <p className="text-gray-600 mb-6">
+              确定要删除选中的 {selectedIds.length} 条记录吗？此操作不可恢复。
+            </p>
+            <div className="flex gap-3 pt-2">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                取消
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={confirmDelete}
+                className="flex-1 px-4 py-2 bg-red-500 rounded text-white font-medium hover:bg-red-600 transition-colors"
+              >
+                删除
+              </motion.button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* 添加记录弹窗 */}
       {showModal && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           onClick={() => setShowModal(false)}
         >
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="glass rounded-2xl border border-gray-300 w-full max-w-md p-6"
+            className="bg-white rounded-lg w-full max-w-6xl p-6 max-h-[90vh] overflow-y-auto shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-2xl font-bold text-gray-900 mb-6">添加资产价格</h3>
+            <h3 className="text-xl font-semibold text-gray-800 mb-6">添加每日功课记录</h3>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">资产代码</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.symbol}
-                  onChange={(e) => setFormData({ ...formData, symbol: e.target.value })}
-                  placeholder="例如：AAPL"
-                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">资产名称</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="例如：苹果公司"
-                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">资产类型</label>
-                <select
-                  value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-primary-500 transition-colors"
-                >
-                  <option value="stock">股票</option>
-                  <option value="crypto">加密货币</option>
-                  <option value="forex">外汇</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">当前价格</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                  placeholder="例如：150.50"
-                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">涨跌幅 (%)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={formData.change}
-                  onChange={(e) => setFormData({ ...formData, change: e.target.value })}
-                  placeholder="例如：2.5"
-                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
-                />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {FIELDS.map(field => (
+                  <div key={field.key}>
+                    <label className="block text-sm text-gray-600 mb-1.5">{field.label}</label>
+                    <input
+                      type="text"
+                      value={formData[field.key] || ''}
+                      onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
+                      placeholder={field.key === 'date' ? '例如：2026/2/27' : ''}
+                      className="w-full px-3 py-2 border border-gray-300 rounded text-gray-700 placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                    />
+                  </div>
+                ))}
               </div>
               <div className="flex gap-3 pt-4">
                 <motion.button
@@ -292,7 +563,7 @@ const DailyWork = () => {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-white transition-colors"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
                 >
                   取消
                 </motion.button>
@@ -300,15 +571,16 @@ const DailyWork = () => {
                   type="submit"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className="flex-1 px-4 py-3 bg-primary-500 rounded-lg text-gray-900 font-medium hover:bg-primary-600 transition-all"
+                  className="flex-1 px-4 py-2 bg-blue-500 rounded text-white font-medium hover:bg-blue-600 transition-colors"
                 >
-                  添加
+                  保存
                 </motion.button>
               </div>
             </form>
           </motion.div>
         </motion.div>
       )}
+    </div>
     </div>
   )
 }

@@ -88,23 +88,23 @@ const PsychologicalTest = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6 pt-20 px-4 md:px-6 lg:pl-64">
       {/* 头部 */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
+        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
       >
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">心理测试</h1>
-          <p className="text-gray-600">评估当前心理状态，确保交易决策时的情绪稳定</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">心理测试</h1>
+          <p className="text-sm md:text-base text-gray-600">评估当前心理状态，确保交易决策时的情绪稳定</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 w-full sm:w-auto">
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowTestModal(true)}
-            className="px-6 py-3 bg-green-500 rounded-lg text-gray-900 font-medium hover:bg-green-600 transition-all duration-300 inline-flex items-center"
+            className="flex-1 sm:flex-none px-4 md:px-6 py-3 bg-green-500 rounded-lg text-gray-900 font-medium hover:bg-green-600 transition-all duration-300 inline-flex items-center justify-center"
           >
             <CheckCircle className="w-5 h-5 mr-2" />
             开始测试
@@ -113,7 +113,7 @@ const PsychologicalTest = () => {
       </motion.div>
 
       {/* 测试指标管理 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <ScrollAnimation delay={0.1}>
           {/* 指标列表 */}
           <motion.div className="glass rounded-xl border border-gray-200 overflow-hidden hover:border-primary-200 transition-all duration-300">
@@ -171,10 +171,10 @@ const PsychologicalTest = () => {
 
           {/* 历史记录 */}
           <motion.div className="glass rounded-xl border border-gray-200 overflow-hidden hover:border-primary-200 transition-all duration-300">
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">测试记录</h2>
+          <div className="p-4 md:p-6 border-b border-gray-200">
+            <h2 className="text-lg md:text-xl font-bold text-gray-900">测试记录</h2>
           </div>
-          <div className="p-6 space-y-4 max-h-96 overflow-y-auto">
+          <div className="p-4 md:p-6 space-y-4 max-h-96 overflow-y-auto">
             {psychologicalTests.length === 0 ? (
               <p className="text-center text-gray-500 py-8">暂无测试记录</p>
             ) : (
@@ -229,10 +229,10 @@ const PsychologicalTest = () => {
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="glass rounded-2xl border border-gray-300 w-full max-w-md p-6"
+            className="glass rounded-2xl border border-gray-300 w-full max-w-md p-4 md:p-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-2xl font-bold text-gray-900 mb-6">编辑测试指标</h3>
+            <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-4 md:mb-6">编辑测试指标</h3>
             <form onSubmit={handleUpdateIndicator} className="space-y-4">
               <div>
                 <label className="block text-sm text-gray-600 mb-2">指标名称</label>
@@ -325,11 +325,11 @@ const PsychologicalTest = () => {
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="glass rounded-2xl border border-gray-300 w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto"
+            className="glass rounded-2xl border border-gray-300 w-full max-w-2xl p-4 md:p-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-2xl font-bold text-gray-900 mb-6">心理测试</h3>
-            <form onSubmit={handleSubmitTest} className="space-y-6">
+            <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-4 md:mb-6">心理测试</h3>
+            <form onSubmit={handleSubmitTest} className="space-y-4 md:space-y-6">
               {indicators.map((indicator) => (
                 <div key={indicator.id} className="p-4 bg-white rounded-lg border border-gray-200">
                   <div className="flex items-start justify-between mb-4">

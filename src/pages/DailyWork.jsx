@@ -64,7 +64,15 @@ const DailyWork = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    addDailyWorkData(formData)
+    // 转换日期格式从 yyyy-MM-dd 到 yy-MM-dd
+    const submitData = { ...formData }
+    if (submitData.date) {
+      const dateMatch = submitData.date.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (dateMatch) {
+        submitData.date = `${dateMatch[2].slice(-2)}-${dateMatch[1].slice(-2)}-${dateMatch[2].slice(-2)}`
+      }
+    }
+    addDailyWorkData(submitData)
     setShowModal(false)
     // 重置表单
     const initialData = {}
@@ -100,33 +108,107 @@ const DailyWork = () => {
         console.log('文件表头:', headers)
 
         const dataList = []
+        const errorList = []
+        const existingDates = new Set(dailyWorkData.map(d => d.date))
+
+        // 定义固定选项的字段
+        const validSentiments = ['冰点', '过冷', '微冷', '微热', '过热', '沸点']
+        const validPredictions = ['看涨', '看跌']
+        const validTradeStatuses = ['积极地', '保守地', '防御地']
 
         for (let i = 1; i < jsonData.length; i++) {
           const values = jsonData[i]
           const data = {}
+          const errors = []
 
           headers.forEach((header, index) => {
             const field = FIELDS.find(f => f.label === header)
             if (field) {
-              data[field.key] = values[index] !== undefined ? String(values[index]) : ''
+              const value = values[index] !== undefined ? String(values[index]).trim() : ''
+              data[field.key] = value
+
+              // 检查必填项
+              if (!value) {
+                errors.push(`[${field.label}]不能为空；`)
+              }
+
+              // 检查日期格式
+              if (field.key === 'date' && value) {
+                const slashFormat = /^\d{2}\/\d{2}\/\d{2}$/
+                const dashFormat = /^\d{2}-\d{2}-\d{2}$/
+
+                if (!slashFormat.test(value) && !dashFormat.test(value)) {
+                  errors.push('[日期]格式错误；')
+                } else {
+                  // 统一转换为 YY-MM-DD 格式
+                  data[field.key] = value.replace(/\//g, '-')
+
+                  // 检查日期是否已存在
+                  if (existingDates.has(data[field.key])) {
+                    errors.push('[日期]已存在数据；')
+                  }
+                }
+              }
+
+              // 检查大盘情绪格式
+              if (field.key === 'sentiment' && value && !validSentiments.includes(value)) {
+                errors.push('[大盘情绪]格式错误；')
+              }
+
+              // 检查预测当日格式
+              if (field.key === 'prediction' && value && !validPredictions.includes(value)) {
+                errors.push('[预测当日]格式错误；')
+              }
+
+              // 检查交易状态格式
+              if (field.key === 'tradeStatus' && value && !validTradeStatuses.includes(value)) {
+                errors.push('[交易状态]格式错误；')
+              }
             }
           })
 
-          console.log(`第 ${i} 行数据:`, data)
-
-          if (data.date) {
+          if (errors.length > 0) {
+            errorList.push({
+              rowIndex: i + 1,
+              errors: errors.join(' ')
+            })
+          } else {
             dataList.push(data)
           }
+
+          console.log(`第 ${i} 行数据:`, data, errors.length > 0 ? errors : '')
         }
 
         console.log('有效数据条数:', dataList.length)
+        console.log('错误数据条数:', errorList.length)
 
-        if (dataList.length > 0) {
+        // 如果有错误，先生成错误表格
+        if (errorList.length > 0) {
+          const errorHeaders = ['行号', '错误信息', ...headers]
+          const errorRows = errorList.map(error => [
+            error.rowIndex,
+            error.errors,
+            ...jsonData[error.rowIndex - 1].map(v => v !== undefined ? String(v) : '')
+          ])
+
+          const errorWorksheet = XLSX.utils.aoa_to_sheet([errorHeaders, ...errorRows])
+          const errorWorkbook = XLSX.utils.book_new()
+          XLSX.utils.book_append_sheet(errorWorkbook, errorWorksheet, '导入错误')
+          XLSX.writeFile(errorWorkbook, `每日功课_导入错误_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`)
+
+          // 导入成功的数据
+          if (dataList.length > 0) {
+            importDailyWorkData(dataList)
+            alert(`部分导入成功！成功导入 ${dataList.length} 条数据，有 ${errorList.length} 条数据存在错误，已生成错误表格。`)
+          } else {
+            alert(`导入失败！有 ${errorList.length} 条数据存在错误，已生成错误表格。`)
+          }
+        } else if (dataList.length > 0) {
           importDailyWorkData(dataList)
           setShowImportModal(false)
           alert(`成功导入 ${dataList.length} 条数据`)
         } else {
-          alert('未找到有效的数据，请检查文件内容。确保第一列为日期。')
+          alert('未找到有效的数据，请检查文件内容。')
         }
       } catch (error) {
         console.error('导入失败:', error)
@@ -144,6 +226,17 @@ const DailyWork = () => {
   const handleDownloadTemplate = () => {
     const headers = FIELDS.map(f => f.label)
     const worksheet = XLSX.utils.aoa_to_sheet([headers])
+
+    // 为"日期"字段设置单元格格式为日期格式
+    const dateColIndex = headers.findIndex(h => h === '日期')
+    if (dateColIndex !== -1) {
+      // 设置第一行（表头）的格式
+      const dateCellRef = XLSX.utils.encode_cell({ r: 0, c: dateColIndex })
+      if (worksheet[dateCellRef]) {
+        worksheet[dateCellRef].z = 'yyyy-mm-dd'
+      }
+    }
+
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, '模板')
     XLSX.writeFile(workbook, '每日功课_导入模板.xlsx')
@@ -238,12 +331,21 @@ const DailyWork = () => {
   }
 
   return (
-    <div style={{ position: 'absolute', top: '80px', left: '186px', right: '0', bottom: '0' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
         {/* 工具栏 */}
-        <div style={{ flexShrink: 0, marginBottom: '16px' }}>
+        <div style={{ flexShrink: 0, marginBottom: '10px', marginTop: '10px' }}>
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex gap-2">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setShowModal(true)}
+                className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                新增
+              </motion.button>
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -266,19 +368,10 @@ const DailyWork = () => {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleDelete}
-                className="px-4 py-2 bg-white border border-red-300 rounded text-red-600 hover:border-red-500 hover:text-red-500 transition-colors text-sm flex items-center gap-2"
+                className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2"
               >
                 <Trash2 className="w-4 h-4" />
                 删除
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setShowModal(true)}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                添加记录
               </motion.button>
             </div>
             <div className="text-sm text-gray-500">
@@ -293,8 +386,8 @@ const DailyWork = () => {
           <div className="overflow-y-auto overflow-x-auto" style={{ flex: 1, minHeight: 0 }}>
             <table style={{ width: '1800px' }}>
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
-                  <th className="px-0 py-3 text-left text-sm font-normal text-gray-700 whitespace-nowrap w-12">
+                <tr className="border-b sticky top-0 z-10" style={{ backgroundColor: '#F1F5F9' }}>
+                  <th className="px-0 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap w-10 sticky left-0 z-30 bg-[#F1F5F9]" style={{ backgroundColor: '#F1F5F9', margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px' }}>
                     <input
                       type="checkbox"
                       checked={selectedIds.length === paginatedData.length && paginatedData.length > 0}
@@ -302,8 +395,8 @@ const DailyWork = () => {
                       className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                     />
                   </th>
-                  {FIELDS.map(field => (
-                    <th key={field.key} className="px-4 py-3 text-left text-sm font-normal text-gray-700 whitespace-nowrap">
+                  {FIELDS.map((field, index) => (
+                    <th key={field.key} className="px-4 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap" style={{ backgroundColor: '#F1F5F9' }}>
                       {field.label}
                     </th>
                   ))}
@@ -328,7 +421,7 @@ const DailyWork = () => {
                         transition={{ duration: 0.3, delay: index * 0.02 }}
                         className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                       >
-                        <td className="px-0 py-3 w-12">
+                        <td className="px-0 py-3 w-10 sticky left-0 z-30 bg-white" style={{ margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px' }}>
                           <input
                             type="checkbox"
                             checked={selectedIds.includes(data.id)}
@@ -336,23 +429,9 @@ const DailyWork = () => {
                             className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                           />
                         </td>
-                        {FIELDS.map(field => (
+                        {FIELDS.map((field, index) => (
                           <td key={field.key} className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                            {field.category === 'prediction' ? (
-                              <span className={`font-medium ${getPredictionColor(data[field.key])}`}>
-                                {data[field.key] || '-'}
-                              </span>
-                            ) : field.category === 'sentiment' ? (
-                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${getSentimentColor(data[field.key])}`}>
-                                {data[field.key] || '-'}
-                              </span>
-                            ) : field.category === 'decision' ? (
-                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${getTradeStatusColor(data[field.key])}`}>
-                                {data[field.key] || '-'}
-                              </span>
-                            ) : (
-                              <span className="font-medium text-gray-700">{data[field.key] || '-'}</span>
-                            )}
+                            <span className="font-medium text-gray-700">{data[field.key] || '-'}</span>
                           </td>
                         ))}
                       </motion.tr>
@@ -361,10 +440,12 @@ const DailyWork = () => {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
 
-            {/* 分页器 */}
-            {totalPages > 1 && (
-              <div style={{ position: 'absolute', left: '10px', right: '10px', bottom: '0', height: '50px' }} className="py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between gap-4">
+        {/* 分页器 */}
+        {totalPages > 1 && (
+          <div style={{ position: 'absolute', left: '10px', right: '10px', bottom: '0', height: '50px' }} className="py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between gap-4">
                 <div className="text-sm text-gray-500">
                   已选{selectedIds.length}条/共{sortedData.length}条
                 </div>
@@ -431,7 +512,6 @@ const DailyWork = () => {
                 </div>
               </div>
             )}
-          </div>
 
       {/* 导入CSV弹窗 */}
       {showImportModal && (
@@ -547,13 +627,57 @@ const DailyWork = () => {
                 {FIELDS.map(field => (
                   <div key={field.key}>
                     <label className="block text-sm text-gray-600 mb-1.5">{field.label}</label>
-                    <input
-                      type="text"
-                      value={formData[field.key] || ''}
-                      onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
-                      placeholder={field.key === 'date' ? '例如：2026/2/27' : ''}
-                      className="w-full px-3 py-2 border border-gray-300 rounded text-gray-700 placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors text-sm"
-                    />
+                    {field.key === 'date' ? (
+                      <input
+                        type="date"
+                        value={formData[field.key] || ''}
+                        onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
+                        max={format(new Date(), 'yyyy-MM-dd')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded text-gray-700 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                      />
+                    ) : field.key === 'sentiment' ? (
+                      <select
+                        value={formData[field.key] || ''}
+                        onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded text-gray-700 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                      >
+                        <option value="">请选择</option>
+                        <option value="冰点">冰点</option>
+                        <option value="过冷">过冷</option>
+                        <option value="微冷">微冷</option>
+                        <option value="微热">微热</option>
+                        <option value="过热">过热</option>
+                        <option value="沸点">沸点</option>
+                      </select>
+                    ) : field.key === 'prediction' ? (
+                      <select
+                        value={formData[field.key] || ''}
+                        onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded text-gray-700 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                      >
+                        <option value="">请选择</option>
+                        <option value="看涨">看涨</option>
+                        <option value="看跌">看跌</option>
+                      </select>
+                    ) : field.key === 'tradeStatus' ? (
+                      <select
+                        value={formData[field.key] || ''}
+                        onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded text-gray-700 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                      >
+                        <option value="">请选择</option>
+                        <option value="积极地">积极地</option>
+                        <option value="保守地">保守地</option>
+                        <option value="防御地">防御地</option>
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={formData[field.key] || ''}
+                        onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded text-gray-700 placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -580,7 +704,6 @@ const DailyWork = () => {
           </motion.div>
         </motion.div>
       )}
-    </div>
     </div>
   )
 }

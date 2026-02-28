@@ -195,7 +195,7 @@ function App() {
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <div className="h-screen bg-gray-50 overflow-hidden" style={{ margin: '0', padding: '0' }}>
         <Navigation />
-        <main className="w-full" style={{ padding: '0', margin: '0', height: 'calc(100vh - 52px)', position: 'relative' }}>
+        <main className="w-full" style={{ padding: '0', margin: '0', height: 'calc(100vh)', position: 'relative' }}>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/daily-work" element={<DailyWork />} />

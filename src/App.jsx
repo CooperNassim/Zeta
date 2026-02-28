@@ -11,6 +11,7 @@ import OrderManagement from './pages/OrderManagement'
 import TransactionHistory from './pages/TransactionHistory'
 import TradeRecords from './pages/TradeRecords'
 import useStore from './store/useStore'
+import { ToastProvider } from './contexts/ToastContext'
 
 function Navigation() {
   const location = useLocation()
@@ -192,23 +193,25 @@ function Navigation() {
 
 function App() {
   return (
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <div className="h-screen bg-gray-50 overflow-hidden" style={{ margin: '0', padding: '0' }}>
-        <Navigation />
-        <main className="w-full" style={{ padding: '0', margin: '0', height: 'calc(100vh)', position: 'relative' }}>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/daily-work" element={<DailyWork />} />
-            <Route path="/psychological-test" element={<PsychologicalTest />} />
-            <Route path="/trading-strategy" element={<TradingStrategy />} />
-            <Route path="/risk-model" element={<RiskModel />} />
-            <Route path="/order-management" element={<OrderManagement />} />
-            <Route path="/transaction-history" element={<TransactionHistory />} />
-            <Route path="/trade-records" element={<TradeRecords />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+    <ToastProvider>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <div className="h-screen bg-gray-50 overflow-hidden" style={{ margin: '0', padding: '0' }}>
+          <Navigation />
+          <main className="w-full" style={{ padding: '0', margin: '0', height: 'calc(100vh)', position: 'relative' }}>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/daily-work" element={<DailyWork />} />
+              <Route path="/psychological-test" element={<PsychologicalTest />} />
+              <Route path="/trading-strategy" element={<TradingStrategy />} />
+              <Route path="/risk-model" element={<RiskModel />} />
+              <Route path="/order-management" element={<OrderManagement />} />
+              <Route path="/transaction-history" element={<TransactionHistory />} />
+              <Route path="/trade-records" element={<TradeRecords />} />
+            </Routes>
+          </main>
+        </div>
+      </BrowserRouter>
+    </ToastProvider>
   )
 }
 

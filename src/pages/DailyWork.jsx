@@ -6,7 +6,7 @@ import { format } from 'date-fns'
 import Counter from '../components/Counter'
 import ScrollAnimation from '../components/ScrollAnimation'
 import Modal from '../components/Modal'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import { useToast } from '../contexts/ToastContext'
 
 // 字段定义
@@ -279,19 +279,21 @@ const DailyWork = () => {
 
     const reader = new FileReader()
 
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const data = new Uint8Array(event.target.result)
-        const workbook = XLSX.read(data, { type: 'array' })
+        const workbook = new ExcelJS.Workbook()
+        await workbook.xlsx.load(data)
 
-        const firstSheetName = workbook.SheetNames[0]
-        const worksheet = workbook.Sheets[firstSheetName]
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, {
-          header: 1,
-          raw: false,
-          dateNF: 'yyyy-mm-dd',
-          cellDates: true,
-          cellText: false
+        const worksheet = workbook.worksheets[0]
+        const jsonData = []
+
+        worksheet.eachRow((row, rowNumber) => {
+          const rowData = []
+          row.eachCell((cell) => {
+            rowData.push(cell.value)
+          })
+          jsonData.push(rowData)
         })
 
         console.log('读取到的数据:', jsonData)
@@ -434,15 +436,28 @@ const DailyWork = () => {
         // 生成错误工作簿（但不自动下载）
         let wb = null
         if (errorList.length > 0) {
-          const errorHeaders = ['错误信息', ...headers]
-          const errorRows = errorList.map(error => [
-            error.errors,
-            ...jsonData[error.rowIndex - 1].map(v => v !== undefined ? String(v) : '')
-          ])
+          wb = new ExcelJS.Workbook()
+          const errorWorksheet = wb.addWorksheet('导入错误')
 
-          const errorWorksheet = XLSX.utils.aoa_to_sheet([errorHeaders, ...errorRows])
-          wb = XLSX.utils.book_new()
-          XLSX.utils.book_append_sheet(wb, errorWorksheet, '导入错误')
+          const errorHeaders = ['错误信息', ...headers]
+          errorWorksheet.addRow(errorHeaders)
+
+          // 设置表头样式
+          const headerRow = errorWorksheet.getRow(1)
+          headerRow.font = { bold: true }
+          headerRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFFE0E0' }
+          }
+
+          errorList.forEach(error => {
+            const errorRow = [
+              error.errors,
+              ...jsonData[error.rowIndex].map(v => v !== undefined ? String(v) : '')
+            ]
+            errorWorksheet.addRow(errorRow)
+          })
         }
 
 
@@ -480,29 +495,52 @@ const DailyWork = () => {
     reader.readAsArrayBuffer(importFile)
   }
 
-  const handleDownloadErrorFile = () => {
+  const handleDownloadErrorFile = async () => {
     if (errorWorkbook) {
-      XLSX.writeFile(errorWorkbook, `每日功课_导入错误_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`)
+      const buffer = await errorWorkbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      })
+      
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `每日功课_导入错误_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`
+      a.click()
+      window.URL.revokeObjectURL(url)
     }
   }
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet('模板')
+    
     const headers = FIELDS.map(f => f.label)
-    const worksheet = XLSX.utils.aoa_to_sheet([headers])
-
-    // 为"日期"字段设置单元格格式为日期格式
+    worksheet.columns = headers.map(header => ({
+      header: header,
+      key: header,
+      width: 20
+    }))
+    
+    // 为"日期"字段设置单元格格式
     const dateColIndex = headers.findIndex(h => h === '日期')
     if (dateColIndex !== -1) {
-      // 设置第一行（表头）的格式
-      const dateCellRef = XLSX.utils.encode_cell({ r: 0, c: dateColIndex })
-      if (worksheet[dateCellRef]) {
-        worksheet[dateCellRef].z = 'yyyy-mm-dd'
-      }
+      const dateColumn = worksheet.getColumn(dateColIndex + 1)
+      dateColumn.numFmt = 'yyyy-mm-dd'
     }
-
-    const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, worksheet, '模板')
-    XLSX.writeFile(workbook, '每日功课_导入模板.xlsx')
+    
+    // 保存文件
+    const buffer = await workbook.xlsx.writeBuffer()
+    const blob = new Blob([buffer], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    })
+    
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '每日功课_导入模板.xlsx'
+    a.click()
+    window.URL.revokeObjectURL(url)
   }
 
   const handleExport = () => {
@@ -513,21 +551,50 @@ const DailyWork = () => {
     setShowExportModal(true)
   }
 
-  const handleConfirmExport = () => {
+  const handleConfirmExport = async () => {
     const headers = FIELDS.map(f => f.label)
-    const rows = sortedData.map(data =>
+    const rows = filteredData.map(data =>
       FIELDS.map(f => data[f.key] || '')
     )
 
     if (exportFormat === 'xlsx') {
-      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, '每日功课')
-      XLSX.writeFile(workbook, `每日功课_${format(new Date(), 'yyyyMMdd')}.xlsx`)
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet('每日功课')
+      
+      // 设置表头
+      worksheet.columns = headers.map(header => ({
+        header: header,
+        key: header,
+        width: 20
+      }))
+      
+      // 添加数据行
+      rows.forEach(row => {
+        worksheet.addRow(row)
+      })
+      
+      // 为"日期"字段设置单元格格式
+      const dateColIndex = headers.findIndex(h => h === '日期')
+      if (dateColIndex !== -1) {
+        const dateColumn = worksheet.getColumn(dateColIndex + 1)
+        dateColumn.numFmt = 'yyyy-mm-dd'
+      }
+
+      // 保存文件
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      })
+      
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `每日功课_${format(new Date(), 'yyyyMMdd')}.xlsx`
+      a.click()
+      window.URL.revokeObjectURL(url)
     } else {
-      const csv = XLSX.utils.aoa_to_sheet([headers, ...rows])
-      const csvContent = XLSX.utils.sheet_to_csv(csv)
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n')
+      const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
       link.download = `每日功课_${format(new Date(), 'yyyyMMdd')}.csv`
@@ -718,7 +785,8 @@ const DailyWork = () => {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleExport}
-                className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2"
+                disabled={filteredData.length === 0}
+                className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Download className="w-4 h-4" />
                 导出
@@ -767,8 +835,8 @@ const DailyWork = () => {
                   {paginatedData.length === 0 ? (
                     <tr>
                       <td colSpan={FIELDS.length + 1} className="px-0 py-4 text-center text-gray-500 text-sm">
-                        <div className="flex flex-col items-center justify-center gap-3" style={{ height: 'calc(100vh - 52px - 10px - 80px - 10px - 50px - 100px)', display: 'flex', alignItems: 'center' }}>
-                          <svg viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" width="120" height="120">
+                        <div className="flex flex-col items-center justify-center gap-3" style={{ height: 'calc(100vh - 52px - 10px - 80px - 10px - 50px - 100px)', display: 'flex', alignItems: 'center', marginLeft: '-20%' }}>
+                          <svg viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" width="86" height="86">
                             <path d="M688.551724 0m26.482759 0l0 0q26.482759 0 26.482758 26.482759l0 52.965517q0 26.482759-26.482758 26.482758l0 0q-26.482759 0-26.482759-26.482758l0-52.965517q0-26.482759 26.482759-26.482759Z" fill="#E9ECF0"></path>
                             <path d="M935.724138 194.206897m0 26.482758l0 0q0 26.482759-26.482759 26.482759l-52.965517 0q-26.482759 0-26.482759-26.482759l0 0q0-26.482759 26.482759-26.482758l52.965517 0q26.482759 0 26.482759 26.482758Z" fill="#E9ECF0"></path>
                             <path d="M887.487035 10.784826m18.726138 18.726139l0 0q18.726138 18.726138 0 37.452276l-74.904553 74.904553q-18.726138 18.726138-37.452276 0l0 0q-18.726138-18.726138 0-37.452276l74.904553-74.904553q18.726138-18.726138 37.452276 0Z" fill="#E9ECF0"></path>
@@ -1032,7 +1100,7 @@ const DailyWork = () => {
             </label>
           </div>
           <p className="text-sm text-gray-500">
-            共 {sortedData.length} 条记录
+            共 {filteredData.length} 条记录
           </p>
         </div>
       </Modal>

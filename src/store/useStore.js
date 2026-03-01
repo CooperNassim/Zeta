@@ -3,12 +3,11 @@ import { persist } from 'zustand/middleware'
 
 // 心理测试指标
 export const initialPsychologicalIndicators = [
-  { id: '1', name: '睡眠质量', description: '昨晚睡眠时长和质量', minScore: 0, maxScore: 100, weight: 0.15 },
-  { id: '2', name: '情绪状态', description: '当前情绪稳定性', minScore: 0, maxScore: 100, weight: 0.2 },
-  { id: '3', name: '压力水平', description: '当前工作生活压力', minScore: 0, maxScore: 100, weight: 0.15 },
-  { id: '4', name: '市场关注度', description: '对市场信息的关注度', minScore: 0, maxScore: 100, weight: 0.1 },
-  { id: '5', name: '风险承受意愿', description: '当前风险承受能力', minScore: 0, maxScore: 100, weight: 0.2 },
-  { id: '6', name: '决策信心', description: '对当前决策的信心程度', minScore: 0, maxScore: 100, weight: 0.2 },
+  { id: '1', name: '睡眠质量', description: '昨晚睡眠时长和质量', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '2', name: '情绪状态', description: '当前情绪稳定性', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '3', name: '压力水平', description: '当前工作生活压力', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '4', name: '市场关注度', description: '对市场信息的关注度', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '5', name: '风险承受意愿', description: '当前风险承受能力', minScore: 0, maxScore: 2, weight: 0.2 },
 ]
 
 // 交易策略模板
@@ -265,6 +264,19 @@ const useStore = create(
           t.id === tradeId ? { ...t, profit } : t
         )
       })),
+
+      // 清除今天的测试记录
+      clearTodayTest: () => set((state) => {
+        const today = new Date()
+        const todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0')
+        return {
+          psychologicalTests: state.psychologicalTests.filter(test => {
+            const testDate = new Date(test.date)
+            const testDateStr = testDate.getFullYear() + '-' + String(testDate.getMonth() + 1).padStart(2, '0') + '-' + String(testDate.getDate()).padStart(2, '0')
+            return testDateStr !== todayStr
+          })
+        }
+      }),
 
       // 重置所有数据
       resetData: () => set({

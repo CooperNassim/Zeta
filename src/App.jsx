@@ -41,15 +41,10 @@ function Navigation() {
         <div className="w-full px-5">
           <div className="flex items-center justify-between h-[52px]">
             {/* Logo */}
-            <div className="flex items-center px-5">
-              <motion.div
-                whileHover={{ scale: 1.1, rotate: 5 }}
-                transition={{ duration: 0.3 }}
-              >
-                <Link to="/" className="flex items-center">
-                  <img src="/Zeta.png" alt="Zeta Logo" style={{ height: '24px', width: 'auto' }} />
-                </Link>
-              </motion.div>
+            <div className="flex items-center">
+              <Link to="/" className="flex items-center">
+                <img src="/Zeta.png" alt="Zeta Logo" style={{ height: '24px', width: 'auto' }} />
+              </Link>
             </div>
 
             {/* 导航菜单 */}
@@ -93,7 +88,7 @@ function Navigation() {
                 <Link
                   key={item.id}
                   to={item.path}
-                  className={`flex items-center px-0 pl-5 py-[20px] text-sm font-medium transition-all duration-200 ${
+                  className={`flex items-center px-0 pl-5 py-[18px] text-sm font-medium transition-all duration-200 ${
                     isActive
                       ? 'bg-[#0F1419] text-white'
                       : 'text-[#0F1419] hover:bg-gray-100'

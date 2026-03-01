@@ -1,405 +1,642 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Edit2, Trash2, CheckCircle, AlertCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Edit as EditIcon } from 'lucide-react'
 import useStore from '../store/useStore'
-import Counter from '../components/Counter'
-import ScrollAnimation from '../components/ScrollAnimation'
+import { format } from 'date-fns'
+import Modal from '../components/Modal'
 
 const PsychologicalTest = () => {
-  const [showIndicatorModal, setShowIndicatorModal] = useState(false)
-  const [showTestModal, setShowTestModal] = useState(false)
-  const [editingIndicator, setEditingIndicator] = useState(null)
+  const [selectedDate, setSelectedDate] = useState(new Date())
   const [testScores, setTestScores] = useState({})
+  const [showEditModal, setShowEditModal] = useState(false)
 
   const indicators = useStore(state => state.psychologicalIndicators)
   const psychologicalTests = useStore(state => state.psychologicalTests)
   const addPsychologicalTest = useStore(state => state.addPsychologicalTest)
   const updatePsychologicalIndicator = useStore(state => state.updatePsychologicalIndicator)
 
-  const [indicatorForm, setIndicatorForm] = useState({
-    name: '',
-    description: '',
-    minScore: 0,
-    maxScore: 100,
-    weight: 0.1
-  })
-
-  const handleEditIndicator = (indicator) => {
-    setEditingIndicator(indicator)
-    setIndicatorForm({
-      name: indicator.name,
-      description: indicator.description,
-      minScore: indicator.minScore,
-      maxScore: indicator.maxScore,
-      weight: indicator.weight
-    })
-    setShowIndicatorModal(true)
-  }
-
-  const handleUpdateIndicator = (e) => {
-    e.preventDefault()
-    const totalWeight = indicators.reduce((sum, i) => sum + i.weight, 0) - indicators.find(i => i.id === editingIndicator.id).weight + parseFloat(indicatorForm.weight)
-
-    if (Math.abs(totalWeight - 1) > 0.01) {
-      alert(`权重总和必须为100%，当前为${(totalWeight * 100).toFixed(1)}%`)
-      return
+  // 初始化默认分数
+  useEffect(() => {
+    const today = new Date()
+    const testResult = getTestResultForDate(today)
+    if (testResult) {
+      setTestScores(testResult.scores)
+    } else {
+      // 没有测试记录时，不设置任何默认值
+      setTestScores({})
     }
+  }, [indicators])
 
-    updatePsychologicalIndicator(editingIndicator.id, {
-      ...indicatorForm,
-      weight: parseFloat(indicatorForm.weight),
-      minScore: parseInt(indicatorForm.minScore),
-      maxScore: parseInt(indicatorForm.maxScore)
-    })
-    setShowIndicatorModal(false)
-    setEditingIndicator(null)
-    setIndicatorForm({ name: '', description: '', minScore: 0, maxScore: 100, weight: 0.1 })
+  const handleDateClick = (date) => {
+    setSelectedDate(date)
+    const testResult = getTestResultForDate(date)
+    if (testResult) {
+      setTestScores(testResult.scores)
+    } else {
+      // 没有测试记录时，不设置任何默认值
+      setTestScores({})
+    }
   }
 
-  const calculateOverallScore = () => {
+  // 获取选中日期的测试结果
+  const getTestResultForDate = (date) => {
+    const dateStr = format(date, 'yyyy-MM-dd')
+    return psychologicalTests.find(test => format(new Date(test.date), 'yyyy-MM-dd') === dateStr)
+  }
+
+  const getScoreColor = (score) => {
+    // 兼容旧数据：如果分数大于10，说明是归一化分数（0-100），需要转换
+    const finalScore = score > 10 ? score / 10 : score
+    if (finalScore >= 7) return '#22c55e'
+    return '#ef4444'
+  }
+
+  const getDotColor = (score) => {
+    // 兼容旧数据：如果分数大于10，说明是归一化分数（0-100），需要转换
+    const finalScore = score > 10 ? score / 10 : score
+    if (finalScore >= 7 && finalScore <= 8) return '#22c55e' // 绿色 7-8分
+    if ((finalScore >= 5 && finalScore <= 6) || (finalScore >= 9 && finalScore <= 10)) return '#f59e0b' // 黄色 5-6分 或 9-10分
+    return '#ef4444' // 红色 0-4分
+  }
+
+  const calculateOverallScore = (scores = testScores) => {
     let totalScore = 0
     let totalWeight = 0
 
     indicators.forEach(indicator => {
-      const score = testScores[indicator.id] || 0
+      const score = scores[indicator.id] || indicator.minScore
       const normalizedScore = ((score - indicator.minScore) / (indicator.maxScore - indicator.minScore)) * 100
       totalScore += normalizedScore * indicator.weight
       totalWeight += indicator.weight
     })
 
-    return totalWeight > 0 ? (totalScore / totalWeight).toFixed(2) : 0
+    // 返回 0-10 范围的分数
+    return totalWeight > 0 ? (totalScore / totalWeight).toFixed(2) / 10 : 0
   }
 
-  const handleSubmitTest = (e) => {
-    e.preventDefault()
+  const handleScoreChange = (indicatorId, value) => {
+    // 只允许当天进行测试
+    if (!isTodaySelected()) {
+      return
+    }
+
+    const newScores = { ...testScores, [indicatorId]: parseInt(value) }
+    setTestScores(newScores)
+    // 选中分数后自动保存测试结果
+    const overallScore = calculateOverallScore(newScores)
+    const dateStr = format(selectedDate, 'yyyy-MM-dd')
+
+    // 检查是否已有当天的测试记录
+    const existingIndex = psychologicalTests.findIndex(test => format(new Date(test.date), 'yyyy-MM-dd') === dateStr)
+
+    if (existingIndex !== -1) {
+      // 更新已有记录
+      const updatedTests = [...psychologicalTests]
+      updatedTests[existingIndex] = {
+        ...updatedTests[existingIndex],
+        scores: newScores,
+        overallScore: parseFloat(overallScore)
+      }
+      useStore.setState({ psychologicalTests: updatedTests })
+    } else {
+      // 添加新记录
+      addPsychologicalTest({
+        scores: newScores,
+        overallScore: parseFloat(overallScore),
+        date: selectedDate.toISOString()
+      })
+    }
+  }
+
+  const handleSubmitTest = () => {
     const overallScore = calculateOverallScore()
-    const pass = overallScore >= 70
+    const dateStr = format(selectedDate, 'yyyy-MM-dd')
 
-    addPsychologicalTest({
-      scores: { ...testScores },
-      overallScore: parseFloat(overallScore),
-      pass,
-      date: new Date().toISOString()
+    // 检查是否已有当天的测试记录
+    const existingIndex = psychologicalTests.findIndex(test => format(new Date(test.date), 'yyyy-MM-dd') === dateStr)
+
+    if (existingIndex !== -1) {
+      // 更新已有记录
+      const updatedTests = [...psychologicalTests]
+      updatedTests[existingIndex] = {
+        ...updatedTests[existingIndex],
+        scores: { ...testScores },
+        overallScore: parseFloat(overallScore)
+      }
+      useStore.setState({ psychologicalTests: updatedTests })
+    } else {
+      // 添加新记录
+      addPsychologicalTest({
+        scores: { ...testScores },
+        overallScore: parseFloat(overallScore),
+        date: selectedDate.toISOString()
+      })
+    }
+  }
+
+  const handleSaveAllIndicators = (newIndicators) => {
+    newIndicators.forEach((newIndicator, index) => {
+      updatePsychologicalIndicator(indicators[index].id, newIndicator)
     })
+    setShowEditModal(false)
+  }
 
-    alert(`心理测试${pass ? '通过' : '未通过'}！\n总分：${overallScore}\n及格线：70分`)
-    setShowTestModal(false)
-    setTestScores({})
+  // 生成日历
+  const generateCalendar = () => {
+    const today = new Date()
+    const year = selectedDate.getFullYear()
+    const month = selectedDate.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    const startDay = firstDay.getDay()
+    const daysInMonth = lastDay.getDate()
+
+    const days = []
+    // 填充空白
+    for (let i = 0; i < startDay; i++) {
+      days.push({ day: null, date: null })
+    }
+    // 填充日期
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day)
+      days.push({ day, date })
+    }
+    return days
+  }
+
+  const calendarDays = generateCalendar()
+
+  const changeMonth = (delta) => {
+    const newDate = new Date(selectedDate)
+    newDate.setMonth(newDate.getMonth() + delta)
+    setSelectedDate(newDate)
+  }
+
+  const selectedTestResult = getTestResultForDate(selectedDate)
+  const overallScore = parseFloat(calculateOverallScore())
+  const scoreColor = getScoreColor(overallScore)
+
+  // 根据分数获取交易状态信息
+  const getTradeStatus = (score) => {
+    const finalScore = score > 10 ? score / 10 : score
+    if (finalScore >= 7 && finalScore <= 8) {
+      return { color: '#22c55e', text: '可以交易' }
+    }
+    if ((finalScore >= 5 && finalScore <= 6) || (finalScore >= 9 && finalScore <= 10)) {
+      return { color: '#f59e0b', text: '谨慎交易' }
+    }
+    return { color: '#ef4444', text: '禁止交易' }
+  }
+
+  const tradeStatus = getTradeStatus(overallScore)
+
+  // 判断选中的日期是否为今天
+  const isTodaySelected = () => {
+    const today = new Date()
+    const selectedStr = format(selectedDate, 'yyyy-MM-dd')
+    const todayStr = format(today, 'yyyy-MM-dd')
+    return selectedStr === todayStr
   }
 
   return (
-    <div className="space-y-4 md:space-y-6 pt-20 px-4 md:px-6 lg:pl-64">
-      {/* 头部 */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-      >
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">心理测试</h1>
-          <p className="text-sm md:text-base text-gray-600">评估当前心理状态，确保交易决策时的情绪稳定</p>
-        </div>
-        <div className="flex gap-3 w-full sm:w-auto">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setShowTestModal(true)}
-            className="flex-1 sm:flex-none px-4 md:px-6 py-3 bg-green-500 rounded-lg text-gray-900 font-medium hover:bg-green-600 transition-all duration-300 inline-flex items-center justify-center"
-          >
-            <CheckCircle className="w-5 h-5 mr-2" />
-            开始测试
-          </motion.button>
-        </div>
-      </motion.div>
-
-      {/* 测试指标管理 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-        <ScrollAnimation delay={0.1}>
-          {/* 指标列表 */}
-          <motion.div className="glass rounded-xl border border-gray-200 overflow-hidden hover:border-primary-200 transition-all duration-300">
-        {/* 指标列表 */}
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900 flex items-center">
-                <motion.div
-                  animate={{ rotate: [0, 5, -5, 0] }}
-                  transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-                >
-                  <AlertCircle className="w-5 h-5 mr-2 text-primary-500" />
-                </motion.div>
-                测试指标
-              </h2>
-              <p className="text-sm text-gray-600 mt-1">灵活设置心理测试指标和评分标准</p>
+    <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
+        {/* 主内容区域 - 左8右2 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '8fr 2fr', gap: '10px', marginTop: '10px', flex: 1, minHeight: 0, paddingBottom: '10px' }}>
+          {/* 左侧卡片 - 测试问卷 */}
+        <div style={{
+          background: '#ffffff',
+          border: '2px solid #e5e7eb',
+          borderRadius: '8px',
+          padding: '20px',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative',
+          overflow: 'hidden',
+          height: 'calc(100vh - 52px - 20px)'
+        }}>
+            {/* 分数显示 - 使用SVG印章图标，居中显示，仅在有测试数据时显示 */}
+            {Object.keys(testScores).length > 0 && (
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '160px',
+              height: '160px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10
+            }}>
+              <svg viewBox="0 0 1024 1024" width="160" height="160" style={{ position: 'absolute', top: 0, left: 0 }}>
+                <path
+                  d="M52.288 604.032c20.192 12.032 27.04 37.568 15.552 58.112A106.272 106.272 0 0 0 68.576 768a106.304 106.304 0 0 0 91.328 53.568 42.88 42.88 0 0 1 42.528 42.56 107.712 107.712 0 0 0 107.232 105.76c18.08 0 36.16-4.768 52.16-13.76a43.808 43.808 0 0 1 58.144 15.584C439.488 1004.48 473.888 1024 512 1024s72.512-19.52 92.032-52.288a43.968 43.968 0 0 1 58.112-15.552c16.064 8.96 34.112 13.728 52.16 13.728a107.744 107.744 0 0 0 107.264-105.792 42.88 42.88 0 0 1 42.56-42.528A106.304 106.304 0 0 0 955.392 768a106.272 106.272 0 0 0 0.736-105.856 42.944 42.944 0 0 1 15.552-58.112C1004.48 584.512 1024 550.112 1024 512s-19.52-72.512-52.288-92.032a42.944 42.944 0 0 1-15.552-58.112A106.272 106.272 0 0 0 955.424 256a106.304 106.304 0 0 0-91.328-53.568 42.88 42.88 0 0 1-42.528-42.56 107.712 107.712 0 0 0-107.232-105.76c-18.08 0-36.128 4.768-52.16 13.76a43.84 43.84 0 0 1-58.144-15.584C584.512 19.52 550.112 0 512 0s-72.512 19.52-92.032 52.288a43.84 43.84 0 0 1-58.112 15.552 107.328 107.328 0 0 0-52.16-13.728 107.744 107.744 0 0 0-107.264 105.792 42.88 42.88 0 0 1-42.56 42.528A106.304 106.304 0 0 0 68.608 256a106.272 106.272 0 0 0-0.736 105.856c11.488 20.544 4.64 46.08-15.552 58.112C19.52 439.488 0 473.888 0 512s19.52 72.512 52.288 92.032z m32.768-129.088a106.624 106.624 0 0 0 38.656-144.32A42.24 42.24 0 0 1 124.032 288a42.24 42.24 0 0 1 36.736-21.568 106.56 106.56 0 0 0 105.664-105.632c0.352-26.368 22.72-42.688 43.232-42.688 7.264 0 14.336 1.92 20.96 5.6a107.36 107.36 0 0 0 52.192 13.632 107.744 107.744 0 0 0 92.128-52.288c15.968-26.784 58.144-26.784 74.112 0a107.744 107.744 0 0 0 92.128 52.288c18.176 0 36.224-4.704 52.192-13.632 6.656-3.712 13.696-5.6 20.96-5.6 20.48 0 42.88 16.32 43.232 42.656a106.56 106.56 0 0 0 105.632 105.664 42.24 42.24 42.24 0 0 1 36.8 21.568c7.776 13.504 7.872 29.024 0.288 42.624a106.624 106.624 0 0 0 38.656 144.32c13.376 8 21.056 21.472 21.056 37.056s-7.68 29.088-21.056 37.056a106.624 106.624 0 0 0-38.656 144.32c7.584 13.6 7.488 29.12-0.32 42.624a42.24 42.24 0 0 1-36.736 21.568 106.56 106.56 0 0 0-105.664 105.632c-0.352 26.368-22.72 42.688-43.232 42.688-7.264 0-14.336-1.92-20.96-5.6a107.36 107.36 0 0 0-52.192-13.632 107.744 107.744 0 0 0-92.128 52.288c-15.968 26.784-58.144 26.784-74.112 0a107.744 107.744 0 0 0-92.128-52.288c-18.176 0-36.224 4.704-52.192 13.632a42.56 42.56 0 0 1-20.96 5.6c-20.48 0-42.88-16.32-43.232-42.656a106.56 106.56 0 0 0-105.632-105.664A42.24 42.24 0 0 1 124 736a42.24 42.24 0 0 1-0.288-42.624 106.624 106.624 0 0 0-38.656-144.32C71.68 541.056 64 527.584 64 512s7.68-29.088 21.056-37.056z"
+                  fill={tradeStatus.color}
+                  opacity="0.3"
+                />
+              </svg>
+              <div style={{
+                fontSize: '56px',
+                fontWeight: 'bold',
+                color: tradeStatus.color,
+                lineHeight: '1',
+                marginBottom: '4px',
+                zIndex: 2,
+                textShadow: '0 2px 8px rgba(255,255,255,0.8)'
+              }}>
+                {overallScore > 10 ? (overallScore / 10).toFixed(1) : overallScore}
+              </div>
+              <div style={{
+                fontSize: '18px',
+                color: tradeStatus.color,
+                fontWeight: 'bold',
+                letterSpacing: '3px',
+                zIndex: 2,
+                textShadow: '0 2px 8px rgba(255,255,255,0.8)'
+              }}>
+                {tradeStatus.text}
+              </div>
             </div>
-          <div className="p-6 space-y-4">
-            {indicators.map((indicator, index) => (
-              <motion.div
-                key={indicator.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: index * 0.05 }}
-                className="p-4 bg-white rounded-lg border border-gray-200 hover:border-primary-300 transition-all"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900 mb-1">{indicator.name}</h3>
-                    <p className="text-sm text-gray-600 mb-2">{indicator.description}</p>
-                    <div className="flex items-center gap-4 text-xs text-gray-500">
-                      <span>范围: {indicator.minScore}-{indicator.maxScore}</span>
-                      <span className="px-2 py-1 bg-primary-50 text-primary-500 rounded">
-                        权重: {(indicator.weight * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => handleEditIndicator(indicator)}
-                      className="p-2 text-primary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </motion.button>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-          </motion.div>
-        </ScrollAnimation>
-
-        <ScrollAnimation delay={0.2}>
-
-          {/* 历史记录 */}
-          <motion.div className="glass rounded-xl border border-gray-200 overflow-hidden hover:border-primary-200 transition-all duration-300">
-          <div className="p-4 md:p-6 border-b border-gray-200">
-            <h2 className="text-lg md:text-xl font-bold text-gray-900">测试记录</h2>
-          </div>
-          <div className="p-4 md:p-6 space-y-4 max-h-96 overflow-y-auto">
-            {psychologicalTests.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">暂无测试记录</p>
-            ) : (
-              psychologicalTests.slice().reverse().map((test, index) => (
-                <motion.div
-                  key={test.id}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
-                  className={`p-4 rounded-lg border ${
-                    test.pass ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">
-                      {new Date(test.date).toLocaleString('zh-CN')}
-                    </span>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      test.pass ? 'bg-green-500/20 text-green-600' : 'bg-red-500/20 text-red-600'
-                    }`}>
-                      {test.pass ? '通过' : '未通过'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-2xl font-bold text-gray-900">{test.overallScore}</span>
-                    <div className="w-32 h-2 bg-gray-50 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full transition-all ${
-                          test.pass ? 'bg-green-500' : 'bg-red-500'
-                        }`}
-                        style={{ width: `${Math.min(test.overallScore, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                </motion.div>
-              ))
             )}
+
+            {/* 试卷内容 */}
+            <div style={{ flex: 1, overflow: 'auto', marginTop: '10px', minHeight: 0, paddingBottom: '0px' }}>
+              <div>
+                {indicators.map((indicator, index) => {
+                  const score = testScores[indicator.id]
+
+                  return (
+                    <div key={indicator.id} style={{ marginBottom: index < indicators.length - 1 ? '20px' : '0px', paddingBottom: '15px', borderBottom: index < indicators.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
+                      {/* 题目 */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        marginBottom: '10px'
+                      }}>
+                        <span style={{
+                          width: '28px',
+                          height: '28px',
+                          background: '#f3f4f6',
+                          borderRadius: '50%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          marginRight: '12px',
+                          flexShrink: 0
+                        }}>
+                          {index + 1}
+                        </span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#000', marginBottom: '6px' }}>
+                            {indicator.name}
+                          </div>
+                          <div style={{ fontSize: '13px', color: '#666', lineHeight: '1.5' }}>
+                            {indicator.description}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 评分选择器 */}
+                      <div style={{
+                        marginLeft: '40px',
+                        padding: '8px 12px',
+                        background: isTodaySelected() ? '#f9fafb' : '#f3f4f6',
+                        borderLeft: `3px solid ${isTodaySelected() ? '#0F1419' : '#d1d5db'}`,
+                        borderRadius: '0 6px 6px 0',
+                        opacity: isTodaySelected() ? 1 : 0.5
+                      }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'flex-start' }}>
+                          {[indicator.minScore, indicator.minScore + 1, indicator.maxScore].map(value => (
+                            <button
+                              key={value}
+                              onClick={() => handleScoreChange(indicator.id, value)}
+                              disabled={!isTodaySelected()}
+                              style={{
+                                padding: '6px 16px',
+                                background: score === value ? '#0F1419' : '#ffffff',
+                                border: score === value ? '2px solid #0F1419' : '2px solid #e5e7eb',
+                                borderRadius: '6px',
+                                fontSize: '16px',
+                                fontWeight: 'bold',
+                                color: score === value ? '#ffffff' : '#000',
+                                cursor: isTodaySelected() ? 'pointer' : 'not-allowed',
+                                transition: 'all 0.2s',
+                                minWidth: '60px',
+                                height: '36px',
+                                opacity: isTodaySelected() ? 1 : 0.6
+                              }}
+                            >
+                              {value}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </div>
-          </motion.div>
-        </ScrollAnimation>
-      </div>
 
-      {/* 编辑指标弹窗 */}
-      {showIndicatorModal && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => { setShowIndicatorModal(false); setEditingIndicator(null) }}
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="glass rounded-2xl border border-gray-300 w-full max-w-md p-4 md:p-6 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-4 md:mb-6">编辑测试指标</h3>
-            <form onSubmit={handleUpdateIndicator} className="space-y-4">
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">指标名称</label>
-                <input
-                  type="text"
-                  required
-                  value={indicatorForm.name}
-                  onChange={(e) => setIndicatorForm({ ...indicatorForm, name: e.target.value })}
-                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-primary-500 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">描述</label>
-                <textarea
-                  value={indicatorForm.description}
-                  onChange={(e) => setIndicatorForm({ ...indicatorForm, description: e.target.value })}
-                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-primary-500 transition-colors resize-none"
-                  rows={2}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-600 mb-2">最小分数</label>
-                  <input
-                    type="number"
-                    required
-                    value={indicatorForm.minScore}
-                    onChange={(e) => setIndicatorForm({ ...indicatorForm, minScore: parseInt(e.target.value) })}
-                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-primary-500 transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-2">最大分数</label>
-                  <input
-                    type="number"
-                    required
-                    value={indicatorForm.maxScore}
-                    onChange={(e) => setIndicatorForm({ ...indicatorForm, maxScore: parseInt(e.target.value) })}
-                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-primary-500 transition-colors"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">权重 (0-1)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="1"
-                  required
-                  value={indicatorForm.weight}
-                  onChange={(e) => setIndicatorForm({ ...indicatorForm, weight: parseFloat(e.target.value) })}
-                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-primary-500 transition-colors"
-                />
-                <p className="text-xs text-gray-500 mt-1">当前总权重: {(indicators.reduce((sum, i) => sum + i.weight, 0) - (editingIndicator?.weight || 0) + indicatorForm.weight * 100).toFixed(1)}%</p>
-              </div>
-              <div className="flex gap-3 pt-4">
+          {/* 右侧区域 - 日历和指标 */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            height: 'calc(100vh - 52px - 20px)'
+          }}>
+            {/* 日历卡片 */}
+            <div style={{
+              background: '#ffffff',
+              border: '2px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '15px',
+              flex: '0 0 auto',
+              width: '280px'
+            }}>
+              {/* 日历标题 */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+                paddingBottom: '10px',
+                borderBottom: '1px solid #e5e7eb',
+                height: '40px',
+                position: 'relative'
+              }}>
                 <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => { setShowIndicatorModal(false); setEditingIndicator(null) }}
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-white transition-colors"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => changeMonth(-1)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
                 >
-                  取消
+                  <ChevronLeft style={{ width: '20px', height: '20px', color: '#666' }} />
                 </motion.button>
+                <div style={{
+                  position: 'absolute',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  color: '#000',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {selectedDate.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' })}
+                </div>
                 <motion.button
-                  type="submit"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="flex-1 px-4 py-3 bg-primary-500 rounded-lg text-gray-900 font-medium hover:bg-primary-600 transition-all"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => changeMonth(1)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
                 >
-                  保存
+                  <ChevronRight style={{ width: '20px', height: '20px', color: '#666' }} />
                 </motion.button>
               </div>
-            </form>
-          </motion.div>
-        </motion.div>
-      )}
 
-      {/* 开始测试弹窗 */}
-      {showTestModal && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowTestModal(false)}
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="glass rounded-2xl border border-gray-300 w-full max-w-2xl p-4 md:p-6 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-4 md:mb-6">心理测试</h3>
-            <form onSubmit={handleSubmitTest} className="space-y-4 md:space-y-6">
-              {indicators.map((indicator) => (
-                <div key={indicator.id} className="p-4 bg-white rounded-lg border border-gray-200">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-gray-900 mb-1">{indicator.name}</h4>
-                      <p className="text-sm text-gray-600">{indicator.description}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        评分范围: {indicator.minScore}-{indicator.maxScore} | 权重: {(indicator.weight * 100).toFixed(0)}%
-                      </p>
-                    </div>
+              {/* 星期标题 */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(7, 1fr)',
+                gap: '5px',
+                marginBottom: '8px'
+              }}>
+                {['日', '一', '二', '三', '四', '五', '六'].map(day => (
+                  <div key={day} style={{
+                    textAlign: 'center',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    color: '#666',
+                    padding: '6px 0'
+                  }}>
+                    {day}
                   </div>
-                  <div className="space-y-3">
-                    <input
-                      type="range"
-                      min={indicator.minScore}
-                      max={indicator.maxScore}
-                      value={testScores[indicator.id] || indicator.minScore}
-                      onChange={(e) => setTestScores({ ...testScores, [indicator.id]: parseInt(e.target.value) })}
-                      className="w-full h-2 bg-gray-50 rounded-lg appearance-none cursor-pointer accent-primary-500"
-                    />
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-500">{indicator.minScore}</span>
-                      <span className="text-2xl font-bold text-primary-500">
-                        {testScores[indicator.id] || indicator.minScore}
+                ))}
+              </div>
+
+              {/* 日期格子 */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(7, 32px)',
+                gap: '5px'
+              }}>
+                {calendarDays.map((item, index) => {
+                  const testResult = item.date ? getTestResultForDate(item.date) : null
+                  const isSelected = item.date && format(item.date, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd')
+                  const isToday = item.date && format(item.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+
+                  return (
+                    <div
+                      key={index}
+                      onClick={() => item.date && handleDateClick(item.date)}
+                      style={{
+                        width: '32px',
+                        height: '40px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'flex-start',
+                        paddingTop: '4px',
+                        cursor: item.date ? 'pointer' : 'default',
+                        background: isSelected ? '#0F1419' : isToday ? '#f3f4f6' : '#ffffff',
+                        borderRadius: '6px',
+                        border: isSelected ? '2px solid #0F1419' : isToday ? '2px solid #0F1419' : '1px solid #e5e7eb',
+                        position: 'relative',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {item.day && (
+                        <>
+                          <span style={{
+                            fontSize: '13px',
+                            fontWeight: isSelected ? 'bold' : 'normal',
+                            color: isSelected ? '#ffffff' : isToday ? '#0F1419' : '#000'
+                          }}>
+                            {item.day}
+                          </span>
+                          {testResult && (
+                            <div style={{
+                              width: '5px',
+                              height: '5px',
+                              borderRadius: '50%',
+                              background: getDotColor(testResult.overallScore),
+                              marginTop: '2px'
+                            }} />
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* 测试指标卡片 */}
+            <div style={{
+              background: '#ffffff',
+              border: '2px solid #e5e7eb',
+              borderRadius: '8px',
+              paddingTop: '14px',
+              paddingRight: '20px',
+              paddingBottom: '20px',
+              paddingLeft: '20px',
+              display: 'flex',
+              flexDirection: 'column',
+              position: 'relative',
+              overflow: 'hidden',
+              flex: 1,
+              minHeight: 0
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '4px',
+                paddingBottom: '0px'
+              }}>
+                <h3 style={{
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  color: '#000',
+                  margin: 0
+                }}>
+                  指标设置
+                </h3>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setShowEditModal(true)}
+                  style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <EditIcon style={{ width: '16px', height: '16px', color: '#666' }} />
+                </motion.button>
+              </div>
+
+              <div style={{ flex: 1, overflow: 'auto', marginTop: '4px', minHeight: 0, paddingBottom: '0px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {indicators.map((indicator, index) => (
+                    <div
+                      key={indicator.id}
+                      style={{
+                        padding: '8px',
+                        background: '#f9fafb',
+                        borderRadius: '6px',
+                        border: '1px solid #e5e7eb'
+                      }}
+                    >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <span style={{
+                        width: '18px',
+                        height: '18px',
+                        background: '#e5e7eb',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '10px',
+                        fontWeight: 'bold',
+                        flexShrink: 0
+                      }}>
+                        {index + 1}
                       </span>
-                      <span className="text-sm text-gray-500">{indicator.maxScore}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#000', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {indicator.name}
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#666', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                          {indicator.description}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-
-              {/* 总分显示 */}
-              <div className="p-6 bg-gray-100 rounded-lg border border-gray-200">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">综合评分</p>
-                    <p className="text-4xl font-bold text-gray-900">{calculateOverallScore()}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className={`text-lg font-bold ${calculateOverallScore() >= 70 ? 'text-green-600' : 'text-red-600'}`}>
-                      {calculateOverallScore() >= 70 ? '通过' : '未通过'}
-                    </p>
-                    <p className="text-sm text-gray-600">及格线: 70分</p>
-                  </div>
+                ))}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
 
-              <div className="flex gap-3 pt-4">
-                <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => setShowTestModal(false)}
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-white transition-colors"
-                >
-                  取消
-                </motion.button>
-                <motion.button
-                  type="submit"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="flex-1 px-4 py-3 bg-green-500 rounded-lg text-gray-900 font-medium hover:bg-green-600 transition-all"
-                >
-                  提交测试
-                </motion.button>
+        {/* 编辑指标弹窗 */}
+        <Modal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title="编辑指标库"
+        width="max-w-3xl"
+        footer={
+          <>
+            <button
+              onClick={() => setShowEditModal(false)}
+              className="px-4 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={() => {
+                const newIndicators = indicators.map(indicator => ({
+                  ...indicator,
+                  name: document.getElementById(`indicator-name-${indicator.id}`).value,
+                  description: document.getElementById(`indicator-desc-${indicator.id}`).value
+                }))
+                handleSaveAllIndicators(newIndicators)
+              }}
+              className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: '#0F1419' }}
+            >
+              确定
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '60vh', overflow: 'auto' }}>
+          {indicators.map((indicator, index) => (
+            <div
+              key={indicator.id}
+              style={{
+                padding: '12px',
+                background: '#f9fafb',
+                borderRadius: '6px',
+                border: '1px solid #e5e7eb'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                <span style={{
+                  width: '26px',
+                  height: '26px',
+                  background: '#e5e7eb',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  flexShrink: 0
+                }}>
+                  {index + 1}
+                </span>
+                <div style={{ flex: 1 }}>
+                  <input
+                    type="text"
+                    defaultValue={indicator.name}
+                    id={`indicator-name-${indicator.id}`}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 transition-colors text-sm font-medium mb-2"
+                  />
+                  <textarea
+                    defaultValue={indicator.description}
+                    id={`indicator-desc-${indicator.id}`}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 transition-colors text-sm resize-none"
+                    rows={2}
+                  />
+                </div>
               </div>
-            </form>
-          </motion.div>
-        </motion.div>
-      )}
+            </div>
+          ))}
+        </div>
+      </Modal>
+      </div>
     </div>
   )
 }

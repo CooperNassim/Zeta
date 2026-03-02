@@ -86,6 +86,38 @@ export const initialRiskModels = [
   }
 ]
 
+// 技术指标模板
+export const initialTechnicalIndicators = [
+  {
+    id: '1',
+    name: 'MACD',
+    description: '指数平滑异同移动平均线，用于判断趋势和买卖点',
+    icon: 'https://via.placeholder.com/200x200/0F1419/FFFFFF?text=MACD',
+    tags: ['趋势', '动量']
+  },
+  {
+    id: '2',
+    name: 'RSI',
+    description: '相对强弱指数，用于判断超买超卖状态',
+    icon: 'https://via.placeholder.com/200x200/0F1419/FFFFFF?text=RSI',
+    tags: ['动量', '震荡']
+  },
+  {
+    id: '3',
+    name: 'KDJ',
+    description: '随机指标，用于判断短期买卖点',
+    icon: 'https://via.placeholder.com/200x200/0F1419/FFFFFF?text=KDJ',
+    tags: ['震荡', '短期']
+  },
+  {
+    id: '4',
+    name: 'BOLL',
+    description: '布林带，用于判断价格波动范围和突破',
+    icon: 'https://via.placeholder.com/200x200/0F1419/FFFFFF?text=BOLL',
+    tags: ['趋势', '波动']
+  }
+]
+
 const useStore = create(
   persist(
     (set, get) => ({
@@ -110,6 +142,12 @@ const useStore = create(
 
       // 风险模型
       riskModels: [...initialRiskModels],
+
+      // 技术指标
+      technicalIndicators: [...initialTechnicalIndicators],
+
+      // 交易策略记录（扁平化存储，用于表格展示）
+      strategyRecords: [],
 
       // 预约单
       orders: [],
@@ -192,6 +230,111 @@ const useStore = create(
       deleteRiskModel: (id) => set((state) => ({
         riskModels: state.riskModels.filter(m => m.id !== id)
       })),
+
+      // 添加技术指标
+      addTechnicalIndicator: (indicator) => set((state) => ({
+        technicalIndicators: [...state.technicalIndicators, { ...indicator, id: Date.now() }]
+      })),
+
+      // 更新技术指标
+      updateTechnicalIndicator: (id, indicator) => set((state) => ({
+        technicalIndicators: state.technicalIndicators.map(i =>
+          i.id === id ? indicator : i
+        )
+      })),
+
+      // 删除技术指标
+      deleteTechnicalIndicator: (id) => set((state) => ({
+        technicalIndicators: state.technicalIndicators.filter(i => i.id !== id)
+      })),
+
+      // 添加交易策略记录
+      addStrategyRecord: (record) => set((state) => {
+        const now = new Date().toISOString()
+        const nowDate = new Date()
+
+        // 获取当前日期字符串 YYYYMMDD
+        const dateStr = nowDate.getFullYear() +
+          String(nowDate.getMonth() + 1).padStart(2, '0') +
+          String(nowDate.getDate()).padStart(2, '0')
+
+        // 计算当前数据库总数量作为序号
+        const totalCount = state.strategyRecords.length
+        const nextSequence = totalCount + 1
+
+        // 格式化编号为 YYYYMMDD001
+        const formattedId = dateStr + nextSequence.toString().padStart(3, '0')
+
+        return {
+          strategyRecords: [
+            ...state.strategyRecords,
+            {
+              ...record,
+              id: formattedId,
+              createdAt: now,
+              updatedAt: now
+            }
+          ]
+        }
+      }),
+
+      // 删除交易策略记录
+      deleteStrategyRecord: (id) => set((state) => ({
+        strategyRecords: state.strategyRecords.filter(r => r.id !== id)
+      })),
+
+      // 批量删除交易策略记录
+      deleteMultipleStrategyRecords: (ids) => set((state) => ({
+        strategyRecords: state.strategyRecords.filter(r => !ids.includes(r.id))
+      })),
+
+      // 更新交易策略记录
+      updateStrategyRecord: (id, record) => set((state) => ({
+        strategyRecords: state.strategyRecords.map(r =>
+          r.id === id ? { ...record, updatedAt: new Date().toISOString() } : r
+        )
+      })),
+
+      // 导入交易策略记录
+      importStrategyRecords: (dataList) => set((state) => {
+        const now = new Date().toISOString()
+        const nowDate = new Date()
+
+        // 获取当前日期字符串 YYYYMMDD
+        const dateStr = nowDate.getFullYear() +
+          String(nowDate.getMonth() + 1).padStart(2, '0') +
+          String(nowDate.getDate()).padStart(2, '0')
+
+        // 计算当前数据库总数量
+        const totalCount = state.strategyRecords.length
+
+        // 记录所有已存在的编号
+        const existingIds = new Set(state.strategyRecords.map(r => r.id))
+
+        // 为每条记录生成或保留编号
+        const finalRecords = dataList.map((d, index) => {
+          // 如果有编号且格式正确，且不冲突，则保留
+          if (d.id && /^\d{11}$/.test(d.id) && !existingIds.has(d.id)) {
+            return d
+          }
+
+          // 否则生成新编号（按总数量递增）
+          const nextSequence = totalCount + index + 1
+          const formattedId = dateStr + nextSequence.toString().padStart(3, '0')
+          existingIds.add(formattedId)
+          return { ...d, id: formattedId }
+        })
+
+        return {
+          strategyRecords: [
+            ...finalRecords.map(d => ({
+              ...d,
+              createdAt: d.createdAt || now,
+              updatedAt: now
+            }))
+          ]
+        }
+      }),
 
       // 添加预约单
       addOrder: (order) => set((state) => ({
@@ -288,7 +431,9 @@ const useStore = create(
         tradeRecords: [],
         psychologicalIndicators: [...initialPsychologicalIndicators],
         strategies: { ...initialStrategies },
-        riskModels: [...initialRiskModels]
+        riskModels: [...initialRiskModels],
+        technicalIndicators: [...initialTechnicalIndicators],
+        strategyRecords: []
       })
     }),
     {

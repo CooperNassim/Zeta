@@ -1,478 +1,987 @@
-import React, { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Plus, Trash2, TrendingUp, TrendingDown, Edit2, Target } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
 import useStore from '../store/useStore'
-import ScrollAnimation from '../components/ScrollAnimation'
+import { format } from 'date-fns'
+import ExcelJS from 'exceljs'
+import { useToast } from '../contexts/ToastContext'
+import DateRangePicker from '../components/DateRangePicker'
+import FilterSelect from '../components/FilterSelect'
+import Pagination from '../components/Pagination'
+import EmptyState from '../components/EmptyState'
+import DataTable from '../components/DataTable'
+import Toolbar from '../components/Toolbar'
+import DataForm from '../components/DataForm'
+import ImportModal from '../components/ImportModal'
+import ExportModal from '../components/ExportModal'
+import ConfirmModal from '../components/ConfirmModal'
+import FormModal from '../components/FormModal'
+
+// 字段定义
+const FIELDS = [
+  { key: 'id', label: '编号', type: 'text', readonly: true, notRequired: true },
+  {
+    key: 'direction',
+    label: '策略方向',
+    type: 'select',
+    options: [
+      { value: '买入', label: '买入' },
+      { value: '卖出', label: '卖出' }
+    ]
+  },
+  {
+    key: 'strategyType',
+    label: '策略类型',
+    type: 'select',
+    options: [
+      { value: '趋势', label: '趋势' },
+      { value: '震荡', label: '震荡' },
+      { value: '突破', label: '突破' },
+      { value: '回调', label: '回调' }
+    ]
+  },
+  { key: 'name', label: '名称', type: 'text' },
+  { key: 'description', label: '描述', type: 'textarea' },
+  {
+    key: 'status',
+    label: '状态',
+    type: 'select',
+    options: [
+      { value: '启用', label: '启用' },
+      { value: '禁用', label: '禁用' }
+    ]
+  },
+  { key: 'creator', label: '创建人', type: 'text' },
+  { key: 'updatedAt', label: '更新时间', type: 'text', readonly: true, notRequired: true },
+  { key: 'createdAt', label: '创建时间', type: 'text', readonly: true, notRequired: true }
+]
+
+// 技术指标字段配置
+const INDICATOR_FIELD_NAMES = [
+  { key: 'indicator1', label: '指标1', name: '指标名称' },
+  { key: 'indicator2', label: '指标2', name: '指标名称' },
+  { key: 'indicator3', label: '指标3', name: '指标名称' },
+  { key: 'indicator4', label: '指标4', name: '指标名称' },
+  { key: 'indicator5', label: '指标5', name: '指标名称' }
+]
 
 const TradingStrategy = () => {
-  const [activeTab, setActiveTab] = useState('buy')
+  const { showToast } = useToast()
   const [showModal, setShowModal] = useState(false)
-  const [showConditionModal, setShowConditionModal] = useState(false)
-  const [editingStrategy, setEditingStrategy] = useState(null)
-  const [editingCondition, setEditingCondition] = useState(null)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [formData, setFormData] = useState({})
+  const [formErrors, setFormErrors] = useState({})
+  const [selectedIds, setSelectedIds] = useState([])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [importResult, setImportResult] = useState(null)
+  const [errorWorkbook, setErrorWorkbook] = useState(null)
+  const [exportFormat, setExportFormat] = useState('xlsx')
+  const [importFile, setImportFile] = useState(null)
+  const [importFileError, setImportFileError] = useState(false)
+  const [filterDateRange, setFilterDateRange] = useState('')
+  const [filterDirection, setFilterDirection] = useState('全部')
+  const pageSize = 20
 
-  const strategies = useStore(state => state.strategies)
-  const addStrategy = useStore(state => state.addStrategy)
-  const deleteStrategy = useStore(state => state.deleteStrategy)
+  const strategyRecords = useStore(state => state.strategyRecords)
+  const addStrategyRecord = useStore(state => state.addStrategyRecord)
+  const deleteStrategyRecord = useStore(state => state.deleteStrategyRecord)
+  const deleteMultipleStrategyRecords = useStore(state => state.deleteMultipleStrategyRecords)
+  const importStrategyRecords = useStore(state => state.importStrategyRecords)
+  const updateStrategyRecord = useStore(state => state.updateStrategyRecord)
 
-  const [strategyForm, setStrategyForm] = useState({
-    name: '',
-    description: '',
-    conditions: [],
-    passScore: 70
-  })
-
-  const [conditionForm, setConditionForm] = useState({
-    name: '',
-    weight: 0.5,
-    threshold: 70,
-    description: ''
-  })
-
-  const handleAddStrategy = () => {
-    setEditingStrategy(null)
-    setStrategyForm({
-      name: '',
-      description: '',
-      conditions: [],
-      passScore: 70
+  useEffect(() => {
+    const initialData = {}
+    FIELDS.forEach(field => {
+      initialData[field.key] = ''
     })
-    setShowModal(true)
-  }
-
-  const handleEditStrategy = (strategy) => {
-    setEditingStrategy(strategy)
-    setStrategyForm({
-      name: strategy.name,
-      description: strategy.description,
-      conditions: [...strategy.conditions],
-      passScore: strategy.passScore
+    // 初始化技术指标字段
+    INDICATOR_FIELD_NAMES.forEach(field => {
+      initialData[field.key + 'Name'] = ''
+      initialData[field.key + 'Desc'] = ''
+      initialData[field.key + 'MinScore'] = ''
+      initialData[field.key + 'MaxScore'] = ''
+      initialData[field.key + 'Weight'] = ''
     })
-    setShowModal(true)
-  }
+    setFormData(initialData)
+  }, [])
 
-  const handleAddCondition = () => {
-    setEditingCondition(null)
-    setConditionForm({
-      name: '',
-      weight: 0.5,
-      threshold: 70,
-      description: ''
+  const handleSubmit = (e) => {
+    e.preventDefault()
+
+    const errors = {}
+    FIELDS.forEach(field => {
+      // 跳过只读字段、notRequired字段和创建人字段
+      if (field.readonly || field.notRequired || field.key === 'creator') {
+        return
+      }
+      if (!formData[field.key] || formData[field.key].trim() === '') {
+        errors[field.key] = true
+      }
     })
-    setShowConditionModal(true)
-  }
 
-  const handleEditCondition = (condition) => {
-    setEditingCondition(condition)
-    setConditionForm({
-      name: condition.name,
-      weight: condition.weight,
-      threshold: condition.threshold,
-      description: condition.description
+    // 验证技术指标字段
+    INDICATOR_FIELD_NAMES.forEach(field => {
+      const nameKey = field.key + 'Name'
+      const descKey = field.key + 'Desc'
+      const minScoreKey = field.key + 'MinScore'
+      const maxScoreKey = field.key + 'MaxScore'
+      const weightKey = field.key + 'Weight'
+
+      // 验证指标名称
+      if (!formData[nameKey] || formData[nameKey].trim() === '') {
+        errors[nameKey] = true
+      }
+      // 验证评估标准
+      if (!formData[descKey] || formData[descKey].trim() === '') {
+        errors[descKey] = true
+      }
+      // 验证最小分值
+      const minScore = parseInt(formData[minScoreKey])
+      if (isNaN(minScore)) {
+        errors[minScoreKey] = true
+      }
+      // 验证最大分值
+      const maxScore = parseInt(formData[maxScoreKey])
+      if (isNaN(maxScore)) {
+        errors[maxScoreKey] = true
+      }
+      // 验证权重
+      const weight = parseFloat(formData[weightKey])
+      if (isNaN(weight) || weight <= 0) {
+        errors[weightKey] = true
+      }
+      // 验证最大分值必须大于最小分值
+      if (!isNaN(minScore) && !isNaN(maxScore) && minScore >= maxScore) {
+        errors[maxScoreKey] = true
+      }
     })
-    setShowConditionModal(true)
-  }
 
-  const handleSaveCondition = () => {
-    const totalWeight = strategyForm.conditions.reduce((sum, c) => sum + c.weight, 0) -
-      (editingCondition?.weight || 0) + parseFloat(conditionForm.weight)
-
-    if (totalWeight > 1) {
-      alert(`条件权重总和不能超过100%，当前为${(totalWeight * 100).toFixed(1)}%`)
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
       return
     }
 
-    if (editingCondition) {
-      setStrategyForm({
-        ...strategyForm,
-        conditions: strategyForm.conditions.map(c =>
-          c.id === editingCondition.id
-            ? { ...conditionForm, id: editingCondition.id, weight: parseFloat(conditionForm.weight), threshold: parseInt(conditionForm.threshold) }
-            : c
-        )
-      })
-    } else {
-      setStrategyForm({
-        ...strategyForm,
-        conditions: [
-          ...strategyForm.conditions,
-          { ...conditionForm, id: Date.now(), weight: parseFloat(conditionForm.weight), threshold: parseInt(conditionForm.threshold) }
-        ]
-      })
-    }
-    setShowConditionModal(false)
-    setEditingCondition(null)
-  }
-
-  const handleDeleteCondition = (conditionId) => {
-    setStrategyForm({
-      ...strategyForm,
-      conditions: strategyForm.conditions.filter(c => c.id !== conditionId)
+    // 计算总分
+    let totalScore = 0
+    let totalWeight = 0
+    INDICATOR_FIELDS.forEach(field => {
+      const score = parseInt(formData[field.key])
+      const normalizedScore = ((score - field.minScore) / (field.maxScore - field.minScore)) * 100
+      totalScore += normalizedScore * field.weight
+      totalWeight += field.weight
     })
-  }
+    const overallScore = totalWeight > 0 ? (totalScore / totalWeight).toFixed(2) / 10 : 0
 
-  const handleSaveStrategy = () => {
-    if (editingStrategy) {
-      // 编辑模式需要实现更新逻辑
-      alert('编辑功能暂未实现')
-    } else {
-      addStrategy(activeTab, {
-        ...strategyForm,
-        passScore: parseInt(strategyForm.passScore)
-      })
+    const submitData = {
+      ...formData,
+      // 保存技术指标字段
+      ...INDICATOR_FIELD_NAMES.reduce((acc, field) => {
+        acc[field.key + 'Name'] = formData[field.key + 'Name']
+        acc[field.key + 'Desc'] = formData[field.key + 'Desc']
+        acc[field.key + 'MinScore'] = parseInt(formData[field.key + 'MinScore'])
+        acc[field.key + 'MaxScore'] = parseInt(formData[field.key + 'MaxScore'])
+        acc[field.key + 'Weight'] = parseFloat(formData[field.key + 'Weight'])
+        return acc
+      }, {}),
+      // 自动设置创建人
+      creator: formData.creator || '系统'
     }
-    setShowModal(false)
-    setStrategyForm({ name: '', description: '', conditions: [], passScore: 70 })
+
+    if (isEditMode && editingId) {
+      updateStrategyRecord(editingId, submitData)
+      showToast('更新成功')
+    } else {
+      addStrategyRecord(submitData)
+      showToast('保存成功')
+    }
+
+    handleModalClose()
   }
 
-  const currentStrategies = strategies[activeTab]
+  const handleEdit = () => {
+    if (selectedIds.length !== 1) return
+
+    const editingData = strategyRecords.find(d => d.id === selectedIds[0])
+    if (!editingData) return
+
+    const initialData = {}
+    FIELDS.forEach(field => {
+      initialData[field.key] = editingData[field.key] || ''
+    })
+    // 加载技术指标字段
+    INDICATOR_FIELD_NAMES.forEach(field => {
+      initialData[field.key + 'Name'] = editingData[field.key + 'Name'] || ''
+      initialData[field.key + 'Desc'] = editingData[field.key + 'Desc'] || ''
+      initialData[field.key + 'MinScore'] = editingData[field.key + 'MinScore'] || ''
+      initialData[field.key + 'MaxScore'] = editingData[field.key + 'MaxScore'] || ''
+      initialData[field.key + 'Weight'] = editingData[field.key + 'Weight'] || ''
+    })
+    setFormData(initialData)
+    setFormErrors({})
+    setIsEditMode(true)
+    setEditingId(selectedIds[0])
+    setShowModal(true)
+  }
+
+  const handleModalClose = () => {
+    setShowModal(false)
+    setIsEditMode(false)
+    setEditingId(null)
+    setFormErrors({})
+    const initialData = {}
+    FIELDS.forEach(field => {
+      initialData[field.key] = ''
+    })
+    // 重置技术指标字段
+    INDICATOR_FIELD_NAMES.forEach(field => {
+      initialData[field.key + 'Name'] = ''
+      initialData[field.key + 'Desc'] = ''
+      initialData[field.key + 'MinScore'] = ''
+      initialData[field.key + 'MaxScore'] = ''
+      initialData[field.key + 'Weight'] = ''
+    })
+    setFormData(initialData)
+  }
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0]
+    setImportFile(file)
+    if (file) {
+      setImportFileError(false)
+    }
+  }
+
+  const handleConfirmImport = () => {
+    if (!importFile) {
+      setImportFileError(true)
+      return
+    }
+
+    const reader = new FileReader()
+
+    reader.onload = async (event) => {
+      try {
+        const data = new Uint8Array(event.target.result)
+        const workbook = new ExcelJS.Workbook()
+        await workbook.xlsx.load(data)
+
+        const worksheet = workbook.worksheets[0]
+        const jsonData = []
+
+        worksheet.eachRow((row, rowNumber) => {
+          const rowData = []
+          row.eachCell((cell) => {
+            rowData.push(cell.value)
+          })
+          jsonData.push(rowData)
+        })
+
+        if (jsonData.length < 2) {
+          alert('文件格式不正确或没有数据')
+          return
+        }
+
+        const headers = jsonData[0]
+
+        const dataList = []
+        const errorList = []
+
+        const formatToYYYYMMDD = (value) => {
+          if (!value) return value
+
+          const trimmedValue = String(value).trim()
+
+          if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedValue)) {
+            return trimmedValue
+          }
+
+          const date = new Date(trimmedValue)
+          if (!isNaN(date.getTime())) {
+            const year = date.getFullYear()
+            const month = String(date.getMonth() + 1).padStart(2, '0')
+            const day = String(date.getDate()).padStart(2, '0')
+            return `${year}-${month}-${day}`
+          }
+
+          const match = trimmedValue.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})$/)
+          if (match) {
+            const year = parseInt(match[1])
+            const month = String(parseInt(match[2])).padStart(2, '0')
+            const day = String(parseInt(match[3])).padStart(2, '0')
+            return `${year}-${month}-${day}`
+          }
+
+          const slashMatch = trimmedValue.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+          if (slashMatch) {
+            const year = parseInt(slashMatch[3])
+            const month = String(parseInt(slashMatch[1])).padStart(2, '0')
+            const day = String(parseInt(slashMatch[2])).padStart(2, '0')
+            return `${year}-${month}-${day}`
+          }
+
+          const dashMatch = trimmedValue.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/)
+          if (dashMatch) {
+            const year = parseInt(dashMatch[3])
+            const month = String(parseInt(dashMatch[1])).padStart(2, '0')
+            const day = String(parseInt(dashMatch[2])).padStart(2, '0')
+            return `${year}-${month}-${day}`
+          }
+
+          return trimmedValue
+        }
+
+        const validDirections = ['买入', '卖出']
+        const validStrategyTypes = ['趋势', '震荡', '突破', '回调']
+        const validStatuses = ['启用', '禁用']
+
+        for (let i = 1; i < jsonData.length; i++) {
+          const values = jsonData[i]
+          const data = {}
+          const errors = []
+
+          headers.forEach((header, index) => {
+            const field = FIELDS.find(f => f.label === header)
+            if (field) {
+              const value = values[index] !== undefined ? String(values[index]).trim() : ''
+              data[field.key] = value
+
+              if (!value && !field.notRequired) {
+                errors.push(`[${field.label}]不能为空；`)
+              }
+
+              if (field.key === 'createdAt' && value) {
+                const formattedDate = formatToYYYYMMDD(value)
+
+                const isValidFormat = /^\d{4}-\d{2}-\d{2}$/.test(formattedDate)
+
+                if (!isValidFormat) {
+                  errors.push('[创建时间]格式错误；')
+                } else {
+                  data[field.key] = formattedDate
+                }
+              }
+
+              if (field.key === 'direction' && value && !validDirections.includes(value)) {
+                errors.push('[策略方向]格式错误；')
+              }
+
+              if (field.key === 'strategyType' && value && !validStrategyTypes.includes(value)) {
+                errors.push('[策略类型]格式错误；')
+              }
+
+              if (field.key === 'status' && value && !validStatuses.includes(value)) {
+                errors.push('[状态]格式错误；')
+              }
+            }
+          })
+
+          // 验证技术指标字段（导入时暂不处理自定义指标字段）
+          INDICATOR_FIELD_NAMES.forEach(field => {
+            const nameKey = field.key + 'Name'
+            const descKey = field.key + 'Desc'
+            const minScoreKey = field.key + 'MinScore'
+            const maxScoreKey = field.key + 'MaxScore'
+            const weightKey = field.key + 'Weight'
+
+            // 查找对应的列索引
+            const nameIndex = headers.findIndex(h => h === field.label + '名称')
+            const descIndex = headers.findIndex(h => h === field.label + '评估标准')
+            const minScoreIndex = headers.findIndex(h => h === field.label + '最小分值')
+            const maxScoreIndex = headers.findIndex(h => h === field.label + '最大分值')
+            const weightIndex = headers.findIndex(h => h === field.label + '权重')
+
+            if (nameIndex !== -1) {
+              const value = values[nameIndex]
+              if (!value || String(value).trim() === '') {
+                errors.push(`[${field.label}名称]不能为空；`)
+              } else {
+                data[nameKey] = String(value).trim()
+              }
+            }
+            if (descIndex !== -1) {
+              const value = values[descIndex]
+              if (!value || String(value).trim() === '') {
+                errors.push(`[${field.label}评估标准]不能为空；`)
+              } else {
+                data[descKey] = String(value).trim()
+              }
+            }
+            if (minScoreIndex !== -1) {
+              const value = values[minScoreIndex]
+              const minScore = parseInt(value)
+              if (isNaN(minScore)) {
+                errors.push(`[${field.label}最小分值]格式错误；`)
+              } else {
+                data[minScoreKey] = minScore
+              }
+            }
+            if (maxScoreIndex !== -1) {
+              const value = values[maxScoreIndex]
+              const maxScore = parseInt(value)
+              if (isNaN(maxScore)) {
+                errors.push(`[${field.label}最大分值]格式错误；`)
+              } else {
+                data[maxScoreKey] = maxScore
+              }
+            }
+            if (weightIndex !== -1) {
+              const value = values[weightIndex]
+              const weight = parseFloat(value)
+              if (isNaN(weight) || weight <= 0) {
+                errors.push(`[${field.label}权重]格式错误；`)
+              } else {
+                data[weightKey] = weight
+              }
+            }
+          })
+
+          if (errors.length > 0) {
+            errorList.push({
+              rowIndex: i + 1,
+              errors: errors.join(' ')
+            })
+          } else {
+            dataList.push(data)
+          }
+        }
+
+        let wb = null
+        if (errorList.length > 0) {
+          wb = new ExcelJS.Workbook()
+          const errorWorksheet = wb.addWorksheet('导入错误')
+
+          const errorHeaders = ['错误信息', ...headers]
+          errorWorksheet.addRow(errorHeaders)
+
+          const headerRow = errorWorksheet.getRow(1)
+          headerRow.font = { bold: true }
+          headerRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFFE0E0' }
+          }
+
+          errorList.forEach(error => {
+            const errorRow = [
+              error.errors,
+              ...jsonData[error.rowIndex].map(v => v !== undefined ? String(v) : '')
+            ]
+            errorWorksheet.addRow(errorRow)
+          })
+        }
+
+        setImportResult({
+          success: dataList.length > 0,
+          successCount: dataList.length,
+          errorCount: errorList.length,
+          totalCount: dataList.length + errorList.length
+        })
+        setErrorWorkbook(wb)
+
+        if (dataList.length > 0) {
+          importStrategyRecords(dataList)
+          if (errorList.length === 0) {
+            showToast('导入成功')
+            setShowImportModal(false)
+            setImportResult(null)
+            setImportFile(null)
+            setImportFileError(false)
+          }
+        }
+      } catch (error) {
+        console.error('导入失败:', error)
+        alert('导入失败：' + error.message)
+      }
+    }
+
+    reader.onerror = () => {
+      alert('文件读取失败，请重试')
+    }
+
+    reader.readAsArrayBuffer(importFile)
+  }
+
+  const handleDownloadErrorFile = async () => {
+    if (errorWorkbook) {
+      const buffer = await errorWorkbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      })
+
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `交易策略_导入错误_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    }
+  }
+
+  const handleDownloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet('模板')
+
+    const headers = FIELDS.map(f => f.label)
+    const indicatorHeaders = INDICATOR_FIELD_NAMES.flatMap(f => [
+      f.label + '名称',
+      f.label + '评估标准',
+      f.label + '最小分值',
+      f.label + '最大分值',
+      f.label + '权重'
+    ])
+    const allHeaders = [...headers, ...indicatorHeaders]
+
+    worksheet.columns = allHeaders.map(header => ({
+      header: header,
+      key: header,
+      width: 20
+    }))
+
+    const createdAtColIndex = allHeaders.findIndex(h => h === '创建时间')
+    const updatedAtColIndex = allHeaders.findIndex(h => h === '更新时间')
+    if (createdAtColIndex >= 0) {
+      const createdAtColumn = worksheet.getColumn(createdAtColIndex + 1)
+      createdAtColumn.numFmt = 'yyyy-mm-dd'
+    }
+    if (updatedAtColIndex >= 0) {
+      const updatedAtColumn = worksheet.getColumn(updatedAtColIndex + 1)
+      updatedAtColumn.numFmt = 'yyyy-mm-dd'
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer()
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    })
+
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '交易策略_导入模板.xlsx'
+    a.click()
+    window.URL.revokeObjectURL(url)
+  }
+
+  const handleExport = () => {
+    if (strategyRecords.length === 0) {
+      alert('暂无数据可导出')
+      return
+    }
+    setShowExportModal(true)
+  }
+
+  const handleConfirmExport = async () => {
+    const headers = FIELDS.map(f => f.label)
+    const indicatorHeaders = INDICATOR_FIELD_NAMES.flatMap(f => [
+      f.label + '名称',
+      f.label + '评估标准',
+      f.label + '最小分值',
+      f.label + '最大分值',
+      f.label + '权重'
+    ])
+    const allHeaders = [...headers, ...indicatorHeaders]
+
+    const rows = filteredData.map(data =>
+      [...FIELDS.map(f => {
+        if (f.key === 'createdAt' && data[f.key]) {
+          return format(new Date(data[f.key]), 'yyyy-MM-dd')
+        }
+        if (f.key === 'updatedAt' && data[f.key]) {
+          return format(new Date(data[f.key]), 'yyyy-MM-dd')
+        }
+        return data[f.key] || ''
+      }), ...INDICATOR_FIELD_NAMES.flatMap(f => [
+        data[f.key + 'Name'] || '',
+        data[f.key + 'Desc'] || '',
+        data[f.key + 'MinScore'] || '',
+        data[f.key + 'MaxScore'] || '',
+        data[f.key + 'Weight'] || ''
+      ])]
+    )
+
+    if (exportFormat === 'xlsx') {
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet('交易策略')
+
+      worksheet.columns = allHeaders.map(header => ({
+        header: header,
+        key: header,
+        width: 20
+      }))
+
+      rows.forEach(row => {
+        worksheet.addRow(row)
+      })
+
+      const createdAtColIndex = allHeaders.findIndex(h => h === '创建时间')
+      const updatedAtColIndex = allHeaders.findIndex(h => h === '更新时间')
+      if (createdAtColIndex >= 0) {
+        const createdAtColumn = worksheet.getColumn(createdAtColIndex + 1)
+        createdAtColumn.numFmt = 'yyyy-mm-dd'
+      }
+      if (updatedAtColIndex >= 0) {
+        const updatedAtColumn = worksheet.getColumn(updatedAtColIndex + 1)
+        updatedAtColumn.numFmt = 'yyyy-mm-dd'
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      })
+
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `交易策略_${format(new Date(), 'yyyyMMdd')}.xlsx`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } else {
+      const csvContent = [allHeaders, ...rows].map(row => row.join(',')).join('\n')
+      const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `交易策略_${format(new Date(), 'yyyyMMdd')}.csv`
+      link.click()
+    }
+
+    showToast('导出成功')
+    setShowExportModal(false)
+  }
+
+  const sortedData = [...strategyRecords].sort((a, b) => {
+    const dateA = new Date(a.createdAt || '1970-01-01')
+    const dateB = new Date(b.createdAt || '1970-01-01')
+    return dateB - dateA
+  })
+
+  const filteredData = sortedData.filter(data => {
+    let matchDate = true
+    let matchDirection = true
+
+    if (filterDateRange) {
+      const [start, end] = filterDateRange.split('~')
+      const recordDate = new Date(data.createdAt)
+      if (start && end) {
+        matchDate = recordDate >= new Date(start) && recordDate <= new Date(end)
+      } else if (start) {
+        matchDate = recordDate >= new Date(start)
+      }
+    }
+
+    if (filterDirection && filterDirection !== '全部') {
+      matchDirection = data.direction === filterDirection
+    }
+
+    return matchDate && matchDirection
+  })
+
+  const totalPages = Math.ceil(filteredData.length / pageSize)
+  const paginatedData = filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  const handleSelectAll = (ids) => {
+    setSelectedIds(ids)
+  }
+
+  const handleSelectOne = (id, checked) => {
+    if (checked) {
+      setSelectedIds([...selectedIds, id])
+    } else {
+      setSelectedIds(selectedIds.filter(sid => sid !== id))
+    }
+  }
+
+  const handleDelete = () => {
+    if (selectedIds.length === 0) return
+    setShowDeleteModal(true)
+  }
+
+  const confirmDelete = () => {
+    deleteMultipleStrategyRecords(selectedIds)
+    setSelectedIds([])
+    setShowDeleteModal(false)
+    showToast(`删除成功`)
+  }
+
+  const directionOptions = [
+    { value: '买入', label: '买入' },
+    { value: '卖出', label: '卖出' }
+  ]
 
   return (
-    <div className="space-y-4 md:space-y-6 pt-20 px-4 md:px-6 lg:pl-64">
-      {/* 头部 */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-      >
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1 md:mb-2">交易策略</h1>
-          <p className="text-sm md:text-base text-gray-600">管理买入和卖出策略，建立评估机制</p>
+    <>
+      <style>{`
+        input[type="file"]::-webkit-file-upload-button {
+          background-color: #0F1419 !important;
+        }
+        input[type="file"]::file-selector-button {
+          background-color: #0F1419 !important;
+        }
+      `}</style>
+      <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
+        {/* 筛选条件 */}
+        <div style={{ flexShrink: 0, marginTop: '10px' }}>
+          <div className="flex gap-4 items-center">
+            <div style={{ position: 'relative', width: '240px' }}>
+              <DateRangePicker
+                value={filterDateRange}
+                onChange={(value) => {
+                  setFilterDateRange(value)
+                  setCurrentPage(1)
+                }}
+                placeholder="日期"
+              />
+            </div>
+            <div style={{ position: 'relative', width: '240px' }}>
+              <FilterSelect
+                value={filterDirection === '全部' ? '' : filterDirection}
+                onChange={(value) => {
+                  setFilterDirection(value === '策略方向' ? '全部' : value)
+                  setCurrentPage(1)
+                }}
+                options={directionOptions}
+                placeholder="策略方向"
+              />
+            </div>
+          </div>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={handleAddStrategy}
-          className="w-full sm:w-auto px-4 md:px-6 py-2 md:py-3 bg-primary-500 rounded-lg text-gray-900 font-medium hover:bg-primary-600 transition-all duration-300 inline-flex items-center justify-center"
-        >
-          <Plus className="w-4 h-4 md:w-5 md:h-5 mr-2" />
-          添加策略
-        </motion.button>
-      </motion.div>
 
-      {/* 选项卡 */}
-      <div className="flex gap-2 md:gap-4">
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setActiveTab('buy')}
-          className={`flex-1 px-4 md:px-6 py-3 md:py-4 rounded-xl font-medium transition-all duration-300 ${
-            activeTab === 'buy'
-              ? 'bg-green-500 text-gray-900'
-              : 'bg-gray-100 text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          <TrendingUp className="w-4 h-4 md:w-5 md:h-5 inline mr-1 md:mr-2" />
-          <span className="text-sm md:text-base">买入策略</span>
-        </motion.button>
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setActiveTab('sell')}
-          className={`flex-1 px-4 md:px-6 py-3 md:py-4 rounded-xl font-medium transition-all duration-300 ${
-            activeTab === 'sell'
-              ? 'bg-red-500 text-gray-900'
-              : 'bg-gray-100 text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          <TrendingDown className="w-4 h-4 md:w-5 md:h-5 inline mr-1 md:mr-2" />
-          <span className="text-sm md:text-base">卖出策略</span>
-        </motion.button>
+        {/* 工具栏 */}
+        <Toolbar
+          onAdd={() => {
+            setIsEditMode(false)
+            setShowModal(true)
+          }}
+          onEdit={handleEdit}
+          onImport={() => setShowImportModal(true)}
+          onExport={handleExport}
+          onDelete={handleDelete}
+          canEdit={selectedIds.length === 1}
+          canExport={filteredData.length > 0}
+          canDelete={selectedIds.length > 0}
+          totalCount={filteredData.length}
+        />
+
+        {/* 数据表格 */}
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', marginTop: '10px', paddingBottom: '50px', zIndex: '1' }}>
+          <div className="overflow-y-auto overflow-x-auto" style={{ flex: 1, minHeight: 'calc(100vh - 52px - 10px - 80px - 10px - 50px - 4px)', maxHeight: 'calc(100vh - 52px - 10px - 80px - 10px - 50px - 4px)', position: 'relative', zIndex: '1' }}>
+            <DataTable
+              fields={FIELDS}
+              data={paginatedData}
+              selectedIds={selectedIds}
+              onSelectAll={handleSelectAll}
+              onSelectOne={handleSelectOne}
+              emptyStateProps={{
+                Component: EmptyState,
+                props: { message: '暂无数据' }
+              }}
+              renderCell={(field, item) => {
+                return null
+              }}
+            />
+          </div>
+        </div>
+
+        {/* 分页器 */}
+        <div style={{ position: 'absolute', right: '0', bottom: '0', height: '50px', zIndex: '10', width: '100%' }}>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={(page) => setCurrentPage(page)}
+            selectedCount={selectedIds.length}
+            totalCount={filteredData.length}
+          />
+        </div>
       </div>
-
-      {/* 策略列表 */}
-      <ScrollAnimation delay={0.2}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-        {currentStrategies.map((strategy, index) => (
-          <motion.div
-            key={strategy.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: index * 0.1 }}
-            className="glass rounded-xl border border-gray-200 overflow-hidden hover:border-primary-200 transition-all"
-          >
-            <div className="p-4 md:p-6">
-              <div className="flex items-start justify-between mb-3 md:mb-4">
-                <div className="flex-1 pr-2">
-                  <h3 className="text-base md:text-xl font-bold text-gray-900 mb-1 md:mb-2 flex items-center">
-                    <Target className={`w-4 h-4 md:w-5 md:h-5 mr-1 md:mr-2 flex-shrink-0 ${activeTab === 'buy' ? 'text-green-600' : 'text-red-600'}`} />
-                    <span className="truncate">{strategy.name}</span>
-                  </h3>
-                  <p className="text-xs md:text-sm text-gray-600 line-clamp-2">{strategy.description}</p>
-                </div>
-                <div className="flex gap-1 md:gap-2 flex-shrink-0">
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => handleEditStrategy(strategy)}
-                    className="p-1.5 md:p-2 text-primary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all"
-                  >
-                    <Edit2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => deleteStrategy(activeTab, strategy.id)}
-                    className="p-1.5 md:p-2 text-red-600 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition-all"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                  </motion.button>
-                </div>
-              </div>
-
-              {/* 条件列表 */}
-              <div className="space-y-2 md:space-y-3 mb-3 md:mb-4">
-                {strategy.conditions.map((condition) => (
-                  <div key={condition.id} className="p-2 md:p-3 bg-white rounded-lg border border-gray-200">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 mb-1">
-                      <span className="font-medium text-gray-900 text-sm md:text-base">{condition.name}</span>
-                      <span className="text-xs text-gray-600">
-                        权重: {(condition.weight * 100).toFixed(0)}% | 阈值: {condition.threshold}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 line-clamp-1">{condition.description}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* 及格线 */}
-              <div className="flex items-center justify-between pt-3 md:pt-4 border-t border-gray-200">
-                <span className="text-xs md:text-sm text-gray-600">及格线</span>
-                <span className="text-xl md:text-2xl font-bold text-primary-500">{strategy.passScore}分</span>
-              </div>
-            </div>
-          </motion.div>
-        ))}
-        </div>
-      </ScrollAnimation>
-
-      {/* 添加/编辑策略弹窗 */}
-      {showModal && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 md:p-4"
-          onClick={() => { setShowModal(false); setEditingStrategy(null) }}
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="glass rounded-2xl border border-gray-300 w-full max-w-2xl p-4 md:p-6 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-4 md:mb-6">
-              {editingStrategy ? '编辑策略' : '添加策略'}
-            </h3>
-            <div className="space-y-4 md:space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
-                <div>
-                  <label className="block text-xs md:text-sm text-gray-600 mb-1 md:mb-2">策略名称</label>
-                  <input
-                    type="text"
-                    required
-                    value={strategyForm.name}
-                    onChange={(e) => setStrategyForm({ ...strategyForm, name: e.target.value })}
-                    placeholder="例如：趋势突破策略"
-                    className="w-full px-3 md:px-4 py-2 md:py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors text-sm md:text-base"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs md:text-sm text-gray-600 mb-1 md:mb-2">及格分数</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    required
-                    value={strategyForm.passScore}
-                    onChange={(e) => setStrategyForm({ ...strategyForm, passScore: e.target.value })}
-                    placeholder="70"
-                    className="w-full px-3 md:px-4 py-2 md:py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors text-sm md:text-base"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs md:text-sm text-gray-600 mb-1 md:mb-2">策略描述</label>
-                <textarea
-                  value={strategyForm.description}
-                  onChange={(e) => setStrategyForm({ ...strategyForm, description: e.target.value })}
-                  placeholder="描述该策略的核心思想和使用场景"
-                  className="w-full px-3 md:px-4 py-2 md:py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors resize-none text-sm md:text-base"
-                  rows={2}
-                />
-              </div>
-
-              {/* 条件管理 */}
-              <div>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 mb-3 md:mb-4">
-                  <h4 className="text-base md:text-lg font-semibold text-gray-900">评估条件</h4>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={handleAddCondition}
-                    className="w-full sm:w-auto px-3 md:px-4 py-2 bg-primary-500 rounded-lg text-gray-900 text-xs md:text-sm hover:bg-primary-600 transition-all"
-                  >
-                    添加条件
-                  </motion.button>
-                </div>
-                {strategyForm.conditions.length === 0 ? (
-                  <p className="text-center text-gray-500 py-6 md:py-8 text-sm md:text-base">暂无评估条件</p>
-                ) : (
-                  <div className="space-y-2 md:space-y-3">
-                    {strategyForm.conditions.map((condition) => (
-                      <div key={condition.id} className="p-3 md:p-4 bg-white rounded-lg border border-gray-200">
-                        <div className="flex items-start justify-between mb-1 md:mb-2">
-                          <div className="flex-1 pr-2">
-                            <h5 className="font-medium text-gray-900 text-sm md:text-base">{condition.name}</h5>
-                            <p className="text-xs text-gray-500 mt-0.5 md:mt-1 line-clamp-1">{condition.description}</p>
-                          </div>
-                          <div className="flex gap-1 md:gap-2 flex-shrink-0">
-                            <motion.button
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.9 }}
-                              onClick={() => handleEditCondition(condition)}
-                              className="p-1.5 md:p-2 text-primary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all"
-                            >
-                              <Edit2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                            </motion.button>
-                            <motion.button
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.9 }}
-                              onClick={() => handleDeleteCondition(condition.id)}
-                              className="p-1.5 md:p-2 text-red-600 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition-all"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                            </motion.button>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 md:gap-4 text-xs text-gray-500">
-                          <span>权重: {(condition.weight * 100).toFixed(0)}%</span>
-                          <span>阈值: {condition.threshold}</span>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="text-center text-xs md:text-sm text-gray-600 py-2">
-                      当前总权重: {(strategyForm.conditions.reduce((sum, c) => sum + c.weight, 0) * 100).toFixed(1)}%
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-2 md:gap-3 pt-3 md:pt-4">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => { setShowModal(false); setEditingStrategy(null) }}
-                  className="flex-1 px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-white transition-colors text-sm md:text-base"
-                >
-                  取消
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleSaveStrategy}
-                  className="flex-1 px-3 md:px-4 py-2 md:py-3 bg-primary-500 rounded-lg text-gray-900 font-medium hover:bg-primary-600 transition-all text-sm md:text-base"
-                >
-                  保存
-                </motion.button>
-              </div>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-
-      {/* 添加/编辑条件弹窗 */}
-      {showConditionModal && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 md:p-4"
-          onClick={() => { setShowConditionModal(false); setEditingCondition(null) }}
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="glass rounded-2xl border border-gray-300 w-full max-w-md p-4 md:p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-4 md:mb-6">
-              {editingCondition ? '编辑条件' : '添加条件'}
-            </h3>
-            <div className="space-y-3 md:space-y-4">
-              <div>
-                <label className="block text-xs md:text-sm text-gray-600 mb-1 md:mb-2">条件名称</label>
-                <input
-                  type="text"
-                  required
-                  value={conditionForm.name}
-                  onChange={(e) => setConditionForm({ ...conditionForm, name: e.target.value })}
-                  placeholder="例如：价格突破"
-                  className="w-full px-3 md:px-4 py-2 md:py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors text-sm md:text-base"
-                />
-              </div>
-              <div>
-                <label className="block text-xs md:text-sm text-gray-600 mb-1 md:mb-2">条件描述</label>
-                <textarea
-                  value={conditionForm.description}
-                  onChange={(e) => setConditionForm({ ...conditionForm, description: e.target.value })}
-                  placeholder="描述该条件的具体含义"
-                  className="w-full px-3 md:px-4 py-2 md:py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors resize-none text-sm md:text-base"
-                  rows={2}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3 md:gap-4">
-                <div>
-                  <label className="block text-xs md:text-sm text-gray-600 mb-1 md:mb-2">权重 (0-1)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="1"
-                    required
-                    value={conditionForm.weight}
-                    onChange={(e) => setConditionForm({ ...conditionForm, weight: parseFloat(e.target.value) })}
-                    placeholder="0.3"
-                    className="w-full px-3 md:px-4 py-2 md:py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors text-sm md:text-base"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs md:text-sm text-gray-600 mb-1 md:mb-2">阈值 (0-100)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    required
-                    value={conditionForm.threshold}
-                    onChange={(e) => setConditionForm({ ...conditionForm, threshold: e.target.value })}
-                    placeholder="70"
-                    className="w-full px-3 md:px-4 py-2 md:py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors text-sm md:text-base"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2 md:gap-3 pt-3 md:pt-4">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => { setShowConditionModal(false); setEditingCondition(null) }}
-                  className="flex-1 px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-white transition-colors text-sm md:text-base"
-                >
-                  取消
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleSaveCondition}
-                  className="flex-1 px-3 md:px-4 py-2 md:py-3 bg-primary-500 rounded-lg text-gray-900 font-medium hover:bg-primary-600 transition-all text-sm md:text-base"
-                >
-                  保存
-                </motion.button>
-              </div>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
     </div>
+
+      {/* 导入弹窗 */}
+      <ImportModal
+        isOpen={showImportModal}
+        onClose={() => {
+          setShowImportModal(false)
+          setImportResult(null)
+          setErrorWorkbook(null)
+          setImportFile(null)
+          setImportFileError(false)
+        }}
+        onConfirm={handleConfirmImport}
+        onDownloadTemplate={handleDownloadTemplate}
+        onDownloadError={handleDownloadErrorFile}
+        importFile={importFile}
+        onFileChange={handleFileChange}
+        importResult={importResult}
+        importFileError={importFileError}
+        errorWorkbook={errorWorkbook}
+      />
+
+      {/* 导出确认弹窗 */}
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onConfirm={handleConfirmExport}
+        exportFormat={exportFormat}
+        onFormatChange={(format) => setExportFormat(format)}
+        totalCount={filteredData.length}
+      />
+
+      {/* 删除确认弹窗 */}
+      <ConfirmModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={confirmDelete}
+        title="删除"
+        message="是否确认删除？"
+      />
+
+      {/* 添加/编辑记录弹窗 */}
+      <FormModal
+        isOpen={showModal}
+        onClose={handleModalClose}
+        onSubmit={handleSubmit}
+        title={isEditMode ? "编辑" : "新增"}
+        fields={FIELDS}
+        formData={formData}
+        formErrors={formErrors}
+        onFormDataChange={(newFormData, clearError) => {
+          setFormData(newFormData)
+          if (clearError) {
+            setFormErrors(prev => ({ ...prev, ...clearError }))
+          }
+        }}
+        getFieldComponent={(field, data, errors, onChange) => {
+          // 技术指标评估部分
+          if (field.key === 'description') {
+            return (
+              <div className="col-span-2 md:col-span-4 space-y-4">
+                <textarea
+                  value={data[field.key] || ''}
+                  onChange={(e) => {
+                    onChange({ ...data, [field.key]: e.target.value })
+                    if (e.target.value && errors[field.key]) {
+                      onChange({ ...data, [field.key]: e.target.value }, { [field.key]: false })
+                    }
+                  }}
+                  placeholder="请输入"
+                  className={`w-full px-3 py-2 border ${errors[field.key] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  rows={2}
+                />
+                {errors[field.key] && (
+                  <p className="text-red-500 text-xs">不能为空</p>
+                )}
+
+                {/* 技术指标评估配置 */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">技术指标评估配置</h4>
+                  <div className="space-y-4">
+                    {INDICATOR_FIELD_NAMES.map((indicator, index) => {
+                      const nameKey = indicator.key + 'Name'
+                      const descKey = indicator.key + 'Desc'
+                      const minScoreKey = indicator.key + 'MinScore'
+                      const maxScoreKey = indicator.key + 'MaxScore'
+                      const weightKey = indicator.key + 'Weight'
+
+                      return (
+                        <div key={indicator.key} className="border border-gray-200 rounded-lg p-3 bg-white">
+                          <div className="text-xs font-medium text-gray-700 mb-2">{indicator.label}</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-xs text-gray-600 block mb-1">指标名称</label>
+                              <input
+                                type="text"
+                                value={data[nameKey] || ''}
+                                onChange={(e) => {
+                                  onChange({ ...data, [nameKey]: e.target.value })
+                                  if (e.target.value && errors[nameKey]) {
+                                    onChange({ ...data, [nameKey]: e.target.value }, { [nameKey]: false })
+                                  }
+                                }}
+                                placeholder="如: MACD"
+                                className={`w-full px-2 py-1 text-sm border ${errors[nameKey] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-1 focus:ring-blue-500`}
+                              />
+                              {errors[nameKey] && <p className="text-red-500 text-xs mt-1">不能为空</p>}
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-600 block mb-1">权重(0-1)</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="1"
+                                value={data[weightKey] || ''}
+                                onChange={(e) => {
+                                  onChange({ ...data, [weightKey]: e.target.value })
+                                  if (e.target.value && errors[weightKey]) {
+                                    onChange({ ...data, [weightKey]: e.target.value }, { [weightKey]: false })
+                                  }
+                                }}
+                                placeholder="0.2"
+                                className={`w-full px-2 py-1 text-sm border ${errors[weightKey] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-1 focus:ring-blue-500`}
+                              />
+                              {errors[weightKey] && <p className="text-red-500 text-xs mt-1">格式错误</p>}
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-600 block mb-1">最小分值</label>
+                              <input
+                                type="number"
+                                value={data[minScoreKey] || ''}
+                                onChange={(e) => {
+                                  onChange({ ...data, [minScoreKey]: e.target.value })
+                                  if (e.target.value && errors[minScoreKey]) {
+                                    onChange({ ...data, [minScoreKey]: e.target.value }, { [minScoreKey]: false })
+                                  }
+                                }}
+                                placeholder="0"
+                                className={`w-full px-2 py-1 text-sm border ${errors[minScoreKey] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-1 focus:ring-blue-500`}
+                              />
+                              {errors[minScoreKey] && <p className="text-red-500 text-xs mt-1">格式错误</p>}
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-600 block mb-1">最大分值</label>
+                              <input
+                                type="number"
+                                value={data[maxScoreKey] || ''}
+                                onChange={(e) => {
+                                  onChange({ ...data, [maxScoreKey]: e.target.value })
+                                  if (e.target.value && errors[maxScoreKey]) {
+                                    onChange({ ...data, [maxScoreKey]: e.target.value }, { [maxScoreKey]: false })
+                                  }
+                                }}
+                                placeholder="2"
+                                className={`w-full px-2 py-1 text-sm border ${errors[maxScoreKey] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-1 focus:ring-blue-500`}
+                              />
+                              {errors[maxScoreKey] && <p className="text-red-500 text-xs mt-1">格式错误</p>}
+                            </div>
+                          </div>
+                          <div className="mt-2">
+                            <label className="text-xs text-gray-600 block mb-1">评估标准</label>
+                            <textarea
+                              value={data[descKey] || ''}
+                              onChange={(e) => {
+                                onChange({ ...data, [descKey]: e.target.value })
+                                if (e.target.value && errors[descKey]) {
+                                  onChange({ ...data, [descKey]: e.target.value }, { [descKey]: false })
+                                }
+                              }}
+                              placeholder="如: 0=背离；1=中性；2=金叉/死叉；"
+                              className={`w-full px-2 py-1 text-sm border ${errors[descKey] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-1 focus:ring-blue-500`}
+                              rows={1}
+                            />
+                            {errors[descKey] && <p className="text-red-500 text-xs mt-1">不能为空</p>}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )
+          }
+          return null
+        }}
+      />
+      </>
   )
 }
 

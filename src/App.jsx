@@ -6,6 +6,7 @@ import Home from './pages/Home'
 import DailyWork from './pages/DailyWork'
 import PsychologicalTest from './pages/PsychologicalTest'
 import TradingStrategy from './pages/TradingStrategy'
+import TechnicalIndicators from './pages/TechnicalIndicators'
 import RiskModel from './pages/RiskModel'
 import OrderManagement from './pages/OrderManagement'
 import TransactionHistory from './pages/TransactionHistory'
@@ -21,6 +22,7 @@ function Navigation() {
     { id: 'daily', icon: TrendingUp, label: '每日功课', path: '/daily-work', customIcon: 'daily' },
     { id: 'psych', icon: Brain, label: '心理测试', path: '/psychological-test', customIcon: 'psych' },
     { id: 'strategy', icon: Target, label: '交易策略', path: '/trading-strategy', customIcon: 'strategy' },
+    { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
     { id: 'risk', icon: Shield, label: '风险模型', path: '/risk-model', customIcon: 'risk' },
     { id: 'order', icon: Clock, label: '预约单', path: '/order-management', customIcon: 'order' },
     { id: 'transaction', icon: Receipt, label: '账单明细', path: '/transaction-history', customIcon: 'transaction' },
@@ -128,6 +130,17 @@ function Navigation() {
                         fill={isActive ? '#ffffff' : '#0F1419'}
                       />
                     </svg>
+                  ) : item.customIcon === 'technical' ? (
+                    <svg
+                      viewBox="0 0 1024 1024"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className={`w-5 h-5 mr-3 ${isActive ? 'text-white' : 'text-[#0F1419]'}`}
+                    >
+                      <path
+                        d="M826.4704 79.36c21.4016 18.7392 38.4512 34.4576 51.1488 47.3088 12.6464 12.8512 22.3744 23.7568 29.1328 32.7168 6.7072 8.96 10.9056 16.5376 12.4928 22.784 1.536 6.1952 2.3552 11.6736 2.3552 16.3328v18.688h-174.7968a30.208 30.208 0 0 1-22.016-8.7552 77.9776 77.9776 0 0 1-14.848-20.48 109.5168 109.5168 0 0 1-11.8784-44.3392V0h2.4064c7.1168 0 13.824 0.768 20.1728 2.3552 6.3488 1.536 14.08 5.2224 23.1936 11.0592s20.224 14.0288 33.28 24.576c13.1072 10.4448 29.5424 24.2688 49.3568 41.4208z m-203.264 66.56c0 14.848 2.3552 30.7712 7.1168 47.9232 4.7104 17.1008 12.288 32.8704 22.528 47.2576 10.3424 14.3872 23.4496 26.4704 39.2704 36.1984 15.872 9.728 34.5088 14.592 55.9104 14.592H921.6v585.0112c0 22.528-4.5568 42.8032-13.6704 60.672-9.1136 17.92-21.1968 33.28-36.2496 46.1312a171.008 171.008 0 0 1-49.9712 29.7984 148.5824 148.5824 0 0 1-53.504 10.496H255.7952c-15.104 0-31.5392-4.3008-49.3568-12.8a208.6912 208.6912 0 0 1-49.92-33.8944 192.4096 192.4096 0 0 1-38.656-48.4864A113.9712 113.9712 0 0 1 102.4 872.192V150.6304c0-16.384 3.9424-33.4848 11.8784-51.4048 7.936-17.92 18.432-34.048 31.5392-48.4352 13.056-14.3872 27.904-26.4704 44.544-36.1984C207.0528 4.864 224.4608 0 242.688 0h380.4672v145.92z m-95.1808 526.6432c9.5232-9.3696 14.6944-21.8112 15.4624-37.376 0.8192-15.5648-3.584-27.648-13.056-36.1984L335.4624 406.3232a48.128 48.128 0 0 0-35.1232-14.0288 48.128 48.128 0 0 0-35.072 14.0288 50.3296 50.3296 0 0 0-14.2336 35.6352c0 13.6192 4.7616 25.088 14.2336 34.4064l159.3344 158.8224-159.3344 157.6448a46.3872 46.3872 0 0 0-14.2336 34.4064c0 13.6192 4.7616 25.4976 14.2336 35.6352a48.128 48.128 0 0 0 35.072 14.0288c13.8752 0 25.6-4.7104 35.1232-14.0288l192.5632-190.3104z m243.7632 129.5872h-223.5392v73.5744h223.5392v-73.5744z"
+                        fill={isActive ? '#ffffff' : '#0F1419'}
+                      />
+                    </svg>
                   ) : item.customIcon === 'risk' ? (
                     <svg
                       viewBox="0 0 1024 1024"
@@ -198,6 +211,7 @@ function App() {
               <Route path="/daily-work" element={<DailyWork />} />
               <Route path="/psychological-test" element={<PsychologicalTest />} />
               <Route path="/trading-strategy" element={<TradingStrategy />} />
+              <Route path="/technical-indicators" element={<TechnicalIndicators />} />
               <Route path="/risk-model" element={<RiskModel />} />
               <Route path="/order-management" element={<OrderManagement />} />
               <Route path="/transaction-history" element={<TransactionHistory />} />

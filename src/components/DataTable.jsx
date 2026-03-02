@@ -7,7 +7,8 @@ const DataTable = ({
   selectedIds,
   onSelectAll,
   onSelectOne,
-  emptyStateProps = {}
+  emptyStateProps = {},
+  renderCell = null
 }) => {
   const handleSelectAll = (checked) => {
     if (checked) {
@@ -65,7 +66,11 @@ const DataTable = ({
                 </td>
                 {fields.map((field, index) => (
                   <td key={field.key} className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                    <span className="font-medium text-gray-700">{item[field.key] || '-'}</span>
+                    {renderCell ? (
+                      renderCell(field, item) || <span className="font-medium text-gray-700">{item[field.key] || '-'}</span>
+                    ) : (
+                      <span className="font-medium text-gray-700">{item[field.key] || '-'}</span>
+                    )}
                   </td>
                 ))}
               </motion.tr>

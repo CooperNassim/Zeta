@@ -1,6 +1,6 @@
 import React from 'react'
 import { motion } from 'framer-motion'
-import { ArrowRight, TrendingUp, Shield, Target, Brain, LineChart, BarChart3, PieChart, Activity, DollarSign, TrendingDown, Cpu, Zap, Network, Database, ClipboardCheck, AlertTriangle, Clock, Star } from 'lucide-react'
+import { ArrowRight, TrendingUp, Shield, Target, Brain, LineChart, BarChart3, PieChart, Activity, DollarSign, TrendingDown, Cpu, Zap, Network, Database, ClipboardCheck, AlertTriangle, Clock, Star, Code } from 'lucide-react'
 import Counter from '../components/Counter'
 import ScrollAnimation from '../components/ScrollAnimation'
 import useStore from '../store/useStore'
@@ -36,6 +36,12 @@ const Home = () => {
       icon: Target,
       title: '交易策略',
       description: '灵活配置买卖策略，智能评估交易机会',
+      color: 'from-primary-50 to-primary-100',
+    },
+    {
+      icon: Code,
+      title: '技术指标',
+      description: '全面分析市场数据，精准把握交易时机',
       color: 'from-primary-50 to-primary-100',
     },
     {
@@ -487,7 +493,7 @@ const Home = () => {
             <p className="text-xl text-gray-600">智能化交易，全方位保障</p>
           </motion.div>
 
-          <ScrollAnimation className="grid md:grid-cols-3 gap-8">
+          <ScrollAnimation className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
             {features.map((feature, index) => (
               <motion.div
                 key={feature.title}

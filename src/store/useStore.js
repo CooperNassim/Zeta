@@ -3,11 +3,11 @@ import { persist } from 'zustand/middleware'
 
 // 心理测试指标
 export const initialPsychologicalIndicators = [
-  { id: '1', name: '睡眠质量', description: '昨晚睡眠时长和质量', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '2', name: '情绪状态', description: '当前情绪稳定性', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '3', name: '压力水平', description: '当前工作生活压力', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '4', name: '市场关注度', description: '对市场信息的关注度', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '5', name: '风险承受意愿', description: '当前风险承受能力', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '1', name: '今天身体感觉怎么样？', description: '0=感觉生病了；1=感觉正常；2=感觉好极了；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '2', name: '昨天交易如何？', description: '0=亏损；1=没有交易；2=盈利；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '3', name: '早上做好计划了吗？', description: '0=没做；1=无仓位；2=准备得很好；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '4', name: '早上情绪如何？', description: '0=低落；1=正常；2=棒极了；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '5', name: '今天工作量如何？', description: '0=很忙；1=正常；2=很闲；', minScore: 0, maxScore: 2, weight: 0.2 },
 ]
 
 // 交易策略模板

@@ -4,6 +4,8 @@ import { ChevronLeft, ChevronRight, Edit as EditIcon } from 'lucide-react'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
 import Modal from '../components/Modal'
+import Toast from '../components/Toast'
+import { createRoot } from 'react-dom/client'
 
 const PsychologicalTest = () => {
   const [selectedDate, setSelectedDate] = useState(new Date())
@@ -139,6 +141,21 @@ const PsychologicalTest = () => {
       updatePsychologicalIndicator(indicators[index].id, newIndicator)
     })
     setShowEditModal(false)
+
+    // 显示成功提示
+    const toastContainer = document.createElement('div')
+    document.body.appendChild(toastContainer)
+    const root = createRoot(toastContainer)
+    root.render(
+      <Toast
+        message="更新成功"
+        type="success"
+        onClose={() => {
+          root.unmount()
+          document.body.removeChild(toastContainer)
+        }}
+      />
+    )
   }
 
   // 生成日历
@@ -268,7 +285,7 @@ const PsychologicalTest = () => {
                   const score = testScores[indicator.id]
 
                   return (
-                    <div key={indicator.id} style={{ marginBottom: index < indicators.length - 1 ? '20px' : '0px', paddingBottom: '15px', borderBottom: index < indicators.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
+                    <div key={indicator.id} style={{ marginBottom: index < indicators.length - 1 ? '17px' : '0px', paddingBottom: '17px', borderBottom: index < indicators.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
                       {/* 题目 */}
                       <div style={{
                         display: 'flex',
@@ -294,7 +311,7 @@ const PsychologicalTest = () => {
                           <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#000', marginBottom: '6px' }}>
                             {indicator.name}
                           </div>
-                          <div style={{ fontSize: '13px', color: '#666', lineHeight: '1.5' }}>
+                          <div style={{ fontSize: '14px', color: '#666', lineHeight: '1.5' }}>
                             {indicator.description}
                           </div>
                         </div>
@@ -303,7 +320,7 @@ const PsychologicalTest = () => {
                       {/* 评分选择器 */}
                       <div style={{
                         marginLeft: '40px',
-                        padding: '8px 12px',
+                        padding: '17px 21px',
                         background: isTodaySelected() ? '#f9fafb' : '#f3f4f6',
                         borderLeft: `3px solid ${isTodaySelected() ? '#0F1419' : '#d1d5db'}`,
                         borderRadius: '0 6px 6px 0',
@@ -355,8 +372,13 @@ const PsychologicalTest = () => {
               border: '2px solid #e5e7eb',
               borderRadius: '8px',
               padding: '15px',
-              flex: '0 0 auto',
-              width: '280px'
+              display: 'flex',
+              flexDirection: 'column',
+              flex: 1,
+              minHeight: 0,
+              maxHeight: '50%',
+              width: '100%',
+              overflow: 'hidden'
             }}>
               {/* 日历标题 */}
               <div style={{
@@ -398,6 +420,12 @@ const PsychologicalTest = () => {
                 </motion.button>
               </div>
 
+              {/* 日历内容区域 - 可滚动 */}
+              <div style={{
+                flex: 1,
+                overflow: 'auto',
+                minHeight: 0
+              }}>
               {/* 星期标题 */}
               <div style={{
                 display: 'grid',
@@ -421,7 +449,7 @@ const PsychologicalTest = () => {
               {/* 日期格子 */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(7, 32px)',
+                gridTemplateColumns: 'repeat(7, 1fr)',
                 gap: '5px'
               }}>
                 {calendarDays.map((item, index) => {
@@ -434,7 +462,6 @@ const PsychologicalTest = () => {
                       key={index}
                       onClick={() => item.date && handleDateClick(item.date)}
                       style={{
-                        width: '32px',
                         height: '40px',
                         display: 'flex',
                         flexDirection: 'column',
@@ -473,6 +500,7 @@ const PsychologicalTest = () => {
                   )
                 })}
               </div>
+              </div>
             </div>
 
             {/* 测试指标卡片 */}
@@ -489,13 +517,14 @@ const PsychologicalTest = () => {
               position: 'relative',
               overflow: 'hidden',
               flex: 1,
-              minHeight: 0
+              minHeight: 0,
+              maxHeight: '50%'
             }}>
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                marginBottom: '4px',
+                marginBottom: '18px',
                 paddingBottom: '0px'
               }}>
                 <h3 style={{
@@ -516,40 +545,24 @@ const PsychologicalTest = () => {
                 </motion.button>
               </div>
 
-              <div style={{ flex: 1, overflow: 'auto', marginTop: '4px', minHeight: 0, paddingBottom: '0px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ flex: 1, overflow: 'auto', marginTop: '0px', minHeight: 0, paddingBottom: '0px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {indicators.map((indicator, index) => (
                     <div
                       key={indicator.id}
                       style={{
-                        padding: '8px',
+                        padding: '10px 14px',
                         background: '#f9fafb',
                         borderRadius: '6px',
                         border: '1px solid #e5e7eb'
                       }}
                     >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <span style={{
-                        width: '18px',
-                        height: '18px',
-                        background: '#e5e7eb',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        flexShrink: 0
-                      }}>
-                        {index + 1}
-                      </span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#000', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {indicator.name}
-                        </div>
-                        <div style={{ fontSize: '10px', color: '#666', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                          {indicator.description}
-                        </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#000', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {indicator.name}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {indicator.description}
                       </div>
                     </div>
                   </div>
@@ -564,7 +577,7 @@ const PsychologicalTest = () => {
         <Modal
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
-        title="编辑指标库"
+        title="指标设置"
         width="max-w-3xl"
         footer={
           <>
@@ -586,7 +599,7 @@ const PsychologicalTest = () => {
               className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity"
               style={{ backgroundColor: '#0F1419' }}
             >
-              确定
+              保存
             </button>
           </>
         }

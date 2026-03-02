@@ -10,7 +10,8 @@ const Modal = ({
   footer,
   showFooter = true,
   showCloseButton = true,
-  width = 'max-w-md'
+  width = 'max-w-md',
+  maxHeight = 'calc(100vh - 200px)'
 }) => {
   if (!isOpen) return null
 
@@ -26,11 +27,12 @@ const Modal = ({
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className={`bg-white rounded-lg w-full ${width} p-6 shadow-lg`}
+        className={`bg-white rounded-lg w-full ${width} p-6 shadow-lg flex flex-col`}
+        style={{ maxHeight: 'calc(100vh - 80px)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* 标题栏 */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 flex-shrink-0">
           <h3 className="text-xl font-bold text-gray-800">{title}</h3>
           {showCloseButton && (
             <button
@@ -43,13 +45,13 @@ const Modal = ({
         </div>
 
         {/* 内容区域 */}
-        <div className="mb-6">
+        <div className="mb-6 overflow-auto flex-1" style={{ maxHeight }}>
           {children}
         </div>
 
         {/* 底部按钮 */}
         {showFooter && (
-          <div className="flex justify-end gap-3">
+          <div className="flex justify-end gap-3 flex-shrink-0">
             {footer || (
               <>
                 <button

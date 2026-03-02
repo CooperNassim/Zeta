@@ -18,35 +18,25 @@ import FormModal from '../components/FormModal'
 // 字段定义
 const FIELDS = [
   { key: 'id', label: '编号', type: 'text', readonly: true, notRequired: true },
-  {
-    key: 'direction',
-    label: '策略方向',
-    type: 'select',
-    options: [
-      { value: '买入', label: '买入' },
-      { value: '卖出', label: '卖出' }
-    ]
-  },
+
   {
     key: 'strategyType',
     label: '策略类型',
     type: 'select',
     options: [
-      { value: '趋势', label: '趋势' },
-      { value: '震荡', label: '震荡' },
-      { value: '突破', label: '突破' },
-      { value: '回调', label: '回调' }
+      { value: '卖出', label: '卖出' },
+      { value: '买入', label: '买入' }
     ]
   },
-  { key: 'name', label: '名称', type: 'text' },
-  { key: 'description', label: '描述', type: 'textarea' },
+  { key: 'name', label: '策略名称', type: 'text' },
+  { key: 'description', label: '策略描述', type: 'text' },
   {
     key: 'status',
     label: '状态',
     type: 'select',
     options: [
       { value: '启用', label: '启用' },
-      { value: '禁用', label: '禁用' }
+      { value: '停用', label: '停用' }
     ]
   },
   { key: 'creator', label: '创建人', type: 'text' },
@@ -55,20 +45,14 @@ const FIELDS = [
 ]
 
 // 技术指标字段配置
-const INDICATOR_FIELD_NAMES = [
-  { key: 'indicator1', label: '指标1', name: '指标名称' },
-  { key: 'indicator2', label: '指标2', name: '指标名称' },
-  { key: 'indicator3', label: '指标3', name: '指标名称' },
-  { key: 'indicator4', label: '指标4', name: '指标名称' },
-  { key: 'indicator5', label: '指标5', name: '指标名称' }
-]
-
 const TradingStrategy = () => {
   const { showToast } = useToast()
   const [showModal, setShowModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
+  const [showEnableModal, setShowEnableModal] = useState(false)
+  const [showDisableModal, setShowDisableModal] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [formData, setFormData] = useState({})
@@ -81,7 +65,8 @@ const TradingStrategy = () => {
   const [importFile, setImportFile] = useState(null)
   const [importFileError, setImportFileError] = useState(false)
   const [filterDateRange, setFilterDateRange] = useState('')
-  const [filterDirection, setFilterDirection] = useState('全部')
+  const [filterStrategyType, setFilterStrategyType] = useState('全部')
+  const [filterStatus, setFilterStatus] = useState('全部')
   const pageSize = 20
 
   const strategyRecords = useStore(state => state.strategyRecords)
@@ -95,14 +80,6 @@ const TradingStrategy = () => {
     const initialData = {}
     FIELDS.forEach(field => {
       initialData[field.key] = ''
-    })
-    // 初始化技术指标字段
-    INDICATOR_FIELD_NAMES.forEach(field => {
-      initialData[field.key + 'Name'] = ''
-      initialData[field.key + 'Desc'] = ''
-      initialData[field.key + 'MinScore'] = ''
-      initialData[field.key + 'MaxScore'] = ''
-      initialData[field.key + 'Weight'] = ''
     })
     setFormData(initialData)
   }, [])
@@ -121,43 +98,6 @@ const TradingStrategy = () => {
       }
     })
 
-    // 验证技术指标字段
-    INDICATOR_FIELD_NAMES.forEach(field => {
-      const nameKey = field.key + 'Name'
-      const descKey = field.key + 'Desc'
-      const minScoreKey = field.key + 'MinScore'
-      const maxScoreKey = field.key + 'MaxScore'
-      const weightKey = field.key + 'Weight'
-
-      // 验证指标名称
-      if (!formData[nameKey] || formData[nameKey].trim() === '') {
-        errors[nameKey] = true
-      }
-      // 验证评估标准
-      if (!formData[descKey] || formData[descKey].trim() === '') {
-        errors[descKey] = true
-      }
-      // 验证最小分值
-      const minScore = parseInt(formData[minScoreKey])
-      if (isNaN(minScore)) {
-        errors[minScoreKey] = true
-      }
-      // 验证最大分值
-      const maxScore = parseInt(formData[maxScoreKey])
-      if (isNaN(maxScore)) {
-        errors[maxScoreKey] = true
-      }
-      // 验证权重
-      const weight = parseFloat(formData[weightKey])
-      if (isNaN(weight) || weight <= 0) {
-        errors[weightKey] = true
-      }
-      // 验证最大分值必须大于最小分值
-      if (!isNaN(minScore) && !isNaN(maxScore) && minScore >= maxScore) {
-        errors[maxScoreKey] = true
-      }
-    })
-
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors)
       return
@@ -165,26 +105,8 @@ const TradingStrategy = () => {
 
     // 计算总分
     let totalScore = 0
-    let totalWeight = 0
-    INDICATOR_FIELDS.forEach(field => {
-      const score = parseInt(formData[field.key])
-      const normalizedScore = ((score - field.minScore) / (field.maxScore - field.minScore)) * 100
-      totalScore += normalizedScore * field.weight
-      totalWeight += field.weight
-    })
-    const overallScore = totalWeight > 0 ? (totalScore / totalWeight).toFixed(2) / 10 : 0
-
     const submitData = {
       ...formData,
-      // 保存技术指标字段
-      ...INDICATOR_FIELD_NAMES.reduce((acc, field) => {
-        acc[field.key + 'Name'] = formData[field.key + 'Name']
-        acc[field.key + 'Desc'] = formData[field.key + 'Desc']
-        acc[field.key + 'MinScore'] = parseInt(formData[field.key + 'MinScore'])
-        acc[field.key + 'MaxScore'] = parseInt(formData[field.key + 'MaxScore'])
-        acc[field.key + 'Weight'] = parseFloat(formData[field.key + 'Weight'])
-        return acc
-      }, {}),
       // 自动设置创建人
       creator: formData.creator || '系统'
     }
@@ -210,14 +132,6 @@ const TradingStrategy = () => {
     FIELDS.forEach(field => {
       initialData[field.key] = editingData[field.key] || ''
     })
-    // 加载技术指标字段
-    INDICATOR_FIELD_NAMES.forEach(field => {
-      initialData[field.key + 'Name'] = editingData[field.key + 'Name'] || ''
-      initialData[field.key + 'Desc'] = editingData[field.key + 'Desc'] || ''
-      initialData[field.key + 'MinScore'] = editingData[field.key + 'MinScore'] || ''
-      initialData[field.key + 'MaxScore'] = editingData[field.key + 'MaxScore'] || ''
-      initialData[field.key + 'Weight'] = editingData[field.key + 'Weight'] || ''
-    })
     setFormData(initialData)
     setFormErrors({})
     setIsEditMode(true)
@@ -233,14 +147,6 @@ const TradingStrategy = () => {
     const initialData = {}
     FIELDS.forEach(field => {
       initialData[field.key] = ''
-    })
-    // 重置技术指标字段
-    INDICATOR_FIELD_NAMES.forEach(field => {
-      initialData[field.key + 'Name'] = ''
-      initialData[field.key + 'Desc'] = ''
-      initialData[field.key + 'MinScore'] = ''
-      initialData[field.key + 'MaxScore'] = ''
-      initialData[field.key + 'Weight'] = ''
     })
     setFormData(initialData)
   }
@@ -332,10 +238,6 @@ const TradingStrategy = () => {
           return trimmedValue
         }
 
-        const validDirections = ['买入', '卖出']
-        const validStrategyTypes = ['趋势', '震荡', '突破', '回调']
-        const validStatuses = ['启用', '禁用']
-
         for (let i = 1; i < jsonData.length; i++) {
           const values = jsonData[i]
           const data = {}
@@ -363,9 +265,8 @@ const TradingStrategy = () => {
                 }
               }
 
-              if (field.key === 'direction' && value && !validDirections.includes(value)) {
-                errors.push('[策略方向]格式错误；')
-              }
+              const validStrategyTypes = ['趋势', '震荡', '突破', '回调']
+              const validStatuses = ['启用', '禁用']
 
               if (field.key === 'strategyType' && value && !validStrategyTypes.includes(value)) {
                 errors.push('[策略类型]格式错误；')
@@ -373,66 +274,6 @@ const TradingStrategy = () => {
 
               if (field.key === 'status' && value && !validStatuses.includes(value)) {
                 errors.push('[状态]格式错误；')
-              }
-            }
-          })
-
-          // 验证技术指标字段（导入时暂不处理自定义指标字段）
-          INDICATOR_FIELD_NAMES.forEach(field => {
-            const nameKey = field.key + 'Name'
-            const descKey = field.key + 'Desc'
-            const minScoreKey = field.key + 'MinScore'
-            const maxScoreKey = field.key + 'MaxScore'
-            const weightKey = field.key + 'Weight'
-
-            // 查找对应的列索引
-            const nameIndex = headers.findIndex(h => h === field.label + '名称')
-            const descIndex = headers.findIndex(h => h === field.label + '评估标准')
-            const minScoreIndex = headers.findIndex(h => h === field.label + '最小分值')
-            const maxScoreIndex = headers.findIndex(h => h === field.label + '最大分值')
-            const weightIndex = headers.findIndex(h => h === field.label + '权重')
-
-            if (nameIndex !== -1) {
-              const value = values[nameIndex]
-              if (!value || String(value).trim() === '') {
-                errors.push(`[${field.label}名称]不能为空；`)
-              } else {
-                data[nameKey] = String(value).trim()
-              }
-            }
-            if (descIndex !== -1) {
-              const value = values[descIndex]
-              if (!value || String(value).trim() === '') {
-                errors.push(`[${field.label}评估标准]不能为空；`)
-              } else {
-                data[descKey] = String(value).trim()
-              }
-            }
-            if (minScoreIndex !== -1) {
-              const value = values[minScoreIndex]
-              const minScore = parseInt(value)
-              if (isNaN(minScore)) {
-                errors.push(`[${field.label}最小分值]格式错误；`)
-              } else {
-                data[minScoreKey] = minScore
-              }
-            }
-            if (maxScoreIndex !== -1) {
-              const value = values[maxScoreIndex]
-              const maxScore = parseInt(value)
-              if (isNaN(maxScore)) {
-                errors.push(`[${field.label}最大分值]格式错误；`)
-              } else {
-                data[maxScoreKey] = maxScore
-              }
-            }
-            if (weightIndex !== -1) {
-              const value = values[weightIndex]
-              const weight = parseFloat(value)
-              if (isNaN(weight) || weight <= 0) {
-                errors.push(`[${field.label}权重]格式错误；`)
-              } else {
-                data[weightKey] = weight
               }
             }
           })
@@ -523,15 +364,7 @@ const TradingStrategy = () => {
     const workbook = new ExcelJS.Workbook()
     const worksheet = workbook.addWorksheet('模板')
 
-    const headers = FIELDS.map(f => f.label)
-    const indicatorHeaders = INDICATOR_FIELD_NAMES.flatMap(f => [
-      f.label + '名称',
-      f.label + '评估标准',
-      f.label + '最小分值',
-      f.label + '最大分值',
-      f.label + '权重'
-    ])
-    const allHeaders = [...headers, ...indicatorHeaders]
+    const allHeaders = FIELDS.map(f => f.label)
 
     worksheet.columns = allHeaders.map(header => ({
       header: header,
@@ -572,15 +405,7 @@ const TradingStrategy = () => {
   }
 
   const handleConfirmExport = async () => {
-    const headers = FIELDS.map(f => f.label)
-    const indicatorHeaders = INDICATOR_FIELD_NAMES.flatMap(f => [
-      f.label + '名称',
-      f.label + '评估标准',
-      f.label + '最小分值',
-      f.label + '最大分值',
-      f.label + '权重'
-    ])
-    const allHeaders = [...headers, ...indicatorHeaders]
+    const allHeaders = FIELDS.map(f => f.label)
 
     const rows = filteredData.map(data =>
       [...FIELDS.map(f => {
@@ -591,13 +416,7 @@ const TradingStrategy = () => {
           return format(new Date(data[f.key]), 'yyyy-MM-dd')
         }
         return data[f.key] || ''
-      }), ...INDICATOR_FIELD_NAMES.flatMap(f => [
-        data[f.key + 'Name'] || '',
-        data[f.key + 'Desc'] || '',
-        data[f.key + 'MinScore'] || '',
-        data[f.key + 'MaxScore'] || '',
-        data[f.key + 'Weight'] || ''
-      ])]
+      })]
     )
 
     if (exportFormat === 'xlsx') {
@@ -657,7 +476,8 @@ const TradingStrategy = () => {
 
   const filteredData = sortedData.filter(data => {
     let matchDate = true
-    let matchDirection = true
+    let matchStrategyType = true
+    let matchStatus = true
 
     if (filterDateRange) {
       const [start, end] = filterDateRange.split('~')
@@ -669,11 +489,15 @@ const TradingStrategy = () => {
       }
     }
 
-    if (filterDirection && filterDirection !== '全部') {
-      matchDirection = data.direction === filterDirection
+    if (filterStrategyType !== '全部') {
+      matchStrategyType = data.strategyType === filterStrategyType
     }
 
-    return matchDate && matchDirection
+    if (filterStatus !== '全部') {
+      matchStatus = data.status === filterStatus
+    }
+
+    return matchDate && matchStrategyType && matchStatus
   })
 
   const totalPages = Math.ceil(filteredData.length / pageSize)
@@ -703,6 +527,40 @@ const TradingStrategy = () => {
     showToast(`删除成功`)
   }
 
+  const handleEnable = () => {
+    if (selectedIds.length === 0) return
+    setShowEnableModal(true)
+  }
+
+  const confirmEnable = () => {
+    selectedIds.forEach(id => {
+      const record = strategyRecords.find(r => r.id === id)
+      if (record) {
+        updateStrategyRecord(id, { ...record, status: '启用' })
+      }
+    })
+    setSelectedIds([])
+    setShowEnableModal(false)
+    showToast('启用成功')
+  }
+
+  const handleDisable = () => {
+    if (selectedIds.length === 0) return
+    setShowDisableModal(true)
+  }
+
+  const confirmDisable = () => {
+    selectedIds.forEach(id => {
+      const record = strategyRecords.find(r => r.id === id)
+      if (record) {
+        updateStrategyRecord(id, { ...record, status: '禁用' })
+      }
+    })
+    setSelectedIds([])
+    setShowDisableModal(false)
+    showToast('停用成功')
+  }
+
   const directionOptions = [
     { value: '买入', label: '买入' },
     { value: '卖出', label: '卖出' }
@@ -724,24 +582,41 @@ const TradingStrategy = () => {
         <div style={{ flexShrink: 0, marginTop: '10px' }}>
           <div className="flex gap-4 items-center">
             <div style={{ position: 'relative', width: '240px' }}>
+              <FilterSelect
+                options={[
+                  { value: '买入', label: '买入' },
+                  { value: '卖出', label: '卖出' }
+                ]}
+                value={filterStrategyType}
+                onChange={(value) => {
+                  setFilterStrategyType(value)
+                  setCurrentPage(1)
+                }}
+                placeholder="策略类型"
+              />
+            </div>
+            <div style={{ position: 'relative', width: '240px' }}>
+              <FilterSelect
+                options={[
+                  { value: '启用', label: '启用' },
+                  { value: '停用', label: '停用' }
+                ]}
+                value={filterStatus}
+                onChange={(value) => {
+                  setFilterStatus(value)
+                  setCurrentPage(1)
+                }}
+                placeholder="状态"
+              />
+            </div>
+            <div style={{ position: 'relative', width: '240px' }}>
               <DateRangePicker
                 value={filterDateRange}
                 onChange={(value) => {
                   setFilterDateRange(value)
                   setCurrentPage(1)
                 }}
-                placeholder="日期"
-              />
-            </div>
-            <div style={{ position: 'relative', width: '240px' }}>
-              <FilterSelect
-                value={filterDirection === '全部' ? '' : filterDirection}
-                onChange={(value) => {
-                  setFilterDirection(value === '策略方向' ? '全部' : value)
-                  setCurrentPage(1)
-                }}
-                options={directionOptions}
-                placeholder="策略方向"
+                placeholder="创建时间"
               />
             </div>
           </div>
@@ -754,10 +629,14 @@ const TradingStrategy = () => {
             setShowModal(true)
           }}
           onEdit={handleEdit}
+          onEnable={handleEnable}
+          onDisable={handleDisable}
           onImport={() => setShowImportModal(true)}
           onExport={handleExport}
           onDelete={handleDelete}
           canEdit={selectedIds.length === 1}
+          canEnable={selectedIds.length > 0}
+          canDisable={selectedIds.length > 0}
           canExport={filteredData.length > 0}
           canDelete={selectedIds.length > 0}
           totalCount={filteredData.length}
@@ -777,6 +656,12 @@ const TradingStrategy = () => {
                 props: { message: '暂无数据' }
               }}
               renderCell={(field, item) => {
+                if (field.key === 'updatedAt' && item[field.key]) {
+                  return format(new Date(item[field.key]), 'yyyy-MM-dd HH:mm:ss')
+                }
+                if (field.key === 'createdAt' && item[field.key]) {
+                  return format(new Date(item[field.key]), 'yyyy-MM-dd HH:mm:ss')
+                }
                 return null
               }}
             />
@@ -835,6 +720,24 @@ const TradingStrategy = () => {
         message="是否确认删除？"
       />
 
+      {/* 启用确认弹窗 */}
+      <ConfirmModal
+        isOpen={showEnableModal}
+        onClose={() => setShowEnableModal(false)}
+        onConfirm={confirmEnable}
+        title="启用"
+        message="是否确认启用"
+      />
+
+      {/* 停用确认弹窗 */}
+      <ConfirmModal
+        isOpen={showDisableModal}
+        onClose={() => setShowDisableModal(false)}
+        onConfirm={confirmDisable}
+        title="停用"
+        message="是否确认停用"
+      />
+
       {/* 添加/编辑记录弹窗 */}
       <FormModal
         isOpen={showModal}
@@ -849,136 +752,6 @@ const TradingStrategy = () => {
           if (clearError) {
             setFormErrors(prev => ({ ...prev, ...clearError }))
           }
-        }}
-        getFieldComponent={(field, data, errors, onChange) => {
-          // 技术指标评估部分
-          if (field.key === 'description') {
-            return (
-              <div className="col-span-2 md:col-span-4 space-y-4">
-                <textarea
-                  value={data[field.key] || ''}
-                  onChange={(e) => {
-                    onChange({ ...data, [field.key]: e.target.value })
-                    if (e.target.value && errors[field.key]) {
-                      onChange({ ...data, [field.key]: e.target.value }, { [field.key]: false })
-                    }
-                  }}
-                  placeholder="请输入"
-                  className={`w-full px-3 py-2 border ${errors[field.key] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                  rows={2}
-                />
-                {errors[field.key] && (
-                  <p className="text-red-500 text-xs">不能为空</p>
-                )}
-
-                {/* 技术指标评估配置 */}
-                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                  <h4 className="text-sm font-medium text-gray-700 mb-3">技术指标评估配置</h4>
-                  <div className="space-y-4">
-                    {INDICATOR_FIELD_NAMES.map((indicator, index) => {
-                      const nameKey = indicator.key + 'Name'
-                      const descKey = indicator.key + 'Desc'
-                      const minScoreKey = indicator.key + 'MinScore'
-                      const maxScoreKey = indicator.key + 'MaxScore'
-                      const weightKey = indicator.key + 'Weight'
-
-                      return (
-                        <div key={indicator.key} className="border border-gray-200 rounded-lg p-3 bg-white">
-                          <div className="text-xs font-medium text-gray-700 mb-2">{indicator.label}</div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-xs text-gray-600 block mb-1">指标名称</label>
-                              <input
-                                type="text"
-                                value={data[nameKey] || ''}
-                                onChange={(e) => {
-                                  onChange({ ...data, [nameKey]: e.target.value })
-                                  if (e.target.value && errors[nameKey]) {
-                                    onChange({ ...data, [nameKey]: e.target.value }, { [nameKey]: false })
-                                  }
-                                }}
-                                placeholder="如: MACD"
-                                className={`w-full px-2 py-1 text-sm border ${errors[nameKey] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-1 focus:ring-blue-500`}
-                              />
-                              {errors[nameKey] && <p className="text-red-500 text-xs mt-1">不能为空</p>}
-                            </div>
-                            <div>
-                              <label className="text-xs text-gray-600 block mb-1">权重(0-1)</label>
-                              <input
-                                type="number"
-                                step="0.1"
-                                min="0"
-                                max="1"
-                                value={data[weightKey] || ''}
-                                onChange={(e) => {
-                                  onChange({ ...data, [weightKey]: e.target.value })
-                                  if (e.target.value && errors[weightKey]) {
-                                    onChange({ ...data, [weightKey]: e.target.value }, { [weightKey]: false })
-                                  }
-                                }}
-                                placeholder="0.2"
-                                className={`w-full px-2 py-1 text-sm border ${errors[weightKey] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-1 focus:ring-blue-500`}
-                              />
-                              {errors[weightKey] && <p className="text-red-500 text-xs mt-1">格式错误</p>}
-                            </div>
-                            <div>
-                              <label className="text-xs text-gray-600 block mb-1">最小分值</label>
-                              <input
-                                type="number"
-                                value={data[minScoreKey] || ''}
-                                onChange={(e) => {
-                                  onChange({ ...data, [minScoreKey]: e.target.value })
-                                  if (e.target.value && errors[minScoreKey]) {
-                                    onChange({ ...data, [minScoreKey]: e.target.value }, { [minScoreKey]: false })
-                                  }
-                                }}
-                                placeholder="0"
-                                className={`w-full px-2 py-1 text-sm border ${errors[minScoreKey] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-1 focus:ring-blue-500`}
-                              />
-                              {errors[minScoreKey] && <p className="text-red-500 text-xs mt-1">格式错误</p>}
-                            </div>
-                            <div>
-                              <label className="text-xs text-gray-600 block mb-1">最大分值</label>
-                              <input
-                                type="number"
-                                value={data[maxScoreKey] || ''}
-                                onChange={(e) => {
-                                  onChange({ ...data, [maxScoreKey]: e.target.value })
-                                  if (e.target.value && errors[maxScoreKey]) {
-                                    onChange({ ...data, [maxScoreKey]: e.target.value }, { [maxScoreKey]: false })
-                                  }
-                                }}
-                                placeholder="2"
-                                className={`w-full px-2 py-1 text-sm border ${errors[maxScoreKey] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-1 focus:ring-blue-500`}
-                              />
-                              {errors[maxScoreKey] && <p className="text-red-500 text-xs mt-1">格式错误</p>}
-                            </div>
-                          </div>
-                          <div className="mt-2">
-                            <label className="text-xs text-gray-600 block mb-1">评估标准</label>
-                            <textarea
-                              value={data[descKey] || ''}
-                              onChange={(e) => {
-                                onChange({ ...data, [descKey]: e.target.value })
-                                if (e.target.value && errors[descKey]) {
-                                  onChange({ ...data, [descKey]: e.target.value }, { [descKey]: false })
-                                }
-                              }}
-                              placeholder="如: 0=背离；1=中性；2=金叉/死叉；"
-                              className={`w-full px-2 py-1 text-sm border ${errors[descKey] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-1 focus:ring-blue-500`}
-                              rows={1}
-                            />
-                            {errors[descKey] && <p className="text-red-500 text-xs mt-1">不能为空</p>}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-            )
-          }
-          return null
         }}
       />
       </>

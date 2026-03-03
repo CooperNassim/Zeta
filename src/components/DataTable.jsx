@@ -21,8 +21,8 @@ const DataTable = ({
   return (
     <table style={{ width: '1800px' }}>
       <thead>
-        <tr className="border-b sticky top-0" style={{ backgroundColor: '#F1F5F9', zIndex: '20' }}>
-          <th className="px-0 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap w-10 sticky left-0 bg-[#F1F5F9]" style={{ backgroundColor: '#F1F5F9', margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px', zIndex: '30' }}>
+        <tr className="border-b sticky top-0" style={{ backgroundColor: '#F4F5F7', zIndex: '20' }}>
+          <th className="px-0 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap w-10 sticky left-0 bg-[#F4F5F7]" style={{ backgroundColor: '#F4F5F7', margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px', zIndex: '30' }}>
             <input
               type="checkbox"
               checked={selectedIds.length === data.length && data.length > 0}
@@ -32,7 +32,7 @@ const DataTable = ({
             />
           </th>
           {fields.filter(field => !field.hideInTable).map((field, index) => (
-            <th key={field.key} className="px-4 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap" style={{ backgroundColor: '#F1F5F9', width: field.width || 'auto' }}>
+            <th key={field.key} className="px-4 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap" style={{ backgroundColor: '#F4F5F7', width: field.width || 'auto' }}>
               {field.label}
             </th>
           ))}

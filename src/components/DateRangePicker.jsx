@@ -122,6 +122,7 @@ const DateRangePicker = ({ value, onChange, placeholder = '日期区间', classN
       <div
         onClick={() => setIsOpen(!isOpen)}
         className="px-3 py-2 border border-gray-300 rounded text-gray-700 focus:outline-none focus:border-blue-500 transition-colors text-sm cursor-pointer flex items-center justify-between w-full"
+        style={{ backgroundColor: '#FFFFFF' }}
       >
         <span style={{ color: displayValue ? '#1f2937' : '#9ca3af' }}>
           {displayValue || placeholder}

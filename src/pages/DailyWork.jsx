@@ -562,7 +562,7 @@ const DailyWork = () => {
           background-color: #0F1419 !important;
         }
       `}</style>
-      <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
+      <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px', backgroundColor: '#ECEFF7' }}>
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
         {/* 筛选条件 */}
         <div style={{ flexShrink: 0, marginTop: '10px' }}>

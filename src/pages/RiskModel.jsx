@@ -1,91 +1,173 @@
 import React, { useState, useEffect } from 'react'
 import useStore from '../store/useStore'
-import { ArrowUp, ArrowDown, TrendingUp, TrendingDown, Shield, DollarSign, Activity, Target } from 'lucide-react'
+import { TrendingUp, TrendingDown, Shield, Activity, Target, Wallet, TrendingDown as RankingDown, Edit as EditIcon, AlertCircle } from 'lucide-react'
+import Modal from '../components/Modal'
+import CustomInput from '../components/CustomInput'
+import ErrorMessage from '../components/ErrorMessage'
+import Toast from '../components/Toast'
+import EmptyState from '../components/EmptyState'
 
-// 风险额度配置
-const RiskConfig = () => {
-  const [totalRiskPercent, setTotalRiskPercent] = useState(5)
-  const [singleRiskPercent, setSingleRiskPercent] = useState(1)
-  const [isEditing, setIsEditing] = useState(false)
+// 风险额度编辑弹窗
+const RiskConfigModal = ({ isOpen, onClose, initialData, onSave }) => {
+  const [totalRiskPercent, setTotalRiskPercent] = useState(initialData.totalRiskPercent)
+  const [singleRiskPercent, setSingleRiskPercent] = useState(initialData.singleRiskPercent)
+  const [errors, setErrors] = useState({ totalRisk: false, singleRisk: false })
+
+  const validateForm = () => {
+    const newErrors = {
+      totalRisk: totalRiskPercent === '' || totalRiskPercent === undefined || totalRiskPercent === null,
+      singleRisk: singleRiskPercent === '' || singleRiskPercent === undefined || singleRiskPercent === null
+    }
+    setErrors(newErrors)
+    return !newErrors.totalRisk && !newErrors.singleRisk
+  }
 
   const handleSave = () => {
-    // 保存配置到 store 或 localStorage
-    localStorage.setItem('riskModel_totalRiskPercent', totalRiskPercent.toString())
-    localStorage.setItem('riskModel_singleRiskPercent', singleRiskPercent.toString())
-    setIsEditing(false)
-    alert('风险额度设置已保存')
+    if (validateForm()) {
+      onSave({ totalRiskPercent, singleRiskPercent })
+      onClose()
+    }
+  }
+
+  const handleTotalRiskChange = (value) => {
+    setTotalRiskPercent(value === '' ? '' : parseFloat(value))
+    setErrors({ ...errors, totalRisk: false })
+  }
+
+  const handleSingleRiskChange = (value) => {
+    setSingleRiskPercent(value === '' ? '' : parseFloat(value))
+    setErrors({ ...errors, singleRisk: false })
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm p-4 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Shield className="w-5 h-5" style={{ color: '#0F1419' }} />
-          <h3 className="font-semibold text-sm">风险额度配置</h3>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="风险额度"
+      width="max-w-md"
+      footer={
+        <>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-6 py-2 rounded text-white hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: '#0F1419' }}
+          >
+            保存
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            <span className="text-red-500">* </span>账户风险额度比例 (%)
+          </label>
+          <CustomInput
+            type="number"
+            min="0"
+            max="100"
+            step="0.1"
+            value={totalRiskPercent}
+            onChange={handleTotalRiskChange}
+            placeholder="请输入账户风险额度比例"
+            error={errors.totalRisk}
+          />
+          {errors.totalRisk && (
+            <ErrorMessage message="不能为空" showIcon={true} icon={AlertCircle} />
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            <span className="text-red-500">* </span>单笔风险额度比例 (%)
+          </label>
+          <CustomInput
+            type="number"
+            min="0"
+            max="100"
+            step="0.1"
+            value={singleRiskPercent}
+            onChange={handleSingleRiskChange}
+            placeholder="请输入单笔风险额度比例"
+            error={errors.singleRisk}
+          />
+          {errors.singleRisk && (
+            <ErrorMessage message="不能为空" showIcon={true} icon={AlertCircle} />
+          )}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// 风险额度配置
+const RiskConfig = () => {
+  const [totalRiskPercent, setTotalRiskPercent] = useState(6)
+  const [singleRiskPercent, setSingleRiskPercent] = useState(2)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [showToast, setShowToast] = useState(false)
+
+  const handleSave = (data) => {
+    setTotalRiskPercent(data.totalRiskPercent)
+    setSingleRiskPercent(data.singleRiskPercent)
+    localStorage.setItem('riskModel_totalRiskPercent', data.totalRiskPercent.toString())
+    localStorage.setItem('riskModel_singleRiskPercent', data.singleRiskPercent.toString())
+    setShowToast(true)
+  }
+
+  return (
+    <div style={{
+      background: '#ffffff',
+      border: '2px solid #e5e7eb',
+      borderRadius: '8px',
+      padding: '20px',
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      overflow: 'hidden'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Shield style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+          <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>风险额度</h3>
         </div>
         <button
-          onClick={() => setIsEditing(!isEditing)}
-          className="text-xs px-2 py-1 border rounded hover:bg-gray-50"
-          style={{ color: '#0F1419', borderColor: '#0F1419' }}
+          onClick={() => setIsModalOpen(true)}
+          style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.1)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
         >
-          {isEditing ? '取消' : '编辑'}
+          <EditIcon style={{ width: '16px', height: '16px', color: '#666' }} />
         </button>
       </div>
 
-      {!isEditing ? (
-        <div className="space-y-3 flex-1">
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600">总账可用风险额度</span>
-            <span className="font-semibold text-lg" style={{ color: '#0F1419' }}>
-              {totalRiskPercent}%
-            </span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600">单笔可用风险额度</span>
-            <span className="font-semibold text-lg" style={{ color: '#0F1419' }}>
-              {singleRiskPercent}%
-            </span>
-          </div>
-          <div className="mt-4 p-3 bg-gray-50 rounded text-xs text-gray-500">
-            <p>• 总账：月初账户总额 × (1 - 总账可用风险额度)</p>
-            <p>• 单笔：每笔交易最大风险占比</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, overflow: 'auto' }}>
+        <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
+          <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>账户风险额度</div>
+          <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>
+            {totalRiskPercent}%
           </div>
         </div>
-      ) : (
-        <div className="space-y-4 flex-1">
-          <div>
-            <label className="block text-sm text-gray-600 mb-2">总账可用风险额度 (%)</label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={totalRiskPercent}
-              onChange={(e) => setTotalRiskPercent(parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 border rounded text-sm"
-              style={{ borderColor: '#0F1419' }}
-            />
+        <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
+          <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>单笔风险额度</div>
+          <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>
+            {singleRiskPercent}%
           </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-2">单笔可用风险额度 (%)</label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={singleRiskPercent}
-              onChange={(e) => setSingleRiskPercent(parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 border rounded text-sm"
-              style={{ borderColor: '#0F1419' }}
-            />
-          </div>
-          <button
-            onClick={handleSave}
-            className="w-full py-2 rounded text-white text-sm"
-            style={{ backgroundColor: '#0F1419' }}
-          >
-            保存配置
-          </button>
         </div>
-      )}
+      </div>
+
+      <RiskConfigModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        initialData={{ totalRiskPercent, singleRiskPercent }}
+        onSave={handleSave}
+      />
+      {showToast && <Toast type="success" message="保存成功" onClose={() => setShowToast(false)} />}
     </div>
   )
 }
@@ -93,26 +175,26 @@ const RiskConfig = () => {
 // 风险仪表盘组件
 const RiskGauge = ({ value, label }) => {
   const percentage = Math.min(Math.max(value, 0), 100)
-  const circumference = 2 * Math.PI * 45
+  const circumference = 2 * Math.PI * 50
   const offset = circumference - (percentage / 100) * circumference
-  const color = percentage > 80 ? '#EF4444' : percentage > 60 ? '#F59E0B' : '#10B981'
+  const color = percentage > 4 ? '#EF4444' : percentage > 2 ? '#F59E0B' : '#22c55e'
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="relative">
-        <svg width="120" height="120" className="transform -rotate-90">
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ position: 'relative' }}>
+        <svg width="132" height="132" style={{ transform: 'rotate(-90deg)' }}>
           <circle
-            cx="60"
-            cy="60"
-            r="45"
+            cx="66"
+            cy="66"
+            r="50"
             stroke="#E5E7EB"
             strokeWidth="10"
             fill="none"
           />
           <circle
-            cx="60"
-            cy="60"
-            r="45"
+            cx="66"
+            cy="66"
+            r="50"
             stroke={color}
             strokeWidth="10"
             fill="none"
@@ -121,15 +203,15 @@ const RiskGauge = ({ value, label }) => {
             strokeLinecap="round"
           />
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center transform rotate-90">
-          <div className="text-center">
-            <div className="text-2xl font-bold" style={{ color: color }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '24px', fontWeight: 'bold', color: color }}>
               {percentage.toFixed(1)}%
             </div>
           </div>
         </div>
       </div>
-      <div className="mt-2 text-sm text-gray-600">{label}</div>
+      <div style={{ marginTop: '8px', fontSize: '14px', color: '#6B7280' }}>{label}</div>
     </div>
   )
 }
@@ -181,97 +263,124 @@ const CurrentPositions = ({ selectedPosition, onPositionSelect }) => {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm p-4 h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-3">
-        <Activity className="w-5 h-5" style={{ color: '#0F1419' }} />
-        <h3 className="font-semibold text-sm">当前持仓</h3>
-        <span className="text-xs text-gray-500">({positions.length}只)</span>
+    <div style={{
+      background: '#ffffff',
+      border: '2px solid #e5e7eb',
+      borderRadius: '8px',
+      padding: '20px',
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+        <Activity style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+        <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>当前持仓</h3>
+        <span style={{ fontSize: '12px', color: '#666' }}>({positions.length}只)</span>
       </div>
 
-      {/* 股票选择器 */}
-      <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-        {positions.map((pos, index) => (
-          <button
-            key={pos.id}
-            onClick={() => onPositionSelect(pos)}
-            className={`px-3 py-1 rounded text-xs whitespace-nowrap transition-all ${
-              selectedPosition?.id === pos.id
-                ? 'text-white'
-                : 'text-gray-600 border border-gray-300 hover:bg-gray-50'
-            }`}
-            style={{
-              backgroundColor: selectedPosition?.id === pos.id ? '#0F1419' : 'transparent'
-            }}
-          >
-            {pos.symbol}
-          </button>
-        ))}
-      </div>
+      {/* 持仓列表 - 垂直平铺，可滚动 */}
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {positions.length === 0 ? (
+          <EmptyState message="暂无持仓数据" height="100%" />
+        ) : (
+          positions.map((pos, index) => (
+            <div
+              key={pos.id}
+              style={{
+                padding: '14px',
+                background: '#f9fafb',
+                borderRadius: '6px',
+                border: '2px solid #e5e7eb'
+              }}
+            >
+            {/* 股票名称和代码 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#0F1419' }}>
+                  {pos.name}
+                </div>
+                <div style={{ fontSize: '12px', color: '#666' }}>{pos.symbol}</div>
+              </div>
+            </div>
 
-      {/* 选中股票详情 */}
-      <div className="flex-1 space-y-3">
-        <div className="flex justify-between items-center pb-2 border-b">
-          <div>
-            <div className="font-semibold text-lg" style={{ color: '#0F1419' }}>
-              {selectedPosition.symbol}
-            </div>
-            <div className="text-xs text-gray-500">{selectedPosition.name}</div>
-          </div>
-        </div>
+            {/* 风险信息网格 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <div style={{ padding: '8px', background: '#ffffff', borderRadius: '4px' }}>
+                <div style={{ fontSize: '11px', color: '#999', marginBottom: '2px' }}>持仓占用</div>
+                <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px' }}>
+                  ¥{pos.riskAmount.toLocaleString()}
+                </div>
+                <div style={{ fontSize: '11px', color: '#666' }}>
+                  {pos.riskPercent}%
+                </div>
+              </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="p-3 bg-gray-50 rounded">
-            <div className="text-xs text-gray-500 mb-1">占用风险额度</div>
-            <div className="font-semibold" style={{ color: '#0F1419' }}>
-              ¥{selectedPosition.riskAmount.toLocaleString()}
-            </div>
-            <div className="text-xs text-gray-500">
-              {selectedPosition.riskPercent}%
-            </div>
-          </div>
+                <div style={{
+                  padding: '8px',
+                  borderRadius: '4px',
+                  background: pos.profitLoss >= 0 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)'
+                }}>
+                  <div style={{ fontSize: '11px', color: '#999', marginBottom: '2px' }}>交易盈亏</div>
+                  <div style={{
+                    fontWeight: 'bold',
+                    color: pos.profitLoss >= 0 ? '#22c55e' : '#ef4444',
+                    fontSize: '14px'
+                  }}>
+                    {pos.profitLoss >= 0 ? '+' : '-'}¥{Math.abs(pos.profitLoss).toLocaleString()}
+                  </div>
+                  <div style={{
+                    fontSize: '11px',
+                    color: pos.profitLossPercent >= 0 ? '#22c55e' : '#ef4444'
+                  }}>
+                    {pos.profitLossPercent >= 0 ? '+' : ''}{pos.profitLossPercent}%
+                  </div>
+                </div>
 
-          <div className={`p-3 rounded ${
-            selectedPosition.profitLoss >= 0 ? 'bg-green-50' : 'bg-red-50'
-          }`}>
-            <div className="text-xs text-gray-500 mb-1">盈亏</div>
-            <div className={`font-semibold ${
-              selectedPosition.profitLoss >= 0 ? 'text-green-600' : 'text-red-600'
-            }`}>
-              {selectedPosition.profitLoss >= 0 ? '+' : ''}
-              ¥{selectedPosition.profitLoss.toLocaleString()}
-            </div>
-            <div className={`text-xs ${
-              selectedPosition.profitLossPercent >= 0 ? 'text-green-600' : 'text-red-600'
-            }`}>
-              {selectedPosition.profitLossPercent >= 0 ? '+' : ''}
-              {selectedPosition.profitLossPercent}%
-            </div>
-          </div>
+              <div style={{ padding: '8px', background: '#ffffff', borderRadius: '4px' }}>
+                <div style={{ fontSize: '11px', color: '#999', marginBottom: '2px' }}>
+                  距离止盈
+                </div>
+                <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px', marginBottom: '4px' }}>
+                  {pos.distanceToTakeProfit}%
+                </div>
+                <div style={{ width: '100%', background: '#E5E7EB', borderRadius: '9999px', height: '4px' }}>
+                  <div
+                    style={{
+                      background: '#22c55e',
+                      height: '4px',
+                      borderRadius: '9999px',
+                      width: `${Math.min(pos.distanceToTakeProfit * 10, 100)}%`
+                    }}
+                  />
+                </div>
+              </div>
 
-          <div className="p-3 bg-orange-50 rounded">
-            <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-              <Target className="w-3 h-3" />
-              距止损线
-            </div>
-            <div className="font-semibold text-orange-600">
-              {selectedPosition.distanceToStopLoss}%
-            </div>
-          </div>
+              <div style={{ padding: '8px', background: '#ffffff', borderRadius: '4px' }}>
+                <div style={{ fontSize: '11px', color: '#999', marginBottom: '2px' }}>
+                  距离止损
+                </div>
+                <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px', marginBottom: '4px' }}>
+                  {pos.distanceToStopLoss}%
+                </div>
+                <div style={{ width: '100%', background: '#E5E7EB', borderRadius: '9999px', height: '4px' }}>
+                  <div
+                    style={{
+                      background: '#EF4444',
+                      height: '4px',
+                      borderRadius: '9999px',
+                      width: `${Math.min(pos.distanceToStopLoss * 10, 100)}%`
+                    }}
+                  />
+                </div>
+              </div>
+              </div>
 
-          <div className="p-3 bg-blue-50 rounded">
-            <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-              <Target className="w-3 h-3" />
-              距止盈线
+              <div style={{ fontSize: '11px', color: '#999', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e5e7eb' }}>
+                执行时间: {pos.scheduleTime}
+              </div>
             </div>
-            <div className="font-semibold text-blue-600">
-              {selectedPosition.distanceToTakeProfit}%
-            </div>
-          </div>
-        </div>
-
-        <div className="text-xs text-gray-400 mt-2">
-          预约执行时间: {selectedPosition.scheduleTime}
-        </div>
+          ))
+        )}
       </div>
     </div>
   )
@@ -287,31 +396,49 @@ const AccountRisk = () => {
     riskRatio: 5.85
   }
 
+  // 计算可用风险额度
+  const availableRisk = accountRiskData.startMonthTotal - (accountRiskData.stopLossPreLoss + accountRiskData.monthlyLoss)
+
   return (
-    <div className="bg-white rounded-lg shadow-sm p-4 h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-3">
-        <TrendingUp className="w-5 h-5" style={{ color: '#0F1419' }} />
-        <h3 className="font-semibold text-sm">账户风险</h3>
+    <div style={{
+      background: '#ffffff',
+      border: '2px solid #e5e7eb',
+      borderRadius: '8px',
+      padding: '20px',
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      overflow: 'auto'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+        <Wallet style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+        <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>账户风险</h3>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center">
-        <RiskGauge value={accountRiskData.riskRatio} label="风险占比" />
-        <div className="mt-4 text-center">
-          <div className="text-xs text-gray-500 mb-1">计算公式</div>
-          <div className="text-xs text-gray-400">
-            (持仓止损预亏 + 当月亏损) / 月初账户总额
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', overflow: 'auto', justifyContent: 'flex-start' }}>
+        <RiskGauge value={accountRiskData.riskRatio} label={`已用额度：¥${availableRisk.toLocaleString()}`} />
+        <div style={{ marginTop: '12px', width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', rowGap: '10px' }}>
+          <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
+            <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>账户金额</div>
+            <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
+              ¥{accountRiskData.startMonthTotal.toLocaleString()}
+            </div>
           </div>
-        </div>
-        <div className="mt-3 w-full grid grid-cols-2 gap-2">
-          <div className="text-center p-2 bg-red-50 rounded">
-            <div className="text-xs text-gray-500">持仓止损预亏</div>
-            <div className="font-semibold text-red-600 text-sm">
+          <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
+            <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>可用额度</div>
+            <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
+              ¥{availableRisk.toLocaleString()}
+            </div>
+          </div>
+          <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
+            <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>持仓占用</div>
+            <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
               ¥{accountRiskData.stopLossPreLoss.toLocaleString()}
             </div>
           </div>
-          <div className="text-center p-2 bg-red-50 rounded">
-            <div className="text-xs text-gray-500">当月亏损</div>
-            <div className="font-semibold text-red-600 text-sm">
+          <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
+            <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>当月亏损</div>
+            <div style={{ fontWeight: 'bold', color: '#EF4444', fontSize: '16px' }}>
               ¥{accountRiskData.monthlyLoss.toLocaleString()}
             </div>
           </div>
@@ -330,27 +457,32 @@ const MonthlyLoss = () => {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm p-4 h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-3">
-        <TrendingDown className="w-5 h-5 text-red-600" />
-        <h3 className="font-semibold text-sm">当月亏损</h3>
+    <div style={{ background: 'rgb(249, 250, 251)', borderRadius: '8px', padding: '16px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+        <TrendingDown style={{ width: '20px', height: '20px', color: '#EF4444' }} />
+        <h3 style={{ fontWeight: 600, fontSize: '14px', color: '#0F1419' }}>当月亏损</h3>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center">
-        <div className="text-center">
-          <div className="text-4xl font-bold text-red-600 mb-2">
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#EF4444', marginBottom: '8px' }}>
             -¥{monthlyLossData.monthlyLoss.toLocaleString()}
           </div>
-          <div className="text-sm text-gray-500 mb-4">
+          <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '16px' }}>
             占月初总额 {monthlyLossData.lossPercent}%
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+          <div style={{ width: '100%', background: '#E5E7EB', borderRadius: '9999px', height: '8px', marginBottom: '8px' }}>
             <div
-              className="bg-red-500 h-2 rounded-full transition-all"
-              style={{ width: `${monthlyLossData.lossPercent}%` }}
+              style={{
+                background: '#EF4444',
+                height: '8px',
+                borderRadius: '9999px',
+                transition: 'width 0.3s',
+                width: `${monthlyLossData.lossPercent}%`
+              }}
             />
           </div>
-          <div className="text-xs text-gray-400">
+          <div style={{ fontSize: '12px', color: '#D1D5DB' }}>
             月初账户总额: ¥{monthlyLossData.startMonthTotal.toLocaleString()}
           </div>
         </div>
@@ -370,40 +502,40 @@ const AvailableRisk = () => {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm p-4 h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-3">
-        <Shield className="w-5 h-5" style={{ color: '#0F1419' }} />
-        <h3 className="font-semibold text-sm">可用风险额度</h3>
+    <div style={{ background: 'rgb(249, 250, 251)', borderRadius: '8px', padding: '16px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+        <Shield style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+        <h3 style={{ fontWeight: 600, fontSize: '14px', color: '#0F1419' }}>可用风险额度</h3>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center">
-        <div className="text-center">
-          <div className="text-4xl font-bold mb-2" style={{ color: '#0F1419' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#0F1419', marginBottom: '8px' }}>
             ¥{availableRiskData.available.toLocaleString()}
           </div>
-          <div className="text-sm text-gray-500 mb-4">
+          <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '16px' }}>
             可用于新交易的风险额度
           </div>
         </div>
 
-        <div className="w-full space-y-2 text-xs">
-          <div className="flex justify-between text-gray-600">
+        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#6B7280' }}>
             <span>月初账户总额</span>
             <span>¥{availableRiskData.startMonthTotal.toLocaleString()}</span>
           </div>
-          <div className="flex justify-between text-gray-600">
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#6B7280' }}>
             <span>总账可用风险额度</span>
             <span>{availableRiskData.totalRiskPercent}%</span>
           </div>
-          <div className="flex justify-between text-red-600">
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#EF4444' }}>
             <span>- 持仓止损预亏</span>
             <span>-¥{availableRiskData.stopLossPreLoss.toLocaleString()}</span>
           </div>
-          <div className="flex justify-between text-red-600">
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#EF4444' }}>
             <span>- 当月亏损</span>
             <span>-¥{availableRiskData.monthlyLoss.toLocaleString()}</span>
           </div>
-          <div className="border-t pt-2 flex justify-between font-semibold" style={{ color: '#0F1419' }}>
+          <div style={{ borderTop: '1px solid #E5E7EB', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 600, color: '#0F1419' }}>
             <span>= 可用额度</span>
             <span>¥{availableRiskData.available.toLocaleString()}</span>
           </div>
@@ -415,53 +547,92 @@ const AvailableRisk = () => {
 
 // 当月亏损策略排名组件
 const StrategyRanking = () => {
-  const strategyRankings = [
-    { rank: 1, name: '突破策略', loss: 2500, lossPercent: 1.25 },
-    { rank: 2, name: '趋势策略', loss: 500, lossPercent: 0.25 },
-    { rank: 3, name: '震荡策略', loss: 200, lossPercent: 0.10 }
+  const lossRankings = [
+    { rank: 1, symbol: 'AAPL', name: '苹果', strategy: '突破策略', loss: 2500, lossPercent: 1.25 },
+    { rank: 2, symbol: 'TSLA', name: '特斯拉', strategy: '趋势策略', loss: 500, lossPercent: 0.25 },
+    { rank: 3, symbol: 'NFLX', name: '奈飞', strategy: '震荡策略', loss: 200, lossPercent: 0.10 },
+    { rank: 4, symbol: 'MSFT', name: '微软', strategy: '波段策略', loss: 180, lossPercent: 0.09 },
+    { rank: 5, symbol: 'GOOGL', name: '谷歌', strategy: '反转策略', loss: 150, lossPercent: 0.08 },
+    { rank: 6, symbol: 'AMZN', name: '亚马逊', strategy: '突破策略', loss: 120, lossPercent: 0.06 },
+    { rank: 7, symbol: 'META', name: 'Meta', strategy: '趋势策略', loss: 100, lossPercent: 0.05 },
+    { rank: 8, symbol: 'NVDA', name: '英伟达', strategy: '震荡策略', loss: 80, lossPercent: 0.04 }
   ]
 
   return (
-    <div className="bg-white rounded-lg shadow-sm p-4 h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-3">
-        <Target className="w-5 h-5 text-red-600" />
-        <h3 className="font-semibold text-sm">当月亏损策略排名</h3>
+    <div style={{
+      background: '#ffffff',
+      border: '2px solid #e5e7eb',
+      borderRadius: '8px',
+      padding: '20px',
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+        <TrendingDown style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+        <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>当月亏损排名</h3>
       </div>
 
-      <div className="flex-1 space-y-2">
-        {strategyRankings.map((item, index) => (
-          <div
-            key={item.rank}
-            className={`p-3 rounded border transition-all ${
-              index === 0 ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:bg-gray-50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
-                    index === 0
-                      ? 'bg-red-500 text-white'
-                      : 'bg-gray-200 text-gray-600'
-                  }`}
-                >
-                  {item.rank}
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {lossRankings.length === 0 ? (
+          <EmptyState message="暂无亏损数据" height="100%" />
+        ) : (
+          lossRankings.map((item, index) => (
+            <div
+              key={item.rank}
+              style={{
+                padding: '14px',
+                background: '#f9fafb',
+                borderRadius: '6px',
+                border: '2px solid #e5e7eb'
+              }}
+            >
+            {/* 股票名称和代码 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#0F1419' }}>
+                  {item.name}
                 </div>
-                <div>
-                  <div className="text-sm font-medium" style={{ color: '#0F1419' }}>
-                    {item.name}
+                <div style={{ fontSize: '12px', color: '#666' }}>{item.symbol}</div>
+              </div>
+              <div style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                background: '#EF4444',
+                color: '#FFFFFF'
+              }}>
+                {item.rank}
+              </div>
+            </div>
+
+            {/* 交易策略和亏损信息 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <div style={{ padding: '8px', background: '#ffffff', borderRadius: '4px' }}>
+                <div style={{ fontSize: '11px', color: '#999', marginBottom: '2px' }}>交易策略</div>
+                <div style={{ color: '#0F1419', fontSize: '14px' }}>
+                  {item.strategy}
+                </div>
+              </div>
+
+                <div style={{ padding: '8px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.1)' }}>
+                  <div style={{ fontSize: '11px', color: '#999', marginBottom: '2px' }}>亏损金额</div>
+                  <div style={{ fontWeight: 'bold', color: '#EF4444', fontSize: '14px' }}>
+                    -¥{item.loss.toLocaleString()}
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div style={{ fontSize: '11px', color: '#EF4444' }}>
                     {item.lossPercent}%
                   </div>
                 </div>
               </div>
-              <div className="text-red-600 font-semibold">
-                -¥{item.loss.toLocaleString()}
-              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   )
@@ -472,42 +643,31 @@ const RiskModel = () => {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gridTemplateRows: '1fr 1fr',
-          gap: '16px',
-          padding: '16px',
-          height: 'calc(100vh - 52px)'
-        }}
-      >
-        {/* 左上角：当前持仓 */}
-        <div className="row-span-2">
-          <CurrentPositions
-            selectedPosition={selectedPosition}
-            onPositionSelect={setSelectedPosition}
-          />
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
+        {/* 主内容区域 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.7fr 1.2fr', gridTemplateRows: '6fr 4fr', gap: '10px', marginTop: '10px', flex: 1, minHeight: 0, paddingBottom: '10px' }}>
+          {/* 左上角：账户风险 */}
+          <div style={{ gridColumn: '1 / 2', minHeight: 0, overflow: 'hidden' }}>
+            <AccountRisk />
+          </div>
 
-        {/* 中间上方：账户风险 */}
-        <div>
-          <AccountRisk />
-        </div>
+          {/* 左下角：风险额度配置 */}
+          <div style={{ gridColumn: '1 / 2', minHeight: 0, overflow: 'hidden' }}>
+            <RiskConfig />
+          </div>
 
-        {/* 中间下方：当月亏损 */}
-        <div>
-          <MonthlyLoss />
-        </div>
+          {/* 左侧：当前持仓 - 跨两行 */}
+          <div style={{ gridRow: '1 / 3', gridColumn: '2 / 3', minHeight: 0, overflow: 'hidden' }}>
+            <CurrentPositions
+              selectedPosition={selectedPosition}
+              onPositionSelect={setSelectedPosition}
+            />
+          </div>
 
-        {/* 右上角：可用风险额度 */}
-        <div>
-          <AvailableRisk />
-        </div>
-
-        {/* 右下角：当月亏损策略排名 */}
-        <div>
-          <StrategyRanking />
+          {/* 右下角：当月亏损策略排名 */}
+          <div style={{ gridColumn: '3 / 4', gridRow: '1 / 3', minHeight: 0, overflow: 'hidden' }}>
+            <StrategyRanking />
+          </div>
         </div>
       </div>
     </div>

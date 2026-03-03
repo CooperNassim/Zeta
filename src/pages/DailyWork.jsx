@@ -562,7 +562,7 @@ const DailyWork = () => {
           background-color: #0F1419 !important;
         }
       `}</style>
-      <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px', backgroundColor: '#ECEFF7' }}>
+      <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
         {/* 筛选条件 */}
         <div style={{ flexShrink: 0, marginTop: '10px' }}>
@@ -608,7 +608,7 @@ const DailyWork = () => {
         />
 
         {/* 数据表格 */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', marginTop: '10px', paddingBottom: '50px', zIndex: '1' }}>
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', marginTop: '10px', paddingBottom: '50px', zIndex: '1', background: 'rgb(249, 250, 251)' }}>
           <div className="overflow-y-auto overflow-x-auto" style={{ flex: 1, minHeight: 'calc(100vh - 52px - 10px - 80px - 10px - 50px - 4px)', maxHeight: 'calc(100vh - 52px - 10px - 80px - 10px - 50px - 4px)', position: 'relative', zIndex: '1' }}>
             <DataTable
               fields={FIELDS}

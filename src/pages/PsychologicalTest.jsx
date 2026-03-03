@@ -219,7 +219,7 @@ const PsychologicalTest = () => {
     <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
         {/* 主内容区域 - 左8右2 */}
-        <div style={{ display: 'grid', gridTemplateColumns: '8fr 2fr', gap: '10px', marginTop: '10px', flex: 1, minHeight: 0, paddingBottom: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '7.5fr 3.5fr', gap: '10px', marginTop: '10px', flex: 1, minHeight: 0, paddingBottom: '10px' }}>
           {/* 左侧卡片 - 测试问卷 */}
         <div style={{
           background: '#ffffff',
@@ -308,7 +308,7 @@ const PsychologicalTest = () => {
                           {index + 1}
                         </span>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#000', marginBottom: '6px' }}>
+                          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#0F1419', marginBottom: '6px' }}>
                             {indicator.name}
                           </div>
                           <div style={{ fontSize: '14px', color: '#666', lineHeight: '1.5' }}>
@@ -405,7 +405,7 @@ const PsychologicalTest = () => {
                   transform: 'translateX(-50%)',
                   fontSize: '16px',
                   fontWeight: 'bold',
-                  color: '#000',
+                  color: '#0F1419',
                   whiteSpace: 'nowrap'
                 }}>
                   {selectedDate.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' })}
@@ -530,7 +530,7 @@ const PsychologicalTest = () => {
                 <h3 style={{
                   fontSize: '16px',
                   fontWeight: 'bold',
-                  color: '#000',
+                  color: '#0F1419',
                   margin: 0
                 }}>
                   指标设置
@@ -558,7 +558,7 @@ const PsychologicalTest = () => {
                       }}
                     >
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#000', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#0F1419', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {indicator.name}
                       </div>
                       <div style={{ fontSize: '12px', color: '#666', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>

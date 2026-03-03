@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import Modal from './Modal'
+import ErrorMessage from './ErrorMessage'
 import { X, Plus, Edit2, Trash2, Play, AlertCircle } from 'lucide-react'
 
 const TechnicalIndicatorModal = ({
@@ -339,10 +340,11 @@ const TechnicalIndicatorModal = ({
             style={{ fontFamily: 'Consolas, Monaco, "Courier New", monospace' }}
           />
           {codeError && (
-            <div className="flex items-center gap-2 mt-2 text-red-600 text-sm">
-              <AlertCircle className="w-4 h-4" />
-              {codeError}
-            </div>
+            <ErrorMessage
+              message={codeError}
+              showIcon={true}
+              icon={AlertCircle}
+            />
           )}
           <p className="text-xs text-gray-500 mt-1">
             支持同花顺、通达信、C语言等多种语言，后续股票图标指标可直接调用此模块计算

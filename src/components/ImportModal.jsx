@@ -2,6 +2,7 @@ import React from 'react'
 import Modal from './Modal'
 import { motion } from 'framer-motion'
 import { Download } from 'lucide-react'
+import ErrorMessage from './ErrorMessage'
 
 const ImportModal = ({
   isOpen,
@@ -59,7 +60,7 @@ const ImportModal = ({
             className={`w-full px-4 py-3 border rounded text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-white hover:file:opacity-90 transition-all text-sm ${importFileError ? 'border-red-500' : 'border-gray-300'}`}
           />
           {importFileError && (
-            <p className="text-red-500 text-xs mt-1">不能为空</p>
+            <ErrorMessage />
           )}
         </div>
         {importResult && (

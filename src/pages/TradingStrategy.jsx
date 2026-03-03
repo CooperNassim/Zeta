@@ -17,19 +17,25 @@ import FormModal from '../components/FormModal'
 
 // 字段定义
 const FIELDS = [
-  { key: 'id', label: '编号', type: 'text', readonly: true, notRequired: true },
+  { key: '_id', label: '修订版本', type: 'text', width: '80px' }, // 显示用的修订版本字段
+  { key: 'id', label: 'ID', type: 'text', hideInForm: true, hideInTable: true }, // 隐藏的唯一ID字段
 
   {
     key: 'strategyType',
     label: '策略类型',
     type: 'select',
     options: [
-      { value: '卖出', label: '卖出' },
-      { value: '买入', label: '买入' }
-    ]
+      { value: '买入', label: '买入' },
+      { value: '卖出', label: '卖出' }
+    ],
+    width: '100px'
   },
   { key: 'name', label: '策略名称', type: 'text' },
-  { key: 'description', label: '策略描述', type: 'text' },
+  { key: 'evalStandard1', label: '评估标准Ⅰ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；' },
+  { key: 'evalStandard2', label: '评估标准Ⅱ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；' },
+  { key: 'evalStandard3', label: '评估标准Ⅲ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；' },
+  { key: 'evalStandard4', label: '评估标准Ⅳ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；' },
+  { key: 'evalStandard5', label: '评估标准Ⅴ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；' },
   {
     key: 'status',
     label: '状态',
@@ -37,11 +43,11 @@ const FIELDS = [
     options: [
       { value: '启用', label: '启用' },
       { value: '停用', label: '停用' }
-    ]
+    ],
+    notRequired: true  // 弹窗中不显示
   },
-  { key: 'creator', label: '创建人', type: 'text' },
-  { key: 'updatedAt', label: '更新时间', type: 'text', readonly: true, notRequired: true },
-  { key: 'createdAt', label: '创建时间', type: 'text', readonly: true, notRequired: true }
+  { key: 'updatedAt', label: '更新时间', type: 'text', readonly: true, notRequired: true, hideInForm: true, width: '160px' },
+  { key: 'createdAt', label: '创建时间', type: 'text', readonly: true, notRequired: true, hideInForm: true, width: '160px' }
 ]
 
 // 技术指标字段配置
@@ -65,8 +71,9 @@ const TradingStrategy = () => {
   const [importFile, setImportFile] = useState(null)
   const [importFileError, setImportFileError] = useState(false)
   const [filterDateRange, setFilterDateRange] = useState('')
-  const [filterStrategyType, setFilterStrategyType] = useState('全部')
-  const [filterStatus, setFilterStatus] = useState('全部')
+  const [filterStrategyType, setFilterStrategyType] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [filterName, setFilterName] = useState('')
   const pageSize = 20
 
   const strategyRecords = useStore(state => state.strategyRecords)
@@ -89,8 +96,8 @@ const TradingStrategy = () => {
 
     const errors = {}
     FIELDS.forEach(field => {
-      // 跳过只读字段、notRequired字段和创建人字段
-      if (field.readonly || field.notRequired || field.key === 'creator') {
+      // 跳过创建人字段、只读字段、隐藏字段和id字段
+      if (field.readonly || field.key === 'creator' || field.hideInForm || field.key === 'id') {
         return
       }
       if (!formData[field.key] || formData[field.key].trim() === '') {
@@ -144,6 +151,7 @@ const TradingStrategy = () => {
     setIsEditMode(false)
     setEditingId(null)
     setFormErrors({})
+    // 重置表单数据
     const initialData = {}
     FIELDS.forEach(field => {
       initialData[field.key] = ''
@@ -253,20 +261,8 @@ const TradingStrategy = () => {
                 errors.push(`[${field.label}]不能为空；`)
               }
 
-              if (field.key === 'createdAt' && value) {
-                const formattedDate = formatToYYYYMMDD(value)
-
-                const isValidFormat = /^\d{4}-\d{2}-\d{2}$/.test(formattedDate)
-
-                if (!isValidFormat) {
-                  errors.push('[创建时间]格式错误；')
-                } else {
-                  data[field.key] = formattedDate
-                }
-              }
-
-              const validStrategyTypes = ['趋势', '震荡', '突破', '回调']
-              const validStatuses = ['启用', '禁用']
+              const validStrategyTypes = ['买入', '卖出']
+              const validStatuses = ['启用', '停用']
 
               if (field.key === 'strategyType' && value && !validStrategyTypes.includes(value)) {
                 errors.push('[策略类型]格式错误；')
@@ -284,6 +280,8 @@ const TradingStrategy = () => {
               errors: errors.join(' ')
             })
           } else {
+            // 导入时默认设置状态为"启用"
+            data.status = '启用'
             dataList.push(data)
           }
         }
@@ -307,7 +305,7 @@ const TradingStrategy = () => {
           errorList.forEach(error => {
             const errorRow = [
               error.errors,
-              ...jsonData[error.rowIndex].map(v => v !== undefined ? String(v) : '')
+              ...(jsonData[error.rowIndex] || []).map(v => v !== undefined ? String(v) : '')
             ]
             errorWorksheet.addRow(errorRow)
           })
@@ -364,24 +362,14 @@ const TradingStrategy = () => {
     const workbook = new ExcelJS.Workbook()
     const worksheet = workbook.addWorksheet('模板')
 
-    const allHeaders = FIELDS.map(f => f.label)
+    // 导入模板只包含"新增"弹窗的字段（排除hideInForm、id和status字段）
+    const importHeaders = FIELDS.filter(f => !f.hideInForm && f.key !== 'id' && f.key !== 'status').map(f => f.label)
 
-    worksheet.columns = allHeaders.map(header => ({
+    worksheet.columns = importHeaders.map(header => ({
       header: header,
       key: header,
       width: 20
     }))
-
-    const createdAtColIndex = allHeaders.findIndex(h => h === '创建时间')
-    const updatedAtColIndex = allHeaders.findIndex(h => h === '更新时间')
-    if (createdAtColIndex >= 0) {
-      const createdAtColumn = worksheet.getColumn(createdAtColIndex + 1)
-      createdAtColumn.numFmt = 'yyyy-mm-dd'
-    }
-    if (updatedAtColIndex >= 0) {
-      const updatedAtColumn = worksheet.getColumn(updatedAtColIndex + 1)
-      updatedAtColumn.numFmt = 'yyyy-mm-dd'
-    }
 
     const buffer = await workbook.xlsx.writeBuffer()
     const blob = new Blob([buffer], {
@@ -405,25 +393,28 @@ const TradingStrategy = () => {
   }
 
   const handleConfirmExport = async () => {
-    const allHeaders = FIELDS.map(f => f.label)
+    // 导出字段与列表字段顺序一致（排除hideInTable字段）
+    const exportHeaders = FIELDS.filter(f => !f.hideInTable).map(f => f.label)
+
+    const exportFields = FIELDS.filter(f => !f.hideInTable)
 
     const rows = filteredData.map(data =>
-      [...FIELDS.map(f => {
+      exportFields.map(f => {
         if (f.key === 'createdAt' && data[f.key]) {
-          return format(new Date(data[f.key]), 'yyyy-MM-dd')
+          return format(new Date(data[f.key]), 'yyyy-MM-dd HH:mm:ss')
         }
         if (f.key === 'updatedAt' && data[f.key]) {
-          return format(new Date(data[f.key]), 'yyyy-MM-dd')
+          return format(new Date(data[f.key]), 'yyyy-MM-dd HH:mm:ss')
         }
         return data[f.key] || ''
-      })]
+      })
     )
 
     if (exportFormat === 'xlsx') {
       const workbook = new ExcelJS.Workbook()
       const worksheet = workbook.addWorksheet('交易策略')
 
-      worksheet.columns = allHeaders.map(header => ({
+      worksheet.columns = exportHeaders.map(header => ({
         header: header,
         key: header,
         width: 20
@@ -432,17 +423,6 @@ const TradingStrategy = () => {
       rows.forEach(row => {
         worksheet.addRow(row)
       })
-
-      const createdAtColIndex = allHeaders.findIndex(h => h === '创建时间')
-      const updatedAtColIndex = allHeaders.findIndex(h => h === '更新时间')
-      if (createdAtColIndex >= 0) {
-        const createdAtColumn = worksheet.getColumn(createdAtColIndex + 1)
-        createdAtColumn.numFmt = 'yyyy-mm-dd'
-      }
-      if (updatedAtColIndex >= 0) {
-        const updatedAtColumn = worksheet.getColumn(updatedAtColIndex + 1)
-        updatedAtColumn.numFmt = 'yyyy-mm-dd'
-      }
 
       const buffer = await workbook.xlsx.writeBuffer()
       const blob = new Blob([buffer], {
@@ -456,7 +436,7 @@ const TradingStrategy = () => {
       a.click()
       window.URL.revokeObjectURL(url)
     } else {
-      const csvContent = [allHeaders, ...rows].map(row => row.join(',')).join('\n')
+      const csvContent = [exportHeaders, ...rows].map(row => row.join(',')).join('\n')
       const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
@@ -478,6 +458,7 @@ const TradingStrategy = () => {
     let matchDate = true
     let matchStrategyType = true
     let matchStatus = true
+    let matchName = true
 
     if (filterDateRange) {
       const [start, end] = filterDateRange.split('~')
@@ -489,15 +470,19 @@ const TradingStrategy = () => {
       }
     }
 
-    if (filterStrategyType !== '全部') {
+    if (filterStrategyType !== '') {
       matchStrategyType = data.strategyType === filterStrategyType
     }
 
-    if (filterStatus !== '全部') {
+    if (filterStatus !== '') {
       matchStatus = data.status === filterStatus
     }
 
-    return matchDate && matchStrategyType && matchStatus
+    if (filterName !== '') {
+      matchName = data.name && data.name.toLowerCase().includes(filterName.toLowerCase())
+    }
+
+    return matchDate && matchStrategyType && matchStatus && matchName
   })
 
   const totalPages = Math.ceil(filteredData.length / pageSize)
@@ -553,7 +538,7 @@ const TradingStrategy = () => {
     selectedIds.forEach(id => {
       const record = strategyRecords.find(r => r.id === id)
       if (record) {
-        updateStrategyRecord(id, { ...record, status: '禁用' })
+        updateStrategyRecord(id, { ...record, status: '停用' })
       }
     })
     setSelectedIds([])
@@ -596,6 +581,26 @@ const TradingStrategy = () => {
               />
             </div>
             <div style={{ position: 'relative', width: '240px' }}>
+              <input
+                type="text"
+                placeholder="策略名称"
+                value={filterName}
+                onChange={(e) => {
+                  setFilterName(e.target.value)
+                  setCurrentPage(1)
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #D1D5DB',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+            <div style={{ position: 'relative', width: '240px' }}>
               <FilterSelect
                 options={[
                   { value: '启用', label: '启用' },
@@ -626,6 +631,19 @@ const TradingStrategy = () => {
         <Toolbar
           onAdd={() => {
             setIsEditMode(false)
+            // 初始化表单数据，修订版本默认为V1.0.0，状态默认为启用
+            const initialData = {}
+            FIELDS.forEach(field => {
+              initialData[field.key] = ''
+            })
+            // 设置默认修订版本
+            initialData._id = 'V1.0.0'
+            // 生成唯一ID（当前数据量+1）
+            const nextId = strategyRecords.length + 1
+            initialData.id = nextId.toString()
+            initialData.status = '启用'
+            setFormData(initialData)
+            setFormErrors({})
             setShowModal(true)
           }}
           onEdit={handleEdit}

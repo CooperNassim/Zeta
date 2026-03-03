@@ -31,8 +31,8 @@ const DataTable = ({
               style={{ position: 'relative', zIndex: '1' }}
             />
           </th>
-          {fields.map((field, index) => (
-            <th key={field.key} className="px-4 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap" style={{ backgroundColor: '#F1F5F9' }}>
+          {fields.filter(field => !field.hideInTable).map((field, index) => (
+            <th key={field.key} className="px-4 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap" style={{ backgroundColor: '#F1F5F9', width: field.width || 'auto' }}>
               {field.label}
             </th>
           ))}
@@ -41,7 +41,7 @@ const DataTable = ({
       <tbody>
         {data.length === 0 ? (
           <tr>
-            <td colSpan={fields.length + 1} className="px-0 py-4 text-center text-gray-500 text-sm">
+            <td colSpan={fields.filter(field => !field.hideInTable).length + 1} className="px-0 py-4 text-center text-gray-500 text-sm">
               <emptyStateProps.Component {...emptyStateProps.props} />
             </td>
           </tr>
@@ -64,8 +64,8 @@ const DataTable = ({
                     style={{ position: 'relative', zIndex: '1' }}
                   />
                 </td>
-                {fields.map((field, index) => (
-                  <td key={field.key} className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                {fields.filter(field => !field.hideInTable).map((field, index) => (
+                  <td key={field.key} className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap" style={{ width: field.width || 'auto' }}>
                     {renderCell ? (
                       renderCell(field, item) || <span className="font-medium text-gray-700">{item[field.key] || '-'}</span>
                     ) : (

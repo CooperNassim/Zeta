@@ -122,6 +122,17 @@ const DailyWork = () => {
       }
     })
 
+    // 检查日期是否重复(新增和编辑模式都检查)
+    if (formData.date) {
+      const dateExists = dailyWorkData.some(data =>
+        data.date === formData.date &&
+        (isEditMode ? data.id !== editingId : true) // 编辑模式下排除当前记录
+      )
+      if (dateExists) {
+        errors.date = '日期已存在'
+      }
+    }
+
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors)
       return
@@ -287,7 +298,7 @@ const DailyWork = () => {
                   data[field.key] = formattedDate
 
                   if (existingDates.has(data[field.key])) {
-                    errors.push('[日期]已存在数据；')
+                    errors.push('[日期]已存在；')
                   }
                 }
               }
@@ -335,7 +346,7 @@ const DailyWork = () => {
           errorList.forEach(error => {
             const errorRow = [
               error.errors,
-              ...jsonData[error.rowIndex].map(v => v !== undefined ? String(v) : '')
+              ...(jsonData[error.rowIndex] || []).map(v => v !== undefined ? String(v) : '')
             ]
             errorWorksheet.addRow(errorRow)
           })
@@ -496,7 +507,7 @@ const DailyWork = () => {
       }
     }
 
-    if (filterSentiment) {
+    if (filterSentiment !== '全部') {
       matchSentiment = data.sentiment === filterSentiment
     }
 
@@ -570,7 +581,7 @@ const DailyWork = () => {
               <FilterSelect
                 value={filterSentiment === '全部' ? '' : filterSentiment}
                 onChange={(value) => {
-                  setFilterSentiment(value === '大盘情绪' ? '全部' : value)
+                  setFilterSentiment(value === '' ? '全部' : value)
                   setCurrentPage(1)
                 }}
                 options={sentimentOptions}

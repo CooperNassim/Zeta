@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Calendar } from 'lucide-react'
 
-const CustomDatePicker = ({ value, onChange, placeholder = '日期', className = '' }) => {
+const CustomDatePicker = ({ value, onChange, placeholder = '日期', className = '', error = false }) => {
   const [isOpen, setIsOpen] = useState(false)
   const ref = React.useRef(null)
 
@@ -63,7 +63,7 @@ const CustomDatePicker = ({ value, onChange, placeholder = '日期', className =
     <div ref={ref} className={`relative ${className}`}>
       <div
         onClick={() => setIsOpen(!isOpen)}
-        className="px-3 py-2 border border-gray-300 rounded text-gray-700 focus:outline-none focus:border-blue-500 transition-colors text-sm cursor-pointer flex items-center justify-between w-full"
+        className={`px-3 py-2 border rounded text-gray-700 focus:outline-none transition-colors text-sm cursor-pointer flex items-center justify-between w-full ${error ? 'border-red-500' : 'border-gray-300'}`}
       >
         <span style={{ color: value ? '#1f2937' : '#9ca3af' }}>
           {value || placeholder}

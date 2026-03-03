@@ -14,6 +14,7 @@ import CustomDatePicker from './components/CustomDatePicker'
   onChange={(date) => setDate(date)}
   placeholder="请选择日期"
   className="w-full"
+  error={hasError}
 />
 ```
 
@@ -22,6 +23,7 @@ import CustomDatePicker from './components/CustomDatePicker'
 - `onChange`: 日期变化回调 (date: string) => void
 - `placeholder`: 占位文本，默认"日期"
 - `className`: 自定义样式类名
+- `error`: 是否有错误，显示红色边框
 
 ---
 
@@ -370,6 +372,52 @@ import FormModal from './components/FormModal'
 - `formErrors`: 表单错误对象
 - `onFormDataChange`: 表单数据变化回调
 - `getFieldComponent`: 自定义字段渲染函数 (可选)
+
+---
+
+### 13. ErrorMessage - 错误提示
+
+统一的表单错误提示组件,支持纯文本和带图标的错误提示。
+
+```jsx
+import ErrorMessage from './components/ErrorMessage'
+
+// 基础用法 - 默认显示"不能为空"
+<ErrorMessage />
+
+// 自定义错误消息
+<ErrorMessage message="请输入有效的内容" />
+
+// 带图标的错误提示
+import { AlertCircle } from 'lucide-react'
+<ErrorMessage
+  message="代码语法错误"
+  showIcon={true}
+  icon={AlertCircle}
+/>
+
+// 自定义样式
+<ErrorMessage
+  message="格式错误"
+  className="mb-2"
+/>
+```
+
+**Props:**
+- `message`: 错误消息内容,默认"不能为空"
+- `className`: 自定义样式类名
+- `showIcon`: 是否显示图标,默认 `false`
+- `icon`: 图标组件 (需要 `showIcon` 为 `true` 时生效)
+
+**样式特性:**
+- 默认样式: 红色小字,上边距 1 个单位
+- 带图标时: 红色中等字体,显示图标和文本
+
+**使用场景:**
+1. 表单字段验证错误
+2. 文件上传错误提示
+3. 数据格式错误提示
+4. 自定义业务逻辑错误
 
 ---
 

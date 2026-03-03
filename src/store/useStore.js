@@ -253,24 +253,12 @@ const useStore = create(
         const now = new Date().toISOString()
         const nowDate = new Date()
 
-        // 获取当前日期字符串 YYYYMMDD
-        const dateStr = nowDate.getFullYear() +
-          String(nowDate.getMonth() + 1).padStart(2, '0') +
-          String(nowDate.getDate()).padStart(2, '0')
-
-        // 计算当前数据库总数量作为序号
-        const totalCount = state.strategyRecords.length
-        const nextSequence = totalCount + 1
-
-        // 格式化编号为 YYYYMMDD001
-        const formattedId = dateStr + nextSequence.toString().padStart(3, '0')
 
         return {
           strategyRecords: [
             ...state.strategyRecords,
             {
               ...record,
-              id: formattedId,
               createdAt: now,
               updatedAt: now
             }
@@ -298,37 +286,16 @@ const useStore = create(
       // 导入交易策略记录
       importStrategyRecords: (dataList) => set((state) => {
         const now = new Date().toISOString()
-        const nowDate = new Date()
-
-        // 获取当前日期字符串 YYYYMMDD
-        const dateStr = nowDate.getFullYear() +
-          String(nowDate.getMonth() + 1).padStart(2, '0') +
-          String(nowDate.getDate()).padStart(2, '0')
-
-        // 计算当前数据库总数量
-        const totalCount = state.strategyRecords.length
-
-        // 记录所有已存在的编号
-        const existingIds = new Set(state.strategyRecords.map(r => r.id))
-
-        // 为每条记录生成或保留编号
-        const finalRecords = dataList.map((d, index) => {
-          // 如果有编号且格式正确，且不冲突，则保留
-          if (d.id && /^\d{11}$/.test(d.id) && !existingIds.has(d.id)) {
-            return d
-          }
-
-          // 否则生成新编号（按总数量递增）
-          const nextSequence = totalCount + index + 1
-          const formattedId = dateStr + nextSequence.toString().padStart(3, '0')
-          existingIds.add(formattedId)
-          return { ...d, id: formattedId }
-        })
+        const currentMaxId = state.strategyRecords.reduce((max, r) => {
+          const id = parseInt(r.id) || 0
+          return Math.max(max, id)
+        }, 0)
 
         return {
           strategyRecords: [
-            ...finalRecords.map(d => ({
+            ...dataList.map((d, index) => ({
               ...d,
+              id: (currentMaxId + index + 1).toString(),
               createdAt: d.createdAt || now,
               updatedAt: now
             }))

@@ -2,6 +2,7 @@ import React from 'react'
 import CustomDatePicker from './CustomDatePicker'
 import CustomSelect from './CustomSelect'
 import CustomInput from './CustomInput'
+import ErrorMessage from './ErrorMessage'
 
 const DataForm = ({
   fields,
@@ -12,7 +13,12 @@ const DataForm = ({
 }) => {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      {fields.map(field => (
+      {fields.map(field => {
+        // 跳过标记为notRequired且不是readonly的字段，或标记为hideInForm的字段
+        if ((field.notRequired && !field.readonly) || field.hideInForm) {
+          return null
+        }
+        return (
         <div key={field.key}>
           <label className="block text-sm text-gray-600 mb-1.5">
             {!field.notRequired && <span className="text-red-500">*</span>} {field.label}
@@ -39,6 +45,7 @@ const DataForm = ({
                 }}
                 placeholder="请输入"
                 className="w-full"
+                error={!!formErrors[field.key]}
               />
             ) : field.options ? (
               <CustomSelect
@@ -51,7 +58,7 @@ const DataForm = ({
                 }}
                 options={field.options}
                 placeholder="请选择"
-                error={formErrors[field.key]}
+                error={!!formErrors[field.key]}
               />
             ) : field.type === 'textarea' ? (
               <textarea
@@ -76,16 +83,17 @@ const DataForm = ({
                     onChange({ ...formData, [field.key]: value }, { [field.key]: false })
                   }
                 }}
-                placeholder="请输入"
-                error={formErrors[field.key]}
+                placeholder={field.placeholder || '请输入'}
+                error={!!formErrors[field.key]}
               />
             )
           )}
           {!field.notRequired && !field.readonly && formErrors[field.key] && (
-            <p className="text-red-500 text-xs mt-1">不能为空</p>
+            <ErrorMessage message={typeof formErrors[field.key] === 'string' ? formErrors[field.key] : '不能为空'} />
           )}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

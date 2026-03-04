@@ -307,8 +307,8 @@ const TechnicalIndicators = () => {
           isOpen={showDeleteModal}
           onClose={() => setShowDeleteModal(false)}
           onConfirm={confirmDelete}
-          title="确认删除"
-          message={`确定要删除选中的 ${selectedIds.length} 个技术指标吗？`}
+          title="删除"
+          message={`确认删除${selectedIds.length}条数据吗？`}
           confirmText="删除"
         />
       </div>

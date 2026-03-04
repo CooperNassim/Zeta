@@ -735,7 +735,7 @@ const TradingStrategy = () => {
         onClose={() => setShowDeleteModal(false)}
         onConfirm={confirmDelete}
         title="删除"
-        message="是否确认删除？"
+        message={`确认删除${selectedIds.length}条数据吗？`}
       />
 
       {/* 启用确认弹窗 */}

@@ -92,28 +92,28 @@ export const initialTechnicalIndicators = [
     id: '1',
     name: 'MACD',
     description: '指数平滑异同移动平均线，用于判断趋势和买卖点',
-    icon: 'https://via.placeholder.com/200x200/0F1419/FFFFFF?text=MACD',
+    icon: null,
     tags: ['趋势', '动量']
   },
   {
     id: '2',
     name: 'RSI',
     description: '相对强弱指数，用于判断超买超卖状态',
-    icon: 'https://via.placeholder.com/200x200/0F1419/FFFFFF?text=RSI',
+    icon: null,
     tags: ['动量', '震荡']
   },
   {
     id: '3',
     name: 'KDJ',
     description: '随机指标，用于判断短期买卖点',
-    icon: 'https://via.placeholder.com/200x200/0F1419/FFFFFF?text=KDJ',
+    icon: null,
     tags: ['震荡', '短期']
   },
   {
     id: '4',
     name: 'BOLL',
     description: '布林带，用于判断价格波动范围和突破',
-    icon: 'https://via.placeholder.com/200x200/0F1419/FFFFFF?text=BOLL',
+    icon: null,
     tags: ['趋势', '波动']
   }
 ]
@@ -389,6 +389,31 @@ const useStore = create(
           }
         }
       }),
+
+      // 作废预约单
+      cancelOrder: (id) => set((state) => {
+        const order = state.orders.find(o => o.id === id)
+        if (!order) return state
+
+        // 更新预约单状态
+        const updatedOrders = state.orders.map(o =>
+          o.id === id ? { ...o, status: 'cancelled', cancelledAt: new Date().toISOString() } : o
+        )
+
+        return {
+          orders: updatedOrders
+        }
+      }),
+
+      // 删除预约单
+      deleteOrder: (id) => set((state) => ({
+        orders: state.orders.filter(o => o.id !== id)
+      })),
+
+      // 批量删除预约单
+      deleteMultipleOrders: (ids) => set((state) => ({
+        orders: state.orders.filter(o => !ids.includes(o.id))
+      })),
 
       // 添加账单
       addTransaction: (transaction) => set((state) => ({

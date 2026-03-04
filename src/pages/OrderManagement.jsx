@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import { Plus, Play, X, TrendingUp, TrendingDown, AlertCircle, CheckCircle, Clock } from 'lucide-react'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
@@ -9,8 +10,11 @@ import DataTable from '../components/DataTable'
 import Pagination from '../components/Pagination'
 import OrderToolbar from '../components/OrderToolbar'
 import OrderModal from '../components/OrderModal'
+import Toast from '../components/Toast'
+import ConfirmModal from '../components/ConfirmModal'
 
 const OrderManagement = () => {
+  const navigate = useNavigate()
   const [showModal, setShowModal] = useState(false)
   const [orderType, setOrderType] = useState('buy')
   const [evaluationStep, setEvaluationStep] = useState(0)
@@ -18,6 +22,10 @@ const OrderManagement = () => {
   const [selectedFilter, setSelectedFilter] = useState('pending')
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState([])
+  const [showToast, setShowToast] = useState(false)
+  const [toastType, setToastType] = useState('success')
+  const [toastMessage, setToastMessage] = useState('')
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const pageSize = 20
 
   const orders = useStore(state => state.orders)
@@ -27,6 +35,8 @@ const OrderManagement = () => {
   const riskModels = useStore(state => state.riskModels)
   const addOrder = useStore(state => state.addOrder)
   const executeOrder = useStore(state => state.executeOrder)
+  const cancelOrder = useStore(state => state.cancelOrder)
+  const deleteMultipleOrders = useStore(state => state.deleteMultipleOrders)
 
   const [orderForm, setOrderForm] = useState({
     symbol: '',
@@ -60,10 +70,34 @@ const OrderManagement = () => {
     setShowModal(true)
   }
 
+  const confirmDelete = () => {
+    deleteMultipleOrders(selectedIds)
+    setSelectedIds([])
+    setShowDeleteModal(false)
+    setToastType('success')
+    setToastMessage('删除成功')
+    setShowToast(true)
+  }
+
+  // 判断当天是否有心理测试
+  const hasTodayPsychologicalTest = () => {
+    if (psychologicalTests.length === 0) return false
+    const latestTest = psychologicalTests[psychologicalTests.length - 1]
+    if (!latestTest.date) return false
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const testDate = new Date(latestTest.date)
+    testDate.setHours(0, 0, 0, 0)
+    return testDate.getTime() === today.getTime()
+  }
+
   const handlePsychologicalEvaluation = () => {
     const latestTest = psychologicalTests[psychologicalTests.length - 1]
     if (!latestTest) {
-      alert('请先完成心理测试')
+      setToastType('error')
+      setToastMessage('请先完成心理测试')
+      setShowToast(true)
       return false
     }
 
@@ -71,12 +105,9 @@ const OrderManagement = () => {
     // 根据心理测试的分数判断是否可以交易
     let pass = false
     let status = ''
-    if (score >= 7 && score <= 8) {
+    if (score >= 5) {
       pass = true
-      status = '可以交易'
-    } else if ((score >= 5 && score <= 6) || (score >= 9 && score <= 10)) {
-      pass = false
-      status = '谨慎交易'
+      status = score >= 7 ? '可以交易' : '谨慎交易'
     } else {
       pass = false
       status = '禁止交易'
@@ -92,7 +123,9 @@ const OrderManagement = () => {
     })
 
     if (!pass) {
-      alert(`心理测试${status}，无法创建订单（当前评分：${score.toFixed(1)}分）`)
+      setToastType('error')
+      setToastMessage(status)
+      setShowToast(true)
       return false
     }
 
@@ -212,18 +245,10 @@ const OrderManagement = () => {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative', paddingBottom: '10px' }}>
-        {/* 头部 */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          style={{ marginBottom: '10px', flexShrink: 0 }}
-        >
-        </motion.div>
-
       {/* 内容区域 */}
       <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {/* 筛选卡片 */}
-        <div style={{ display: 'flex', gap: '10px', flexShrink: 0, alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', gap: '10px', flexShrink: 0, alignItems: 'flex-start', marginTop: '10px' }}>
           <div
             onClick={() => setSelectedFilter('pending')}
             style={{
@@ -328,21 +353,37 @@ const OrderManagement = () => {
             }
             selectedIds.forEach(id => executeOrder(id))
             setSelectedIds([])
-            alert('订单执行成功')
+            setToastType('success')
+            setToastMessage('执行成功')
+            setShowToast(true)
           }}
           onCancel={() => {
             if (selectedIds.length === 0) {
               alert('请选择要作废的订单')
               return
             }
-            alert('订单作废功能开发中')
+            // 所有订单都可以作废，包括已作废的订单
+            const ordersToCancel = selectedIds.map(id => orders.find(o => o.id === id)).filter(Boolean)
+
+            ordersToCancel.forEach(order => {
+              // 只有待执行或已执行的订单才更新状态为cancelled
+              if (order.status === 'pending' || order.status === 'executed') {
+                cancelOrder(order.id)
+              }
+              // 已作废的订单状态不变，不做处理
+            })
+
+            setSelectedIds([])
+            setToastType('success')
+            setToastMessage('作废成功')
+            setShowToast(true)
           }}
           onDelete={() => {
             if (selectedIds.length === 0) {
               alert('请选择要删除的订单')
               return
             }
-            alert('删除功能开发中')
+            setShowDeleteModal(true)
           }}
           canExecute={selectedIds.length > 0}
           canCancel={selectedIds.length > 0}
@@ -459,7 +500,7 @@ const OrderManagement = () => {
             {/* 步骤内容 */}
             {evaluationStep === 0 && (
               <div>
-                <p className="text-gray-600 mb-2">交易前心理状态测试</p>
+                <p className="text-gray-600 mb-2">交易心理测试</p>
                 <div className="p-4 bg-primary-50 rounded-lg border border-primary-200 mb-4">
                   <p className="text-sm text-gray-600">测试结果</p>
                   <div className="flex items-center justify-between mt-2">
@@ -488,15 +529,15 @@ const OrderManagement = () => {
                 <div className="flex gap-3 justify-end">
                   <button
                     onClick={() => setShowModal(false)}
-                    className="px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     取消
                   </button>
                   <button
-                    onClick={handlePsychologicalEvaluation}
-                    className="px-4 py-3 bg-[#0F1419] border border-[#0F1419] rounded-lg text-white font-medium hover:opacity-90 transition-all"
+                    onClick={() => hasTodayPsychologicalTest() ? handlePsychologicalEvaluation() : navigate('/psychological-test')}
+                    className="px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
                   >
-                    下一步
+                    {hasTodayPsychologicalTest() ? '下一步' : '去测试'}
                   </button>
                 </div>
               </div>
@@ -526,13 +567,13 @@ const OrderManagement = () => {
                 <div className="flex gap-3">
                   <button
                     onClick={() => setEvaluationStep(0)}
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     上一步
                   </button>
                   <button
                     onClick={handleStrategyEvaluation}
-                    className="flex-1 px-4 py-3 bg-[#0F1419] border border-[#0F1419] rounded-lg text-white font-medium hover:opacity-90 transition-all"
+                    className="flex-1 px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
                   >
                     下一步
                   </button>
@@ -564,13 +605,13 @@ const OrderManagement = () => {
                 <div className="flex gap-3">
                   <button
                     onClick={() => setEvaluationStep(1)}
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     上一步
                   </button>
                   <button
                     onClick={handleRiskEvaluation}
-                    className="flex-1 px-4 py-3 bg-[#0F1419] border border-[#0F1419] rounded-lg text-white font-medium hover:opacity-90 transition-all"
+                    className="flex-1 px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
                   >
                     下一步
                   </button>
@@ -685,20 +726,20 @@ const OrderManagement = () => {
                     <button
                       type="button"
                       onClick={() => setEvaluationStep(orderType === 'buy' ? 2 : 1)}
-                      className="px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                      className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       上一步
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowModal(false)}
-                      className="px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                      className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       取消
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-3 bg-[#0F1419] border border-[#0F1419] rounded-lg text-white font-medium hover:opacity-90 transition-all"
+                      className="px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
                     >
                       创建预约单
                     </button>
@@ -707,6 +748,14 @@ const OrderManagement = () => {
               </div>
             )}
       </OrderModal>
+      {showToast && <Toast type={toastType} message={toastMessage} onClose={() => setShowToast(false)} />}
+      <ConfirmModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={confirmDelete}
+        title="删除"
+        message={`确认删除${selectedIds.length}条数据吗？`}
+      />
       </div>
     </div>
   )

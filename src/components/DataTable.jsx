@@ -41,8 +41,8 @@ const DataTable = ({
       <tbody>
         {data.length === 0 ? (
           <tr>
-            <td colSpan={fields.filter(field => !field.hideInTable).length + 1} className="px-0 py-4 text-center text-gray-500 text-sm">
-              <emptyStateProps.Component {...emptyStateProps.props} />
+            <td colSpan={fields.filter(field => !field.hideInTable).length + 1} className="px-0 py-4 text-center text-gray-500 text-sm" style={{ backgroundColor: '#ffffff' }}>
+              {emptyStateProps.Component && <emptyStateProps.Component {...emptyStateProps.props} />}
             </td>
           </tr>
         ) : (
@@ -51,8 +51,9 @@ const DataTable = ({
               <tr
                 key={item.id}
                 className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                style={{ backgroundColor: '#ffffff' }}
               >
-                <td className="px-0 py-3 w-10 sticky left-0 bg-white" style={{ margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px', zIndex: '10' }}>
+                <td className="px-0 py-3 w-10 sticky left-0 bg-white" style={{ margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px', zIndex: '10', backgroundColor: '#ffffff' }}>
                   <input
                     type="checkbox"
                     checked={selectedIds.includes(item.id)}
@@ -62,7 +63,7 @@ const DataTable = ({
                   />
                 </td>
                 {fields.filter(field => !field.hideInTable).map((field, index) => (
-                  <td key={field.key} className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap" style={{ width: field.width || 'auto' }}>
+                  <td key={field.key} className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap" style={{ width: field.width || 'auto', backgroundColor: '#ffffff' }}>
                     {renderCell ? (
                       renderCell(field, item) || <span className="font-medium text-gray-700">{item[field.key] || '-'}</span>
                     ) : (

@@ -431,7 +431,7 @@ const OrderManagement = () => {
       >
             {/* 步骤指示器 */}
             <div className="flex items-center justify-center mb-6">
-              {[0, 1, 2, 3].map((step) => (
+              {[0, 1, 2].map((step) => (
                 <div key={step} className="flex items-center flex-1">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
                     step === evaluationStep
@@ -442,9 +442,18 @@ const OrderManagement = () => {
                   }`}>
                     {step + 1}
                   </div>
-                  {step < 3 && <div className="flex-1 h-[1px] mx-2 bg-gray-300" />}
+                  <div className="flex-1 h-[1px] mx-2 bg-gray-300" />
                 </div>
               ))}
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
+                3 === evaluationStep
+                  ? 'bg-[#0F1419] text-white'
+                  : 3 < evaluationStep
+                  ? 'bg-white border border-[#0F1419] text-gray-900'
+                  : 'bg-gray-100 text-gray-600'
+              }`}>
+                4
+              </div>
             </div>
 
             {/* 步骤内容 */}

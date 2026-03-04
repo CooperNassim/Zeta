@@ -123,7 +123,7 @@ const RiskConfig = () => {
   return (
     <div style={{
       background: '#ffffff',
-      border: '2px solid #e5e7eb',
+      border: '1px solid #e5e7eb',
       borderRadius: '8px',
       padding: '20px',
       display: 'flex',
@@ -147,13 +147,13 @@ const RiskConfig = () => {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, overflow: 'auto' }}>
-        <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
+        <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
           <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>账户风险额度</div>
           <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>
             {totalRiskPercent}%
           </div>
         </div>
-        <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
+        <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
           <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>单笔风险额度</div>
           <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>
             {singleRiskPercent}%
@@ -265,7 +265,7 @@ const CurrentPositions = ({ selectedPosition, onPositionSelect }) => {
   return (
     <div style={{
       background: '#ffffff',
-      border: '2px solid #e5e7eb',
+      border: '1px solid #e5e7eb',
       borderRadius: '8px',
       padding: '20px',
       display: 'flex',
@@ -290,7 +290,7 @@ const CurrentPositions = ({ selectedPosition, onPositionSelect }) => {
                 padding: '14px',
                 background: '#f9fafb',
                 borderRadius: '6px',
-                border: '2px solid #e5e7eb'
+                border: '1px solid #e5e7eb'
               }}
             >
             {/* 股票名称和代码 */}
@@ -402,7 +402,7 @@ const AccountRisk = () => {
   return (
     <div style={{
       background: '#ffffff',
-      border: '2px solid #e5e7eb',
+      border: '1px solid #e5e7eb',
       borderRadius: '8px',
       padding: '20px',
       display: 'flex',
@@ -415,31 +415,35 @@ const AccountRisk = () => {
         <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>账户风险</h3>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', overflow: 'auto', justifyContent: 'flex-start' }}>
-        <RiskGauge value={accountRiskData.riskRatio} label={`已用额度：¥${availableRisk.toLocaleString()}`} />
-        <div style={{ marginTop: '12px', width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', rowGap: '10px' }}>
-          <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
-            <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>账户金额</div>
-            <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-              ¥{accountRiskData.startMonthTotal.toLocaleString()}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', overflow: 'auto', minHeight: 0 }}>
+        <div style={{ flexShrink: 0 }}>
+          <RiskGauge value={accountRiskData.riskRatio} label={`已用额度：¥${availableRisk.toLocaleString()}`} />
+        </div>
+        <div style={{ marginTop: '12px', width: '100%', flex: 1, minHeight: 0 }}>
+          <div style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', rowGap: '10px' }}>
+            <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>账户金额</div>
+              <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
+                ¥{accountRiskData.startMonthTotal.toLocaleString()}
+              </div>
             </div>
-          </div>
-          <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
-            <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>可用额度</div>
-            <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-              ¥{availableRisk.toLocaleString()}
+            <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>可用额度</div>
+              <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
+                ¥{availableRisk.toLocaleString()}
+              </div>
             </div>
-          </div>
-          <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
-            <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>持仓占用</div>
-            <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-              ¥{accountRiskData.stopLossPreLoss.toLocaleString()}
+            <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>持仓占用</div>
+              <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
+                ¥{accountRiskData.stopLossPreLoss.toLocaleString()}
+              </div>
             </div>
-          </div>
-          <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '2px solid #e5e7eb' }}>
-            <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>当月亏损</div>
-            <div style={{ fontWeight: 'bold', color: '#EF4444', fontSize: '16px' }}>
-              ¥{accountRiskData.monthlyLoss.toLocaleString()}
+            <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>当月亏损</div>
+              <div style={{ fontWeight: 'bold', color: '#EF4444', fontSize: '16px' }}>
+                ¥{accountRiskData.monthlyLoss.toLocaleString()}
+              </div>
             </div>
           </div>
         </div>
@@ -558,10 +562,14 @@ const StrategyRanking = () => {
     { rank: 8, symbol: 'NVDA', name: '英伟达', strategy: '震荡策略', loss: 80, lossPercent: 0.04 }
   ]
 
+  const getRankColor = (rank) => {
+    return '#F3F4F6'
+  }
+
   return (
     <div style={{
       background: '#ffffff',
-      border: '2px solid #e5e7eb',
+      border: '1px solid #e5e7eb',
       borderRadius: '8px',
       padding: '20px',
       display: 'flex',
@@ -584,7 +592,7 @@ const StrategyRanking = () => {
                 padding: '14px',
                 background: '#f9fafb',
                 borderRadius: '6px',
-                border: '2px solid #e5e7eb'
+                border: '1px solid #e5e7eb'
               }}
             >
             {/* 股票名称和代码 */}
@@ -596,16 +604,14 @@ const StrategyRanking = () => {
                 <div style={{ fontSize: '12px', color: '#666' }}>{item.symbol}</div>
               </div>
               <div style={{
-                width: '24px',
-                height: '24px',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '12px',
+                padding: '4px 12px',
+                background: getRankColor(item.rank),
+                borderRadius: '6px',
+                fontSize: '14px',
                 fontWeight: 'bold',
-                background: '#EF4444',
-                color: '#FFFFFF'
+                color: '#0F1419',
+                display: 'flex',
+                alignItems: 'center'
               }}>
                 {item.rank}
               </div>

@@ -19,7 +19,7 @@ const DataTable = ({
   }
 
   return (
-    <table style={{ width: '1800px' }}>
+    <table style={{ width: '100%' }}>
       <thead>
         <tr className="border-b sticky top-0" style={{ backgroundColor: '#F4F5F7', zIndex: '20' }}>
           <th className="px-0 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap w-10 sticky left-0 bg-[#F4F5F7]" style={{ backgroundColor: '#F4F5F7', margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px', zIndex: '30' }}>
@@ -48,11 +48,8 @@ const DataTable = ({
         ) : (
           <>
             {data.map((item, index) => (
-              <motion.tr
+              <tr
                 key={item.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.3, delay: index * 0.02 }}
                 className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
               >
                 <td className="px-0 py-3 w-10 sticky left-0 bg-white" style={{ margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px', zIndex: '10' }}>
@@ -73,7 +70,7 @@ const DataTable = ({
                     )}
                   </td>
                 ))}
-              </motion.tr>
+              </tr>
             ))}
           </>
         )}

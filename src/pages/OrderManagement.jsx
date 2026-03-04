@@ -1,16 +1,24 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Play, X, TrendingUp, TrendingDown, AlertCircle, CheckCircle, Clock } from 'lucide-react'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
 import Counter from '../components/Counter'
 import ScrollAnimation from '../components/ScrollAnimation'
+import DataTable from '../components/DataTable'
+import Pagination from '../components/Pagination'
+import OrderToolbar from '../components/OrderToolbar'
+import OrderModal from '../components/OrderModal'
 
 const OrderManagement = () => {
   const [showModal, setShowModal] = useState(false)
   const [orderType, setOrderType] = useState('buy')
   const [evaluationStep, setEvaluationStep] = useState(0)
   const [evaluationResults, setEvaluationResults] = useState({})
+  const [selectedFilter, setSelectedFilter] = useState('pending')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [selectedIds, setSelectedIds] = useState([])
+  const pageSize = 20
 
   const orders = useStore(state => state.orders)
   const account = useStore(state => state.account)
@@ -59,17 +67,32 @@ const OrderManagement = () => {
       return false
     }
 
-    const pass = latestTest.pass
+    const score = latestTest.overallScore > 10 ? latestTest.overallScore / 10 : latestTest.overallScore
+    // 根据心理测试的分数判断是否可以交易
+    let pass = false
+    let status = ''
+    if (score >= 7 && score <= 8) {
+      pass = true
+      status = '可以交易'
+    } else if ((score >= 5 && score <= 6) || (score >= 9 && score <= 10)) {
+      pass = false
+      status = '谨慎交易'
+    } else {
+      pass = false
+      status = '禁止交易'
+    }
+
     setEvaluationResults({
       ...evaluationResults,
       psychological: {
         pass,
-        score: latestTest.overallScore
+        score: latestTest.overallScore,
+        status
       }
     })
 
     if (!pass) {
-      alert('心理测试未通过，无法创建订单')
+      alert(`心理测试${status}，无法创建订单（当前评分：${score.toFixed(1)}分）`)
       return false
     }
 
@@ -144,10 +167,15 @@ const OrderManagement = () => {
   const handleSubmitOrder = (e) => {
     e.preventDefault()
 
+    // 将所有分数转换为10分制
+    const psychologicalScore10 = evaluationResults.psychological.score > 10 ? evaluationResults.psychological.score / 10 : evaluationResults.psychological.score
+    const strategyScore10 = evaluationResults.strategy.score > 10 ? evaluationResults.strategy.score / 10 : evaluationResults.strategy.score / 10
+    const riskScore10 = 10
+
     const overallScore = (
-      evaluationResults.psychological.score * 0.3 +
-      evaluationResults.strategy.score * 0.4 +
-      100 * 0.3
+      psychologicalScore10 * 0.3 +
+      strategyScore10 * 0.4 +
+      riskScore10 * 0.3
     ).toFixed(2)
 
     addOrder({
@@ -156,9 +184,9 @@ const OrderManagement = () => {
       stopLossPrice: parseFloat(orderForm.stopLossPrice),
       takeProfitPrice: orderForm.takeProfitPrice ? parseFloat(orderForm.takeProfitPrice) : null,
       quantity: parseInt(orderForm.quantity),
-      psychologicalScore: evaluationResults.psychological.score,
-      strategyScore: parseFloat(evaluationResults.strategy.score),
-      riskScore: 100,
+      psychologicalScore: parseFloat(psychologicalScore10),
+      strategyScore: parseFloat(strategyScore10),
+      riskScore: riskScore10,
       overallScore: parseFloat(overallScore),
       status: 'pending',
       evaluationResults
@@ -170,268 +198,251 @@ const OrderManagement = () => {
 
   const pendingOrders = orders.filter(o => o.status === 'pending')
   const executedOrders = orders.filter(o => o.status === 'executed')
+  const cancelledOrders = orders.filter(o => o.status === 'cancelled')
+
+  const filteredOrders = selectedFilter === 'all' ? orders : orders.filter(o => o.status === selectedFilter)
+  const totalPages = Math.ceil(filteredOrders.length / pageSize)
+  const paginatedData = filteredOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  useEffect(() => {
+    setCurrentPage(1)
+    setSelectedIds([])
+  }, [selectedFilter])
 
   return (
-    <div className="space-y-6 pt-20 px-4 md:px-6 lg:pl-64">
-      {/* 头部 */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
-      >
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">预约单</h1>
-          <p className="text-gray-600">创建和管理交易预约单，智能评估交易机会</p>
-        </div>
-        <div className="flex gap-3">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => handleAddOrder('buy')}
-            className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 rounded-lg text-gray-900 font-medium hover:from-green-600 hover:to-emerald-600 transition-all duration-300 inline-flex items-center shadow-lg shadow-green-500/30"
-          >
-            <TrendingUp className="w-5 h-5 mr-2" />
-            买入预约
-          </motion.button>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => handleAddOrder('sell')}
-            className="px-6 py-3 bg-gradient-to-r from-red-500 to-red-600 rounded-lg text-gray-900 font-medium hover:from-red-600 hover:to-rose-600 transition-all duration-300 inline-flex items-center shadow-lg shadow-red-500/30"
-          >
-            <TrendingDown className="w-5 h-5 mr-2" />
-            卖出预约
-          </motion.button>
-        </div>
-      </motion.div>
+    <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative', paddingBottom: '10px' }}>
+        {/* 头部 */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{ marginBottom: '10px', flexShrink: 0 }}
+        >
+        </motion.div>
 
-      {/* 统计卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <ScrollAnimation delay={0.1}>
-          <motion.div className="glass rounded-xl p-6 border border-gray-200 hover-float cursor-pointer" whileHover={{ scale: 1.02 }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">待执行订单</p>
-                <p className="text-3xl font-bold text-yellow-600">
-                  <Counter end={pendingOrders.length} duration={1} />
-                </p>
-              </div>
-              <motion.div
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                <Clock className="w-10 h-10 text-yellow-600" />
-              </motion.div>
+      {/* 内容区域 */}
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {/* 筛选卡片 */}
+        <div style={{ display: 'flex', gap: '10px', flexShrink: 0, alignItems: 'flex-start' }}>
+          <div
+            onClick={() => setSelectedFilter('pending')}
+            style={{
+              background: '#ffffff',
+              border: selectedFilter === 'pending' ? '1px solid #0F1419' : '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '10px 25px',
+              minHeight: '55px',
+              width: '180px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            <div>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>待执行订单</p>
+              <p className="text-2xl font-bold" style={{ color: '#374151' }}>
+                {pendingOrders.length}
+              </p>
             </div>
-          </motion.div>
-        </ScrollAnimation>
-        <ScrollAnimation delay={0.2}>
-          <motion.div className="glass rounded-xl p-6 border border-gray-200 hover-float cursor-pointer" whileHover={{ scale: 1.02 }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">已执行订单</p>
-                <p className="text-3xl font-bold text-green-600">
-                  <Counter end={executedOrders.length} duration={1} />
-                </p>
-              </div>
-              <motion.div
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 2, repeat: Infinity, delay: 0.2 }}
-              >
-                <CheckCircle className="w-10 h-10 text-green-600" />
-              </motion.div>
+          </div>
+          <div
+            onClick={() => setSelectedFilter('executed')}
+            style={{
+              background: '#ffffff',
+              border: selectedFilter === 'executed' ? '1px solid #0F1419' : '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '10px 25px',
+              minHeight: '55px',
+              width: '180px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            <div>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>已执行订单</p>
+              <p className="text-2xl font-bold" style={{ color: '#374151' }}>
+                {executedOrders.length}
+              </p>
             </div>
-          </motion.div>
-        </ScrollAnimation>
-        <ScrollAnimation delay={0.3}>
-          <motion.div className="glass rounded-xl p-6 border border-gray-200 hover-float cursor-pointer" whileHover={{ scale: 1.02 }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">平均评分</p>
-                <p className="text-3xl font-bold text-blue-400">
-                  {orders.length > 0 ? (orders.reduce((sum, o) => sum + o.overallScore, 0) / orders.length).toFixed(1) : 0}
-                </p>
-              </div>
-              <motion.div
-                animate={{ rotate: [0, 5, -5, 0] }}
-                transition={{ duration: 3, repeat: Infinity, repeatDelay: 2 }}
-              >
-                <AlertCircle className="w-10 h-10 text-blue-400" />
-              </motion.div>
+          </div>
+          <div
+            onClick={() => setSelectedFilter('cancelled')}
+            style={{
+              background: '#ffffff',
+              border: selectedFilter === 'cancelled' ? '1px solid #0F1419' : '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '10px 25px',
+              minHeight: '55px',
+              width: '180px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            <div>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>作废订单</p>
+              <p className="text-2xl font-bold" style={{ color: '#374151' }}>
+                {cancelledOrders.length}
+              </p>
             </div>
-          </motion.div>
-        </ScrollAnimation>
+          </div>
+          <div
+            onClick={() => setSelectedFilter('all')}
+            style={{
+              background: '#ffffff',
+              border: selectedFilter === 'all' ? '1px solid #0F1419' : '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '10px 25px',
+              minHeight: '55px',
+              width: '180px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            <div>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>全部订单</p>
+              <p className="text-2xl font-bold" style={{ color: '#374151' }}>
+                {orders.length}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 功能按钮区域 */}
+        <OrderToolbar
+          onAdd={() => handleAddOrder('buy')}
+          onExecute={() => {
+            if (selectedIds.length === 0) {
+              alert('请选择要执行的订单')
+              return
+            }
+            selectedIds.forEach(id => executeOrder(id))
+            setSelectedIds([])
+            alert('订单执行成功')
+          }}
+          onCancel={() => {
+            if (selectedIds.length === 0) {
+              alert('请选择要作废的订单')
+              return
+            }
+            alert('订单作废功能开发中')
+          }}
+          onDelete={() => {
+            if (selectedIds.length === 0) {
+              alert('请选择要删除的订单')
+              return
+            }
+            alert('删除功能开发中')
+          }}
+          canExecute={selectedIds.length > 0}
+          canCancel={selectedIds.length > 0}
+          canDelete={selectedIds.length > 0}
+          totalCount={filteredOrders.length}
+        />
+
+        {/* 订单列表 */}
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          position: 'relative',
+          paddingBottom: '50px',
+          zIndex: '1',
+          background: 'rgb(249, 250, 251)'
+        }}>
+          <div className="overflow-y-auto overflow-x-auto" style={{
+            flex: 1,
+            minHeight: 0,
+            position: 'relative',
+            zIndex: '1',
+            overflowY: 'scroll',
+            scrollbarGutter: 'stable'
+          }}>
+          <DataTable
+            fields={[
+              { key: 'name', label: '资产名称', width: '150px' },
+              { key: 'symbol', label: '资产代码', width: '120px' },
+              { key: 'type', label: '类型', width: '100px' },
+              { key: 'price', label: '价格', width: '120px' },
+              { key: 'quantity', label: '数量', width: '100px' },
+              { key: 'status', label: '状态', width: '100px' },
+              { key: 'createdAt', label: '创建时间', width: '200px' }
+            ]}
+            data={paginatedData}
+            selectedIds={selectedIds}
+            onSelectAll={(ids) => setSelectedIds(ids)}
+            onSelectOne={(id, checked) => {
+              if (checked) {
+                setSelectedIds([...selectedIds, id])
+              } else {
+                setSelectedIds(selectedIds.filter(id => id !== id))
+              }
+            }}
+            renderCell={(field, item) => {
+              if (field.key === 'status') {
+                const statusMap = {
+                  'pending': { text: '待执行' },
+                  'executed': { text: '已执行' },
+                  'cancelled': { text: '作废' }
+                }
+                const status = statusMap[item.status]
+                return <span>{status.text}</span>
+              }
+              if (field.key === 'type') {
+                return item.type === 'buy' ? '买入' : '卖出'
+              }
+              if (field.key === 'createdAt') {
+                return format(new Date(item.createdAt), 'yyyy-MM-dd HH:mm')
+              }
+              return null
+            }}
+          />
+          </div>
+        </div>
+
+        {/* 分页器 */}
+        <div style={{ position: 'absolute', right: '0', bottom: '0', height: '50px', zIndex: '10', width: '100%' }}>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={(page) => setCurrentPage(page)}
+            selectedCount={selectedIds.length}
+            totalCount={filteredOrders.length}
+          />
+        </div>
       </div>
 
-      {/* 待执行订单 */}
-      <ScrollAnimation delay={0.4}>
-        <div className="glass rounded-xl border border-gray-200 overflow-hidden hover:border-primary-200 transition-all duration-300">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900">待执行订单</h2>
-        </div>
-        <div className="p-6">
-          {pendingOrders.length === 0 ? (
-            <p className="text-center text-gray-500 py-8">暂无待执行订单</p>
-          ) : (
-            <div className="grid gap-4">
-              {pendingOrders.map((order, index) => (
-                <motion.div
-                  key={order.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
-                  className={`p-4 rounded-lg border ${
-                    order.type === 'buy'
-                      ? 'bg-green-500/10 border-green-500/30'
-                      : 'bg-red-500/10 border-red-500/30'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className={`px-3 py-1 rounded text-sm font-medium ${
-                          order.type === 'buy' ? 'bg-green-500/20 text-green-600' : 'bg-red-500/20 text-red-600'
-                        }`}>
-                          {order.type === 'buy' ? '买入' : '卖出'}
-                        </span>
-                        <span className="text-xl font-bold text-gray-900">{order.symbol}</span>
-                        <span className="text-gray-600">{order.name}</span>
-                      </div>
-                      <p className="text-sm text-gray-600">
-                        {format(new Date(order.createdAt), 'yyyy-MM-dd HH:mm')}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-600 mb-1">综合评分</p>
-                      <p className="text-2xl font-bold text-primary-600">{order.overallScore}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-4 gap-4 mb-4 text-sm">
-                    <div>
-                      <p className="text-gray-600">价格</p>
-                      <p className="font-bold text-gray-900">¥{order.price.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">数量</p>
-                      <p className="font-bold text-gray-900">{order.quantity}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">止损价</p>
-                      <p className="font-bold text-red-600">¥{order.stopLossPrice.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">心理/策略</p>
-                      <p className="font-bold text-gray-900">{order.psychologicalScore} / {order.strategyScore}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => executeOrder(order.id)}
-                      className="flex-1 px-4 py-2 bg-gradient-to-r from-primary-500 to-blue-500 rounded-lg text-gray-900 font-medium hover:from-primary-600 hover:to-blue-600 transition-all"
-                    >
-                      <Play className="w-4 h-4 inline mr-2" />
-                      执行订单
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-white transition-colors"
-                    >
-                      <X className="w-4 h-4 inline mr-2" />
-                      取消订单
-                    </motion.button>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          )}
-          </div>
-        </div>
-      </ScrollAnimation>
-
-      {/* 已执行订单 */}
-      <ScrollAnimation delay={0.5}>
-        <div className="glass rounded-xl border border-gray-200 overflow-hidden hover:border-primary-200 transition-all duration-300">
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">已执行订单</h2>
-          </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-gray-600 text-sm border-b border-gray-200">
-                <th className="px-6 py-4">类型</th>
-                <th className="px-6 py-4">代码</th>
-                <th className="px-6 py-4">价格</th>
-                <th className="px-6 py-4">数量</th>
-                <th className="px-6 py-4">金额</th>
-                <th className="px-6 py-4">综合评分</th>
-                <th className="px-6 py-4">执行时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {executedOrders.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
-                    暂无已执行订单
-                  </td>
-                </tr>
-              ) : (
-                executedOrders.map((order, index) => (
-                  <tr key={order.id} className="border-b border-gray-200 hover:bg-white transition-colors">
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        order.type === 'buy' ? 'bg-green-500/20 text-green-600' : 'bg-red-500/20 text-red-600'
-                      }`}>
-                        {order.type === 'buy' ? '买入' : '卖出'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 font-medium text-gray-900">{order.symbol}</td>
-                    <td className="px-6 py-4">¥{order.price.toLocaleString()}</td>
-                    <td className="px-6 py-4">{order.quantity}</td>
-                    <td className="px-6 py-4">¥{(order.price * order.quantity).toLocaleString()}</td>
-                    <td className="px-6 py-4 font-bold text-primary-600">{order.overallScore}</td>
-                    <td className="px-6 py-4 text-gray-600">
-                      {order.executedAt ? format(new Date(order.executedAt), 'MM-dd HH:mm') : '-'}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-        </div>
-      </ScrollAnimation>
-
       {/* 创建预约单弹窗 */}
-      <AnimatePresence>
-        {showModal && (
-          <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowModal(false)}
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="glass rounded-2xl border border-gray-300 w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
+      <OrderModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title="预约订单"
+      >
             {/* 步骤指示器 */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-center mb-6">
               {[0, 1, 2, 3].map((step) => (
-                <div key={step} className="flex items-center">
+                <div key={step} className="flex items-center flex-1">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                    step <= evaluationStep
-                      ? 'bg-gradient-to-r from-primary-500 to-blue-500 text-gray-900'
-                      : 'bg-gray-50 text-gray-600'
+                    step === evaluationStep
+                      ? 'bg-[#0F1419] text-white'
+                      : step < evaluationStep
+                      ? 'bg-white border border-[#0F1419] text-gray-900'
+                      : 'bg-gray-100 text-gray-600'
                   }`}>
                     {step + 1}
                   </div>
-                  {step < 3 && <div className="w-16 h-1 mx-2 bg-gray-50" />}
+                  {step < 3 && <div className="flex-1 h-[1px] mx-2 bg-gray-300" />}
                 </div>
               ))}
             </div>
@@ -439,31 +450,46 @@ const OrderManagement = () => {
             {/* 步骤内容 */}
             {evaluationStep === 0 && (
               <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">心理测试评估</h3>
-                <p className="text-gray-600 mb-6">验证当前心理状态是否符合交易要求</p>
+                <p className="text-gray-600 mb-2">交易前心理状态测试</p>
                 <div className="p-4 bg-primary-50 rounded-lg border border-primary-200 mb-4">
-                  <p className="text-sm text-gray-600">最新心理测试结果</p>
+                  <p className="text-sm text-gray-600">测试结果</p>
                   <div className="flex items-center justify-between mt-2">
                     <span className="text-2xl font-bold text-gray-900">
-                      {psychologicalTests.length > 0 ? psychologicalTests[psychologicalTests.length - 1].overallScore : '未测试'}
+                      {psychologicalTests.length > 0 ? (psychologicalTests[psychologicalTests.length - 1].overallScore > 10 ? Math.round(psychologicalTests[psychologicalTests.length - 1].overallScore / 10) : Math.round(psychologicalTests[psychologicalTests.length - 1].overallScore)) : '未测试'}
                     </span>
                     <span className={`px-3 py-1 rounded text-sm ${
-                      psychologicalTests.length > 0 && psychologicalTests[psychologicalTests.length - 1].pass
-                        ? 'bg-green-500/20 text-green-600'
-                        : 'bg-red-500/20 text-red-600'
+                      (() => {
+                        if (psychologicalTests.length === 0) return 'bg-gray-500/20 text-gray-600'
+                        const score = psychologicalTests[psychologicalTests.length - 1].overallScore > 10 ? psychologicalTests[psychologicalTests.length - 1].overallScore / 10 : psychologicalTests[psychologicalTests.length - 1].overallScore
+                        if (score >= 7 && score <= 8) return 'bg-green-500/20 text-green-600'
+                        if ((score >= 5 && score <= 6) || (score >= 9 && score <= 10)) return 'bg-yellow-500/20 text-yellow-600'
+                        return 'bg-red-500/20 text-red-600'
+                      })()
                     }`}>
-                      {psychologicalTests.length > 0 && psychologicalTests[psychologicalTests.length - 1].pass ? '通过' : '未通过'}
+                      {(() => {
+                        if (psychologicalTests.length === 0) return '未测试'
+                        const score = psychologicalTests[psychologicalTests.length - 1].overallScore > 10 ? psychologicalTests[psychologicalTests.length - 1].overallScore / 10 : psychologicalTests[psychologicalTests.length - 1].overallScore
+                        if (score >= 7 && score <= 8) return '可以交易'
+                        if ((score >= 5 && score <= 6) || (score >= 9 && score <= 10)) return '谨慎交易'
+                        return '禁止交易'
+                      })()}
                     </span>
                   </div>
                 </div>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handlePsychologicalEvaluation}
-                  className="w-full px-4 py-3 bg-gradient-to-r from-primary-500 to-blue-500 rounded-lg text-gray-900 font-medium hover:from-primary-600 hover:to-blue-600 transition-all"
-                >
-                  下一步
-                </motion.button>
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => setShowModal(false)}
+                    className="px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handlePsychologicalEvaluation}
+                    className="px-4 py-3 bg-[#0F1419] border border-[#0F1419] rounded-lg text-white font-medium hover:opacity-90 transition-all"
+                  >
+                    下一步
+                  </button>
+                </div>
               </div>
             )}
 
@@ -473,9 +499,8 @@ const OrderManagement = () => {
                 <p className="text-gray-600 mb-6">选择并评估交易策略</p>
                 <div className="space-y-3 mb-4">
                   {strategies[orderType].map((strategy) => (
-                    <motion.div
+                    <div
                       key={strategy.id}
-                      whileHover={{ scale: 1.02 }}
                       onClick={() => setOrderForm({ ...orderForm, strategyId: strategy.id })}
                       className={`p-4 rounded-lg border cursor-pointer transition-all ${
                         orderForm.strategyId === strategy.id
@@ -486,26 +511,22 @@ const OrderManagement = () => {
                       <h4 className="font-bold text-gray-900 mb-1">{strategy.name}</h4>
                       <p className="text-sm text-gray-600">{strategy.description}</p>
                       <p className="text-sm text-gray-500 mt-2">及格线: {strategy.passScore}分</p>
-                    </motion.div>
+                    </div>
                   ))}
                 </div>
                 <div className="flex gap-3">
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                  <button
                     onClick={() => setEvaluationStep(0)}
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-white transition-colors"
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     上一步
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                  </button>
+                  <button
                     onClick={handleStrategyEvaluation}
-                    className="flex-1 px-4 py-3 bg-gradient-to-r from-primary-500 to-blue-500 rounded-lg text-gray-900 font-medium hover:from-primary-600 hover:to-blue-600 transition-all"
+                    className="flex-1 px-4 py-3 bg-[#0F1419] border border-[#0F1419] rounded-lg text-white font-medium hover:opacity-90 transition-all"
                   >
                     下一步
-                  </motion.button>
+                  </button>
                 </div>
               </div>
             )}
@@ -516,9 +537,8 @@ const OrderManagement = () => {
                 <p className="text-gray-600 mb-6">选择风险模型并计算仓位</p>
                 <div className="space-y-3 mb-4">
                   {riskModels.map((model) => (
-                    <motion.div
+                    <div
                       key={model.id}
-                      whileHover={{ scale: 1.02 }}
                       onClick={() => setOrderForm({ ...orderForm, riskModelId: model.id })}
                       className={`p-4 rounded-lg border cursor-pointer transition-all ${
                         orderForm.riskModelId === model.id
@@ -529,26 +549,22 @@ const OrderManagement = () => {
                       <h4 className="font-bold text-gray-900 mb-1">{model.name}</h4>
                       <p className="text-sm text-gray-600">{model.description}</p>
                       <p className="text-sm text-gray-500 mt-2">最大亏损: {model.maxLossPercent}%</p>
-                    </motion.div>
+                    </div>
                   ))}
                 </div>
                 <div className="flex gap-3">
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                  <button
                     onClick={() => setEvaluationStep(1)}
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-white transition-colors"
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     上一步
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                  </button>
+                  <button
                     onClick={handleRiskEvaluation}
-                    className="flex-1 px-4 py-3 bg-gradient-to-r from-primary-500 to-blue-500 rounded-lg text-gray-900 font-medium hover:from-primary-600 hover:to-blue-600 transition-all"
+                    className="flex-1 px-4 py-3 bg-[#0F1419] border border-[#0F1419] rounded-lg text-white font-medium hover:opacity-90 transition-all"
                   >
                     下一步
-                  </motion.button>
+                  </button>
                 </div>
               </div>
             )}
@@ -656,32 +672,33 @@ const OrderManagement = () => {
                     </div>
                   </div>
 
-                  <div className="flex gap-3">
-                    <motion.button
+                  <div className="flex gap-3 justify-end">
+                    <button
                       type="button"
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
                       onClick={() => setEvaluationStep(orderType === 'buy' ? 2 : 1)}
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-white transition-colors"
+                      className="px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       上一步
-                    </motion.button>
-                    <motion.button
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowModal(false)}
+                      className="px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      取消
+                    </button>
+                    <button
                       type="submit"
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="flex-1 px-4 py-3 bg-gradient-to-r from-primary-500 to-blue-500 rounded-lg text-gray-900 font-medium hover:from-primary-600 hover:to-blue-600 transition-all"
+                      className="px-4 py-3 bg-[#0F1419] border border-[#0F1419] rounded-lg text-white font-medium hover:opacity-90 transition-all"
                     >
                       创建预约单
-                    </motion.button>
+                    </button>
                   </div>
                 </form>
               </div>
             )}
-          </motion.div>
-        </motion.div>
-        )}
-      </AnimatePresence>
+      </OrderModal>
+      </div>
     </div>
   )
 }

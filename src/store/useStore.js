@@ -149,8 +149,39 @@ const useStore = create(
       // 交易策略记录（扁平化存储，用于表格展示）
       strategyRecords: [],
 
-      // 预约单
-      orders: [],
+// 预约单
+      orders: Array.from({ length: 40 }, (_, i) => {
+        const types = ['buy', 'sell']
+        const statuses = ['pending', 'executed', 'cancelled']
+        const symbols = ['AAPL', 'TSLA', 'GOOGL', 'MSFT', 'AMZN', 'NVDA', 'META', 'NFLX', 'AMD', 'INTC', 'CSCO', 'ORCL', 'CRM', 'ADBE', 'PYPL']
+        const names = ['苹果', '特斯拉', '谷歌', '微软', '亚马逊', '英伟达', 'Meta', '奈飞', 'AMD', '英特尔', '思科', '甲骨文', 'Salesforce', 'Adobe', 'PayPal']
+        const symbol = symbols[i % symbols.length]
+        const name = names[i % names.length]
+        const type = types[i % 2]
+        const status = statuses[i % 3]
+        const basePrice = 100 + (i * 5)
+        const quantity = 50 + (i * 10)
+        const psychologicalScore = 6 + (Math.random() * 3)
+        const strategyScore = 75 + (Math.random() * 20)
+        const riskScore = 100
+        
+        return {
+          id: (i + 1).toString(),
+          symbol: symbol,
+          name: name,
+          type: type,
+          price: parseFloat((basePrice + Math.random() * 20).toFixed(2)),
+          quantity: quantity,
+          stopLossPrice: parseFloat((basePrice * 0.95).toFixed(2)),
+          takeProfitPrice: parseFloat((basePrice * 1.1).toFixed(2)),
+          status: status,
+          psychologicalScore: parseFloat(psychologicalScore.toFixed(1)),
+          strategyScore: parseFloat(strategyScore.toFixed(1)),
+          riskScore: riskScore,
+          overallScore: parseFloat(((psychologicalScore * 0.3 + strategyScore * 0.4 + riskScore * 0.3) / 100 * 10).toFixed(1)),
+          createdAt: new Date(Date.now() - i * 86400000).toISOString()
+        }
+      }),
 
       // 账单明细
       transactions: [],

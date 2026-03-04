@@ -186,7 +186,7 @@ const TechnicalIndicators = () => {
                   }}
                   style={{
                     background: '#ffffff',
-                    border: selectedIds.includes(indicator.id) ? '2px solid #0F1419' : '2px solid #e5e7eb',
+                    border: selectedIds.includes(indicator.id) ? '1px solid #0F1419' : '1px solid #e5e7eb',
                     borderRadius: '12px',
                     overflow: 'hidden',
                     cursor: 'pointer',

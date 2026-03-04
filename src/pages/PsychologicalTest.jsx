@@ -219,11 +219,11 @@ const PsychologicalTest = () => {
     <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
         {/* 主内容区域 - 左8右2 */}
-        <div style={{ display: 'grid', gridTemplateColumns: '7.5fr 3.5fr', gap: '10px', marginTop: '10px', flex: 1, minHeight: 0, paddingBottom: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '7.8fr 2.2fr', gap: '10px', marginTop: '10px', flex: 1, minHeight: 0, paddingBottom: '10px' }}>
           {/* 左侧卡片 - 测试问卷 */}
         <div style={{
           background: '#ffffff',
-          border: '2px solid #e5e7eb',
+          border: '1px solid #e5e7eb',
           borderRadius: '8px',
           padding: '20px',
           display: 'flex',
@@ -335,7 +335,7 @@ const PsychologicalTest = () => {
                               style={{
                                 padding: '6px 16px',
                                 background: score === value ? '#0F1419' : '#ffffff',
-                                border: score === value ? '2px solid #0F1419' : '2px solid #e5e7eb',
+                                border: score === value ? '1px solid #0F1419' : '1px solid #e5e7eb',
                                 borderRadius: '6px',
                                 fontSize: '16px',
                                 fontWeight: 'bold',
@@ -369,7 +369,7 @@ const PsychologicalTest = () => {
             {/* 日历卡片 */}
             <div style={{
               background: '#ffffff',
-              border: '2px solid #e5e7eb',
+              border: '1px solid #e5e7eb',
               borderRadius: '8px',
               padding: '15px',
               display: 'flex',
@@ -506,7 +506,7 @@ const PsychologicalTest = () => {
             {/* 测试指标卡片 */}
             <div style={{
               background: '#ffffff',
-              border: '2px solid #e5e7eb',
+              border: '1px solid #e5e7eb',
               borderRadius: '8px',
               paddingTop: '14px',
               paddingRight: '20px',

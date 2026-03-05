@@ -232,7 +232,6 @@ const PsychologicalTest = () => {
           overflow: 'hidden',
           height: 'calc(100vh - 52px - 20px)'
         }}>
-
             {/* 分数显示 - 使用SVG印章图标，居中显示，仅在有测试数据时显示 */}
             {Object.keys(testScores).length > 0 && (
             <div style={{
@@ -240,30 +239,43 @@ const PsychologicalTest = () => {
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              width: '176px',
-              height: '176px',
+              width: '160px',
+              height: '160px',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
               zIndex: 10
             }}>
-              <svg viewBox="0 0 1126 1024" width="176" height="176" style={{ position: 'absolute', top: 0, left: 0 }}>
-                <path
-                  d="M164.6848 768C248.96 898.9184 395.9552 985.6 563.2 985.6c167.2448 0 314.24-86.6944 398.5152-217.6h44.9792C918.1696 921.0496 752.704 1024 563.2 1024c-189.504 0-354.9696-102.9632-443.4944-256h44.9792z m362.5984 80.5504l33.2544 17.7408 33.2928-17.2928-6.464 37.1456 26.752 26.496-37.184 5.0816-16.832 33.6384-16.512-33.9712-37.1072-5.5424 27.0592-26.0864-6.2592-37.2096z m229.3248-48.0768l12.9792 35.4944 36.416 9.5104-29.568 23.1936 2.3936 37.6576-31.2704-21.1712-35.0976 13.6448 10.304-36.16-23.9744-29.12 37.6448-1.28 20.1728-31.7696z m-387.712-11.392l20.416 31.7184 37.632 1.28-23.7056 29.1584 10.6112 36.2624-35.0976-13.696-31.104 21.12 2.0992-37.632-29.8368-23.1296 36.3264-9.5744 12.6592-35.4944zM481.024 768c25.8944 8.32 53.504 12.8 82.176 12.8s56.2816-4.48 82.176-12.8l63.2832 0.0128A293.056 293.056 0 0 1 563.2 806.4c-52.9024 0-102.5536-13.952-145.4592-38.4h63.2832zM1075.2 294.4a51.2 51.2 0 0 1 51.2 51.2v332.8a51.2 51.2 0 0 1-51.2 51.2H51.2a51.2 51.2 0 0 1-51.2-51.2V345.6a51.2 51.2 0 0 1 51.2-51.2h1024z m0 38.4H51.2a12.8 12.8 0 0 0-12.7104 11.3024L38.4 345.6v332.8a12.8 12.8 0 0 0 11.3024 12.7104L51.2 691.2h1024a12.8 12.8 0 0 0 12.7104-11.3024L1088 678.4V345.6a12.8 12.8 0 0 0-12.8-12.8zM563.2 0c189.5168 0 354.9824 102.9632 443.5072 256h-44.992C877.4528 125.0944 730.4576 38.4 563.2 38.4S248.9472 125.0944 164.6848 256H119.68C208.2176 102.9632 373.6832 0 563.2 0z m0 217.6c52.9152 0 102.5664 13.952 145.4848 38.4h-63.2704C619.52 247.68 591.872 243.2 563.2 243.2s-56.3072 4.48-82.2144 12.8h-63.2704c42.9056-24.448 92.5696-38.4 145.4848-38.4z m-215.552-81.792l31.104 21.0944 35.0976-13.6832-10.6112 36.2624 23.7056 29.1584-37.632 1.28-20.416 31.7056-12.672-35.5072-36.3136-9.5616 29.824-23.1424-2.0736-37.6192z m431.1808-11.4176l-2.3936 37.6576 29.568 23.1808-36.416 9.5232-12.9792 35.4944-20.1728-31.7824-37.6448-1.2672 23.9744-29.1328-10.304-36.1472 35.0976 13.6448 31.2704-21.1712zM560.1024 79.36l16.832 33.6256 37.184 5.0816-26.752 26.496 6.464 37.1584-33.2928-17.2928-33.2544 17.728 6.272-37.1968-27.072-26.0864 37.12-5.5424L560.1024 79.36z"
+              <svg viewBox="0 0 1024 1024" width="160" height="160" style={{ position: 'absolute', top: 0, left: 0 }}>
+                <circle
+                  cx="512"
+                  cy="512"
+                  r="480"
                   fill={tradeStatus.color}
                   opacity="0.3"
                 />
               </svg>
               <div style={{
-                fontSize: '24px',
+                fontSize: '56px',
+                fontWeight: 'bold',
+                color: tradeStatus.color,
+                lineHeight: '1',
+                marginBottom: '4px',
+                zIndex: 2,
+                textShadow: '0 2px 8px rgba(255,255,255,0.8)'
+              }}>
+                {overallScore > 10 ? (overallScore / 10).toFixed(1) : overallScore}
+              </div>
+              <div style={{
+                fontSize: '18px',
                 color: tradeStatus.color,
                 fontWeight: 'bold',
+                letterSpacing: '3px',
                 zIndex: 2,
-                textShadow: '0 2px 8px rgba(255,255,255,0.8)',
-                opacity: '0.3'
+                textShadow: '0 2px 8px rgba(255,255,255,0.8)'
               }}>
-                {overallScore > 10 ? (overallScore / 10).toFixed(1) : overallScore}分{tradeStatus.text}
+                {tradeStatus.text}
               </div>
             </div>
             )}
@@ -322,14 +334,19 @@ const PsychologicalTest = () => {
                               key={value}
                               onClick={() => handleScoreChange(indicator.id, value)}
                               disabled={!isTodaySelected()}
-                              className={`px-4 py-1.5 rounded-lg border border-gray-200 hover:border-gray-900 transition-all text-base font-bold min-w-[60px] h-9 ${
-                                isTodaySelected() ? 'cursor-pointer' : 'cursor-not-allowed'
-                              }`}
                               style={{
+                                padding: '6px 16px',
                                 background: score === value ? '#0F1419' : '#ffffff',
+                                border: score === value ? '1px solid #0F1419' : '1px solid #e5e7eb',
+                                borderRadius: '6px',
+                                fontSize: '16px',
+                                fontWeight: 'bold',
                                 color: score === value ? '#ffffff' : '#000',
-                                opacity: isTodaySelected() ? 1 : 0.6,
-                                borderColor: score === value ? '#0F1419' : undefined
+                                cursor: isTodaySelected() ? 'pointer' : 'not-allowed',
+                                transition: 'all 0.2s',
+                                minWidth: '60px',
+                                height: '36px',
+                                opacity: isTodaySelected() ? 1 : 0.6
                               }}
                             >
                               {value}

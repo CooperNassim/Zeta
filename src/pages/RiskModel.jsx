@@ -107,16 +107,13 @@ const RiskConfigModal = ({ isOpen, onClose, initialData, onSave }) => {
 
 // 风险额度配置
 const RiskConfig = () => {
-  const [totalRiskPercent, setTotalRiskPercent] = useState(6)
-  const [singleRiskPercent, setSingleRiskPercent] = useState(2)
+  const riskConfig = useStore(state => state.riskConfig)
+  const updateRiskConfig = useStore(state => state.updateRiskConfig)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [showToast, setShowToast] = useState(false)
 
   const handleSave = (data) => {
-    setTotalRiskPercent(data.totalRiskPercent)
-    setSingleRiskPercent(data.singleRiskPercent)
-    localStorage.setItem('riskModel_totalRiskPercent', data.totalRiskPercent.toString())
-    localStorage.setItem('riskModel_singleRiskPercent', data.singleRiskPercent.toString())
+    updateRiskConfig(data)
     setShowToast(true)
   }
 
@@ -150,13 +147,13 @@ const RiskConfig = () => {
         <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
           <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>账户风险额度</div>
           <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>
-            {totalRiskPercent}%
+            {riskConfig?.totalRiskPercent || 6}%
           </div>
         </div>
         <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
           <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>单笔风险额度</div>
           <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>
-            {singleRiskPercent}%
+            {riskConfig?.singleRiskPercent || 2}%
           </div>
         </div>
       </div>
@@ -164,7 +161,7 @@ const RiskConfig = () => {
       <RiskConfigModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        initialData={{ totalRiskPercent, singleRiskPercent }}
+        initialData={{ totalRiskPercent: riskConfig?.totalRiskPercent || 6, singleRiskPercent: riskConfig?.singleRiskPercent || 2 }}
         onSave={handleSave}
       />
       {showToast && <Toast type="success" message="保存成功" onClose={() => setShowToast(false)} />}
@@ -203,7 +200,7 @@ const RiskGauge = ({ value, label }) => {
             strokeLinecap="round"
           />
         </svg>
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: '10px' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: '24px', fontWeight: 'bold', color: color }}>
               {percentage.toFixed(1)}%
@@ -388,13 +385,7 @@ const CurrentPositions = ({ selectedPosition, onPositionSelect }) => {
 
 // 账户风险组件
 const AccountRisk = () => {
-  // 模拟数据
-  const accountRiskData = {
-    stopLossPreLoss: 8500,
-    monthlyLoss: 3200,
-    startMonthTotal: 200000,
-    riskRatio: 5.85
-  }
+  const accountRiskData = useStore(state => state.accountRiskData)
 
   // 计算可用风险额度
   const availableRisk = accountRiskData.startMonthTotal - (accountRiskData.stopLossPreLoss + accountRiskData.monthlyLoss)
@@ -416,33 +407,45 @@ const AccountRisk = () => {
       </div>
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', overflow: 'auto', minHeight: 0 }}>
-        <div style={{ flexShrink: 0 }}>
+        <div style={{ flexShrink: 0, marginTop: '-10px', marginBottom: '10px' }}>
           <RiskGauge value={accountRiskData.riskRatio} label={`已用额度：¥${availableRisk.toLocaleString()}`} />
         </div>
         <div style={{ marginTop: '12px', width: '100%', flex: 1, minHeight: 0 }}>
           <div style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', rowGap: '10px' }}>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>账户金额</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>当前账户(元)</div>
+              <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
+                ¥{accountRiskData.currentAccount.toLocaleString()}
+              </div>
+            </div>
+            <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>本月亏损(元)</div>
+              <div style={{ fontWeight: 'bold', color: '#EF4444', fontSize: '16px' }}>
+                ¥{accountRiskData.monthlyLoss.toLocaleString()}
+              </div>
+            </div>
+            <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>月初账户(元)</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
                 ¥{accountRiskData.startMonthTotal.toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>可用额度</div>
-              <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                ¥{availableRisk.toLocaleString()}
-              </div>
-            </div>
-            <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>持仓占用</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>持仓占用(元)</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
                 ¥{accountRiskData.stopLossPreLoss.toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>当月亏损</div>
-              <div style={{ fontWeight: 'bold', color: '#EF4444', fontSize: '16px' }}>
-                ¥{accountRiskData.monthlyLoss.toLocaleString()}
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>账户可用(%)</div>
+              <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
+                {accountRiskData.accountAvailable}%
+              </div>
+            </div>
+            <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>单笔可用(%)</div>
+              <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
+                {accountRiskData.singleAvailable}%
               </div>
             </div>
           </div>

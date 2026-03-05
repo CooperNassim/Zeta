@@ -37,23 +37,26 @@ const Toast = ({ type = 'success', message, duration = 3000, onClose }) => {
   return (
     <AnimatePresence>
       {isVisible && (
-        <motion.div
-          initial={{ opacity: 0, y: -20, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -20, scale: 0.95 }}
-          transition={{ duration: 0.3 }}
-          className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg ${colors[type]}`}
-          style={{
-            position: 'fixed',
-            top: '70px',
-            right: '50%',
-            transform: 'translateX(50%)',
-            zIndex: 9999
-          }}
-        >
-          {icons[type]}
-          <span className="text-sm font-medium">{message}</span>
-        </motion.div>
+        <div style={{
+          position: 'fixed',
+          top: '70px',
+          left: 0,
+          right: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
+            className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg ${colors[type]}`}
+          >
+            {icons[type]}
+            <span className="text-sm font-medium">{message}</span>
+          </motion.div>
+        </div>
       )}
     </AnimatePresence>
   )

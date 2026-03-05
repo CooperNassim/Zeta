@@ -12,6 +12,10 @@ import OrderToolbar from '../components/OrderToolbar'
 import OrderModal from '../components/OrderModal'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
+import ScoreButtons from '../components/ScoreButtons'
+import FilterSelect from '../components/FilterSelect'
+import CustomInput from '../components/CustomInput'
+import ErrorMessage from '../components/ErrorMessage'
 
 const OrderManagement = () => {
   const navigate = useNavigate()
@@ -26,13 +30,23 @@ const OrderManagement = () => {
   const [toastType, setToastType] = useState('success')
   const [toastMessage, setToastMessage] = useState('')
   const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [symbolError, setSymbolError] = useState(false)
+  // 第3步风险管控的错误状态
+  const [riskErrors, setRiskErrors] = useState({
+    availablePercent: false,
+    price: false,
+    stopLossPrice: false,
+    takeProfitPrice: false
+  })
   const pageSize = 20
 
   const orders = useStore(state => state.orders)
   const account = useStore(state => state.account)
   const psychologicalTests = useStore(state => state.psychologicalTests)
-  const strategies = useStore(state => state.strategies)
+  const strategyRecords = useStore(state => state.strategyRecords)
   const riskModels = useStore(state => state.riskModels)
+  const riskConfig = useStore(state => state.riskConfig)
+  const accountRiskData = useStore(state => state.accountRiskData)
   const addOrder = useStore(state => state.addOrder)
   const executeOrder = useStore(state => state.executeOrder)
   const cancelOrder = useStore(state => state.cancelOrder)
@@ -48,6 +62,7 @@ const OrderManagement = () => {
     quantity: '',
     strategyId: '',
     riskModelId: '',
+    strategyScores: {},
     psychologicalScores: {}
   })
 
@@ -55,6 +70,7 @@ const OrderManagement = () => {
     setOrderType(type)
     setEvaluationStep(0)
     setEvaluationResults({})
+    setSymbolError(false)
     setOrderForm({
       symbol: '',
       name: '',
@@ -134,34 +150,11 @@ const OrderManagement = () => {
   }
 
   const handleStrategyEvaluation = () => {
-    const strategy = strategies[orderType].find(s => s.id === orderForm.strategyId)
+    const strategy = strategyRecords.find(s => s.id === orderForm.strategyId)
     if (!strategy) {
-      alert('请选择交易策略')
-      return false
-    }
-
-    // 模拟策略评分
-    const scores = {}
-    let totalScore = 0
-    strategy.conditions.forEach(condition => {
-      scores[condition.id] = Math.floor(Math.random() * 30) + 70
-      totalScore += scores[condition.id] * condition.weight
-    })
-
-    const pass = totalScore >= strategy.passScore
-
-    setEvaluationResults({
-      ...evaluationResults,
-      strategy: {
-        pass,
-        score: totalScore.toFixed(2),
-        passScore: strategy.passScore,
-        scores
-      }
-    })
-
-    if (!pass) {
-      alert('策略评估未通过，无法创建订单')
+      setToastType('error')
+      setToastMessage('请选择交易策略')
+      setShowToast(true)
       return false
     }
 
@@ -170,26 +163,37 @@ const OrderManagement = () => {
   }
 
   const handleRiskEvaluation = () => {
-    const riskModel = riskModels.find(r => r.id === orderForm.riskModelId)
-    if (!riskModel) {
-      alert('请选择风险模型')
+    // 检查是否所有评估标准都已评分
+    const evalStandardKeys = ['evalStandard1', 'evalStandard2', 'evalStandard3', 'evalStandard4', 'evalStandard5']
+    const allRated = evalStandardKeys.every(key =>
+      orderForm.strategyScores.hasOwnProperty(key) &&
+      orderForm.strategyScores[key] !== undefined
+    )
+
+    if (!allRated) {
+      setToastType('error')
+      setToastMessage('请完成所有评估标准')
+      setShowToast(true)
       return false
     }
 
-    const price = parseFloat(orderForm.price)
-    const stopLossPrice = parseFloat(orderForm.stopLossPrice)
-    const maxLoss = account.balance * (riskModel.maxLossPercent / 100)
-    const maxQuantity = Math.floor(maxLoss / (price - stopLossPrice))
+    // 计算策略评分（平均分）
+    const scores = orderForm.strategyScores
+    let totalScore = 0
+    evalStandardKeys.forEach(key => {
+      const score = scores[key] || 0
+      totalScore += (score / 2) * 100
+    })
+    const averageScore = totalScore / evalStandardKeys.length
 
-    const pass = true // 风险模型通过
-
+    // 保存评估结果
     setEvaluationResults({
       ...evaluationResults,
-      risk: {
-        pass,
-        maxLoss,
-        maxQuantity,
-        riskModel
+      strategy: {
+        pass: true,
+        score: averageScore.toFixed(2),
+        passScore: 70,
+        scores
       }
     })
 
@@ -198,7 +202,36 @@ const OrderManagement = () => {
   }
 
   const handleSubmitOrder = (e) => {
+    console.log('handleSubmitOrder被调用了')
     e.preventDefault()
+
+    // 检查股票代码是否为空
+    const isSymbolEmpty = !orderForm.symbol || orderForm.symbol.trim() === ''
+
+    // 如果是买入订单，验证风险管控必填项
+    if (orderType === 'buy') {
+      const newRiskErrors = {
+        availablePercent: !orderForm.availablePercent || orderForm.availablePercent === '' || orderForm.availablePercent === undefined || orderForm.availablePercent === null,
+        price: !orderForm.price || orderForm.price === '',
+        stopLossPrice: !orderForm.stopLossPrice || orderForm.stopLossPrice === '',
+        takeProfitPrice: !orderForm.takeProfitPrice || orderForm.takeProfitPrice === ''
+      }
+
+      // 设置股票代码错误
+      setSymbolError(isSymbolEmpty)
+
+      // 如果有错误，显示并返回
+      if (isSymbolEmpty || Object.values(newRiskErrors).some(error => error)) {
+        setRiskErrors(newRiskErrors)
+        return
+      }
+    } else {
+      // 非买入订单，只检查股票代码
+      if (isSymbolEmpty) {
+        setSymbolError(true)
+        return
+      }
+    }
 
     // 将所有分数转换为10分制
     const psychologicalScore10 = evaluationResults.psychological.score > 10 ? evaluationResults.psychological.score / 10 : evaluationResults.psychological.score
@@ -478,7 +511,7 @@ const OrderManagement = () => {
                     step === evaluationStep
                       ? 'bg-[#0F1419] text-white'
                       : step < evaluationStep
-                      ? 'bg-white border border-[#0F1419] text-gray-900'
+                      ? 'bg-gray-500 text-white'
                       : 'bg-gray-100 text-gray-600'
                   }`}>
                     {step + 1}
@@ -490,7 +523,7 @@ const OrderManagement = () => {
                 3 === evaluationStep
                   ? 'bg-[#0F1419] text-white'
                   : 3 < evaluationStep
-                  ? 'bg-white border border-[#0F1419] text-gray-900'
+                  ? 'bg-gray-500 text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}>
                 4
@@ -501,7 +534,7 @@ const OrderManagement = () => {
             {evaluationStep === 0 && (
               <div>
                 <p className="text-gray-600 mb-2">交易心理测试</p>
-                <div className="p-4 bg-primary-50 rounded-lg border border-primary-200 mb-4">
+                <div className="p-4 bg-white rounded-lg border border-gray-200 mb-4">
                   <p className="text-sm text-gray-600">测试结果</p>
                   <div className="flex items-center justify-between mt-2">
                     <span className="text-2xl font-bold text-gray-900">
@@ -545,35 +578,51 @@ const OrderManagement = () => {
 
             {evaluationStep === 1 && (
               <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">交易策略评估</h3>
-                <p className="text-gray-600 mb-6">选择并评估交易策略</p>
-                <div className="space-y-3 mb-4">
-                  {strategies[orderType].map((strategy) => (
-                    <div
-                      key={strategy.id}
-                      onClick={() => setOrderForm({ ...orderForm, strategyId: strategy.id })}
-                      className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                        orderForm.strategyId === strategy.id
-                          ? 'bg-primary-50 border-primary-500'
-                          : 'bg-white border-gray-200 hover:border-primary-300'
-                      }`}
-                    >
-                      <h4 className="font-bold text-gray-900 mb-1">{strategy.name}</h4>
-                      <p className="text-sm text-gray-600">{strategy.description}</p>
-                      <p className="text-sm text-gray-500 mt-2">及格线: {strategy.passScore}分</p>
-                    </div>
-                  ))}
+                <p className="text-gray-600 mb-2">选择交易策略</p>
+                <div className="mb-4 overflow-auto" style={{ maxHeight: '400px' }}>
+                  <div className="grid grid-cols-2 gap-4">
+                    {strategyRecords
+                      .filter(record => record.status === '启用' && record.strategyType === '买入')
+                      .map((record) => (
+                        <div
+                          key={record.id}
+                          onClick={() => setOrderForm({ ...orderForm, strategyId: record.id, strategyScores: {} })}
+                          className={`p-4 rounded-lg cursor-pointer transition-all ${
+                            orderForm.strategyId === record.id
+                              ? 'bg-[#0F1419]'
+                              : 'border border-gray-200 hover:border-gray-900 bg-white'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h4 className={`font-bold mb-1 ${orderForm.strategyId === record.id ? 'text-white' : 'text-gray-900'}`}>{record.name}</h4>
+                              <p className={`text-xs ${orderForm.strategyId === record.id ? 'text-gray-300' : 'text-gray-500'}`}>{record._id || '-'}</p>
+                            </div>
+                            <span className={`px-2 py-1 text-xs rounded ${orderForm.strategyId === record.id ? 'bg-white text-gray-900' : 'bg-gray-100 text-gray-600'}`}>
+                              {record.strategyType}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
                 </div>
-                <div className="flex gap-3">
+
+                <div className="flex gap-3 justify-end">
                   <button
                     onClick={() => setEvaluationStep(0)}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     上一步
                   </button>
                   <button
+                    onClick={() => setShowModal(false)}
+                    className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
                     onClick={handleStrategyEvaluation}
-                    className="flex-1 px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
+                    className="px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
                   >
                     下一步
                   </button>
@@ -583,35 +632,63 @@ const OrderManagement = () => {
 
             {evaluationStep === 2 && orderType === 'buy' && (
               <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">风险模型评估</h3>
-                <p className="text-gray-600 mb-6">选择风险模型并计算仓位</p>
-                <div className="space-y-3 mb-4">
-                  {riskModels.map((model) => (
-                    <div
-                      key={model.id}
-                      onClick={() => setOrderForm({ ...orderForm, riskModelId: model.id })}
-                      className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                        orderForm.riskModelId === model.id
-                          ? 'bg-primary-50 border-primary-500'
-                          : 'bg-white border-gray-200 hover:border-primary-300'
-                      }`}
-                    >
-                      <h4 className="font-bold text-gray-900 mb-1">{model.name}</h4>
-                      <p className="text-sm text-gray-600">{model.description}</p>
-                      <p className="text-sm text-gray-500 mt-2">最大亏损: {model.maxLossPercent}%</p>
+                <p className="text-gray-600 mb-2">客观评估标准化</p>
+                {(() => {
+                  const selectedStrategy = strategyRecords.find(s => s.id === orderForm.strategyId)
+                  const evalStandards = [
+                    { key: 'evalStandard1', label: '评估标准Ⅰ' },
+                    { key: 'evalStandard2', label: '评估标准Ⅱ' },
+                    { key: 'evalStandard3', label: '评估标准Ⅲ' },
+                    { key: 'evalStandard4', label: '评估标准Ⅳ' },
+                    { key: 'evalStandard5', label: '评估标准Ⅴ' },
+                  ]
+                  return (
+                    <div className="space-y-2 overflow-auto" style={{ maxHeight: '400px' }}>
+                        {evalStandards.map((standard, index) => {
+                          const content = selectedStrategy?.[standard.key] || ''
+                          const [name, description] = content.split('：')
+                          return (
+                            <div key={standard.key} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                              <p className="font-medium text-gray-900 mb-3">
+                                {standard.label}：{name || standard.label}
+                              </p>
+                              {description && <p className="text-sm text-gray-600 mb-3">{description}</p>}
+                              <ScoreButtons
+                                selectedScore={orderForm.strategyScores[standard.key]}
+                                onChange={(score) => {
+                                  setOrderForm({
+                                    ...orderForm,
+                                    strategyScores: {
+                                      ...orderForm.strategyScores,
+                                      [standard.key]: score
+                                    }
+                                  })
+                                }}
+                                name={`condition-${standard.key}`}
+                              />
+                            </div>
+                          )
+                        })}
                     </div>
-                  ))}
-                </div>
-                <div className="flex gap-3">
+                  )
+                })()}
+
+                <div className="flex gap-3 justify-end" style={{ marginTop: '10px' }}>
                   <button
                     onClick={() => setEvaluationStep(1)}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     上一步
                   </button>
                   <button
+                    onClick={() => setShowModal(false)}
+                    className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
                     onClick={handleRiskEvaluation}
-                    className="flex-1 px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
+                    className="px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
                   >
                     下一步
                   </button>
@@ -621,90 +698,151 @@ const OrderManagement = () => {
 
             {evaluationStep === 3 && (
               <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">填写订单信息</h3>
-                <p className="text-gray-600 mb-6">完成订单详细信息</p>
-                <form onSubmit={handleSubmitOrder} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                <p className="text-gray-600 mb-2">填写订单信息</p>
+
+                <div className="grid grid-cols-2 gap-4 overflow-auto" style={{ maxHeight: '400px' }}>
                     <div>
-                      <label className="block text-sm text-gray-600 mb-2">资产代码</label>
-                      <input
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <span className="text-red-500">*</span> 股票代码
+                      </label>
+                      <CustomInput
                         type="text"
-                        required
-                        value={orderForm.symbol}
-                        onChange={(e) => setOrderForm({ ...orderForm, symbol: e.target.value })}
-                        placeholder="例如：AAPL"
-                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
+                        value={orderForm.symbol || ''}
+                        onChange={(value) => {
+                          setOrderForm({ ...orderForm, symbol: value })
+                          setSymbolError(false)
+                          // TODO: 根据股票代码查询股票名称
+                        }}
+                        placeholder="请输入"
+                        error={symbolError}
                       />
+                      {symbolError && (
+                        <ErrorMessage message="不能为空" showIcon={true} />
+                      )}
                     </div>
                     <div>
-                      <label className="block text-sm text-gray-600 mb-2">资产名称</label>
-                      <input
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        股票名称
+                      </label>
+                      <CustomInput
                         type="text"
-                        required
-                        value={orderForm.name}
-                        onChange={(e) => setOrderForm({ ...orderForm, name: e.target.value })}
-                        placeholder="例如：苹果公司"
-                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
+                        value={orderForm.name || ''}
+                        onChange={(value) => setOrderForm({ ...orderForm, name: value })}
+                        placeholder="自动获取"
+                        disabled
                       />
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-2">价格</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        required
-                        value={orderForm.price}
-                        onChange={(e) => setOrderForm({ ...orderForm, price: e.target.value })}
-                        placeholder="例如：150.50"
-                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-2">数量</label>
-                      <input
-                        type="number"
-                        required
-                        value={orderForm.quantity}
-                        onChange={(e) => setOrderForm({ ...orderForm, quantity: e.target.value })}
-                        placeholder="例如：100"
-                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
-                      />
-                    </div>
-                  </div>
+
+
                   {orderType === 'buy' && (
                     <>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm text-gray-600 mb-2">止损价</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            required
-                            value={orderForm.stopLossPrice}
-                            onChange={(e) => setOrderForm({ ...orderForm, stopLossPrice: e.target.value })}
-                            placeholder="例如：145.00"
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm text-gray-600 mb-2">止盈价</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={orderForm.takeProfitPrice}
-                            onChange={(e) => setOrderForm({ ...orderForm, takeProfitPrice: e.target.value })}
-                            placeholder="例如：160.00"
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
-                          />
-                        </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <span className="text-red-500">*</span> 可用比例(%)
+                        </label>
+                        <CustomInput
+                          type="number"
+                          step="0.01"
+                          value={orderForm.availablePercent || accountRiskData?.singleAvailable}
+                          onChange={(value) => {
+                            setOrderForm({ ...orderForm, availablePercent: value })
+                            if (riskErrors.availablePercent) {
+                              setRiskErrors({ ...riskErrors, availablePercent: false })
+                            }
+                          }}
+                          placeholder="请输入"
+                          error={riskErrors.availablePercent}
+                        />
+                        {riskErrors.availablePercent && <ErrorMessage message="不能为空" />}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          可用额度(元)
+                        </label>
+                        <CustomInput
+                          type="number"
+                          step="0.01"
+                          value={(accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || 0) / 100)).toFixed(2)}
+                          disabled
+                          placeholder="自动计算"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <span className="text-red-500">*</span> 预买入价(元)
+                        </label>
+                        <CustomInput
+                          type="number"
+                          step="0.01"
+                          value={orderForm.price || ''}
+                          onChange={(value) => {
+                            setOrderForm({ ...orderForm, price: value })
+                            if (riskErrors.price) {
+                              setRiskErrors({ ...riskErrors, price: false })
+                            }
+                          }}
+                          placeholder="请输入"
+                          error={riskErrors.price}
+                        />
+                        {riskErrors.price && <ErrorMessage message="不能为空" />}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          可买数量(股)
+                        </label>
+                        <CustomInput
+                          type="number"
+                          step="1"
+                          value={orderForm.price ? Math.floor((accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || 0) / 100)) / parseFloat(orderForm.price) / 100) * 100 : ''}
+                          disabled
+                          placeholder="自动计算"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <span className="text-red-500">*</span> 止损价(元)
+                        </label>
+                        <CustomInput
+                          type="number"
+                          step="0.01"
+                          value={orderForm.stopLossPrice || ''}
+                          onChange={(value) => {
+                            setOrderForm({ ...orderForm, stopLossPrice: value })
+                            if (riskErrors.stopLossPrice) {
+                              setRiskErrors({ ...riskErrors, stopLossPrice: false })
+                            }
+                          }}
+                          placeholder="请输入"
+                          error={riskErrors.stopLossPrice}
+                        />
+                        {riskErrors.stopLossPrice && <ErrorMessage message="不能为空" />}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <span className="text-red-500">*</span> 止盈价(元)
+                        </label>
+                        <CustomInput
+                          type="number"
+                          step="0.01"
+                          value={orderForm.takeProfitPrice || ''}
+                          onChange={(value) => {
+                            setOrderForm({ ...orderForm, takeProfitPrice: value })
+                            if (riskErrors.takeProfitPrice) {
+                              setRiskErrors({ ...riskErrors, takeProfitPrice: false })
+                            }
+                          }}
+                          placeholder="请输入"
+                          error={riskErrors.takeProfitPrice}
+                        />
+                        {riskErrors.takeProfitPrice && <ErrorMessage message="不能为空" />}
                       </div>
                     </>
                   )}
+                </div>
 
+                <form onSubmit={handleSubmitOrder}>
                   {/* 评估结果摘要 */}
-                  <div className="p-4 bg-primary-500/10 rounded-lg border border-primary-200">
+                  <div className="p-4 bg-white rounded-lg border border-gray-200" style={{ marginTop: '10px' }}>
                     <h4 className="font-bold text-gray-900 mb-2">评估结果</h4>
                     <div className="grid grid-cols-3 gap-4 text-sm">
                       <div>
@@ -722,7 +860,7 @@ const OrderManagement = () => {
                     </div>
                   </div>
 
-                  <div className="flex gap-3 justify-end">
+                  <div className="flex gap-3 justify-end" style={{ marginTop: '10px' }}>
                     <button
                       type="button"
                       onClick={() => setEvaluationStep(orderType === 'buy' ? 2 : 1)}

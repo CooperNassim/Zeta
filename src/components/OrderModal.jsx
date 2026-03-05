@@ -33,7 +33,7 @@ const OrderModal = ({ isOpen, onClose, title, children }) => {
         </div>
 
         {/* 内容区域 */}
-        <div className="mb-2 overflow-auto flex-1" style={{ maxHeight: 'calc(100vh - 160px)' }}>
+        <div className="mb-2 overflow-auto flex-1" style={{ maxHeight: 'calc(100vh - 160px)', overflowY: 'auto', scrollbarGutter: 'stable' }}>
           {children}
         </div>
       </motion.div>

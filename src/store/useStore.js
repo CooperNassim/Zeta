@@ -18,9 +18,11 @@ export const initialStrategies = {
       name: '趋势突破策略',
       description: '价格突破关键阻力位',
       conditions: [
-        { id: '1', name: '价格突破', weight: 0.3, threshold: 70, description: '价格突破关键位置' },
-        { id: '2', name: '成交量配合', weight: 0.3, threshold: 70, description: '成交量放大' },
-        { id: '3', name: '技术指标', weight: 0.4, threshold: 70, description: 'RSI、MACD等指标确认' },
+        { id: '1', name: '价格突破', weight: 0.2, threshold: 70, description: '价格突破关键位置' },
+        { id: '2', name: '成交量配合', weight: 0.2, threshold: 70, description: '成交量放大' },
+        { id: '3', name: '技术指标', weight: 0.2, threshold: 70, description: 'RSI、MACD等指标确认' },
+        { id: '4', name: '市场情绪', weight: 0.2, threshold: 70, description: '市场整体情绪良好' },
+        { id: '5', name: '风险收益比', weight: 0.2, threshold: 70, description: '风险收益比合理' },
       ],
       passScore: 70
     },
@@ -29,9 +31,11 @@ export const initialStrategies = {
       name: '回调买入策略',
       description: '价格回调至支撑位买入',
       conditions: [
-        { id: '1', name: '回调位置', weight: 0.4, threshold: 70, description: '回调至支撑位' },
-        { id: '2', name: '支撑有效性', weight: 0.3, threshold: 70, description: '支撑位有效' },
-        { id: '3', name: '买入信号', weight: 0.3, threshold: 70, description: '出现买入信号' },
+        { id: '1', name: '回调位置', weight: 0.2, threshold: 70, description: '回调至支撑位' },
+        { id: '2', name: '支撑有效性', weight: 0.2, threshold: 70, description: '支撑位有效' },
+        { id: '3', name: '买入信号', weight: 0.2, threshold: 70, description: '出现买入信号' },
+        { id: '4', name: '成交量变化', weight: 0.2, threshold: 70, description: '成交量缩减' },
+        { id: '5', name: '时间周期', weight: 0.2, threshold: 70, description: '回调时间充分' },
       ],
       passScore: 70
     }
@@ -42,9 +46,11 @@ export const initialStrategies = {
       name: '止盈策略',
       description: '达到预期盈利目标',
       conditions: [
-        { id: '1', name: '盈利比例', weight: 0.5, threshold: 70, description: '达到目标盈利比例' },
-        { id: '2', name: '市场环境', weight: 0.3, threshold: 70, description: '市场环境良好' },
+        { id: '1', name: '盈利比例', weight: 0.2, threshold: 70, description: '达到目标盈利比例' },
+        { id: '2', name: '市场环境', weight: 0.2, threshold: 70, description: '市场环境良好' },
         { id: '3', name: '技术信号', weight: 0.2, threshold: 70, description: '技术指标确认' },
+        { id: '4', name: '资金流动', weight: 0.2, threshold: 70, description: '资金流向正常' },
+        { id: '5', name: '风险控制', weight: 0.2, threshold: 70, description: '风险可控' },
       ],
       passScore: 70
     },
@@ -53,8 +59,11 @@ export const initialStrategies = {
       name: '止损策略',
       description: '跌破止损位及时止损',
       conditions: [
-        { id: '1', name: '跌破止损', weight: 0.6, threshold: 70, description: '价格触及止损位' },
-        { id: '2', name: '市场趋势', weight: 0.4, threshold: 70, description: '趋势转变' },
+        { id: '1', name: '跌破止损', weight: 0.2, threshold: 70, description: '价格触及止损位' },
+        { id: '2', name: '市场趋势', weight: 0.2, threshold: 70, description: '趋势转变' },
+        { id: '3', name: '风险控制', weight: 0.2, threshold: 70, description: '风险在可控范围' },
+        { id: '4', name: '情绪变化', weight: 0.2, threshold: 70, description: '市场情绪转变' },
+        { id: '5', name: '止损计划', weight: 0.2, threshold: 70, description: '按计划执行止损' },
       ],
       passScore: 70
     }
@@ -142,6 +151,23 @@ const useStore = create(
 
       // 风险模型
       riskModels: [...initialRiskModels],
+
+      // 风险配置
+      riskConfig: {
+        totalRiskPercent: 6,
+        singleRiskPercent: 2
+      },
+
+      // 账户风险数据
+      accountRiskData: {
+        stopLossPreLoss: 8500,
+        monthlyLoss: 3200,
+        startMonthTotal: 200000,
+        currentAccount: 191800,
+        riskRatio: 5.85,
+        accountAvailable: 95.9,
+        singleAvailable: 94.15
+      },
 
       // 技术指标
       technicalIndicators: [...initialTechnicalIndicators],
@@ -260,6 +286,16 @@ const useStore = create(
       // 删除风险模型
       deleteRiskModel: (id) => set((state) => ({
         riskModels: state.riskModels.filter(m => m.id !== id)
+      })),
+
+      // 更新风险配置
+      updateRiskConfig: (config) => set((state) => ({
+        riskConfig: { ...state.riskConfig, ...config }
+      })),
+
+      // 更新账户风险数据
+      updateAccountRiskData: (data) => set((state) => ({
+        accountRiskData: { ...state.accountRiskData, ...data }
       })),
 
       // 添加技术指标
@@ -456,7 +492,17 @@ const useStore = create(
         strategies: { ...initialStrategies },
         riskModels: [...initialRiskModels],
         technicalIndicators: [...initialTechnicalIndicators],
-        strategyRecords: []
+        strategyRecords: [],
+        riskConfig: { totalRiskPercent: 6, singleRiskPercent: 2 },
+        accountRiskData: {
+          stopLossPreLoss: 8500,
+          monthlyLoss: 3200,
+          startMonthTotal: 200000,
+          currentAccount: 191800,
+          riskRatio: 5.85,
+          accountAvailable: 95.9,
+          singleAvailable: 94.15
+        }
       })
     }),
     {

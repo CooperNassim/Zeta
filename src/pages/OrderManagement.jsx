@@ -12,6 +12,7 @@ import OrderToolbar from '../components/OrderToolbar'
 import OrderModal from '../components/OrderModal'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
+import ExportModal from '../components/ExportModal'
 import ScoreButtons from '../components/ScoreButtons'
 import FilterSelect from '../components/FilterSelect'
 import CustomInput from '../components/CustomInput'
@@ -30,6 +31,8 @@ const OrderManagement = () => {
   const [toastType, setToastType] = useState('success')
   const [toastMessage, setToastMessage] = useState('')
   const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exportFormat, setExportFormat] = useState('xlsx')
   const [symbolError, setSymbolError] = useState(false)
   // 第3步风险管控的错误状态
   const [riskErrors, setRiskErrors] = useState({
@@ -41,6 +44,12 @@ const OrderManagement = () => {
   const pageSize = 20
 
   const orders = useStore(state => state.orders)
+
+  // 获取实际的筛选器值（sell也是显示executed的订单）
+  const getActualFilter = (filter) => {
+    if (filter === 'sell') return 'executed'
+    return filter
+  }
   const account = useStore(state => state.account)
   const psychologicalTests = useStore(state => state.psychologicalTests)
   const strategyRecords = useStore(state => state.strategyRecords)
@@ -94,6 +103,44 @@ const OrderManagement = () => {
     setToastMessage('删除成功')
     setShowToast(true)
   }
+
+  const handleExport = () => {
+    setShowExportModal(true)
+  }
+
+  const confirmExport = () => {
+    // 这里可以添加实际的导出逻辑
+    console.log('导出格式:', exportFormat, '导出数据:', filteredOrders)
+    setShowExportModal(false)
+    setToastType('success')
+    setToastMessage('导出成功')
+    setShowToast(true)
+  }
+
+  // 判断风险控制状态
+  const getRiskControlStatus = () => {
+    if (!evaluationResults.strategy?.score) return 'unknown'
+    const scores = evaluationResults.strategy.scores || {}
+    const hasZeroScore = Object.values(scores).some(s => s === 0)
+    if (hasZeroScore) return 'zero'
+    const strategyScore = evaluationResults.strategy.score
+    if (strategyScore < 7) return 'fail'
+    return 'pass'
+  }
+
+  // 当风险控制状态变化时，清除错误状态
+  React.useEffect(() => {
+    const riskStatus = getRiskControlStatus()
+    if (riskStatus === 'zero' || riskStatus === 'fail') {
+      setRiskErrors({
+        availablePercent: false,
+        price: false,
+        stopLossPrice: false,
+        takeProfitPrice: false
+      })
+      setSymbolError(false)
+    }
+  }, [evaluationResults.strategy, orderForm.strategyScores])
 
   // 判断当天是否有心理测试
   const hasTodayPsychologicalTest = () => {
@@ -177,22 +224,21 @@ const OrderManagement = () => {
       return false
     }
 
-    // 计算策略评分（平均分）
+    // 计算策略评分（总分）
     const scores = orderForm.strategyScores
     let totalScore = 0
     evalStandardKeys.forEach(key => {
       const score = scores[key] || 0
-      totalScore += (score / 2) * 100
+      totalScore += score
     })
-    const averageScore = totalScore / evalStandardKeys.length
 
     // 保存评估结果
     setEvaluationResults({
       ...evaluationResults,
       strategy: {
         pass: true,
-        score: averageScore.toFixed(2),
-        passScore: 70,
+        score: totalScore,
+        passScore: 10,
         scores
       }
     })
@@ -205,13 +251,24 @@ const OrderManagement = () => {
     console.log('handleSubmitOrder被调用了')
     e.preventDefault()
 
+    // 检查风险控制状态，如果不通过则不允许提交
+    const riskStatus = getRiskControlStatus()
+    if (riskStatus === 'zero' || riskStatus === 'fail') {
+      setToastType('error')
+      setToastMessage('风险控制未通过，无法创建订单')
+      setShowToast(true)
+      return
+    }
+
     // 检查股票代码是否为空
     const isSymbolEmpty = !orderForm.symbol || orderForm.symbol.trim() === ''
 
     // 如果是买入订单，验证风险管控必填项
     if (orderType === 'buy') {
+      // availablePercent可能使用默认值，所以检查是否有实际值（包括默认值）
+      const hasAvailablePercent = orderForm.availablePercent || accountRiskData?.singleAvailable
       const newRiskErrors = {
-        availablePercent: !orderForm.availablePercent || orderForm.availablePercent === '' || orderForm.availablePercent === undefined || orderForm.availablePercent === null,
+        availablePercent: !hasAvailablePercent || hasAvailablePercent === '' || hasAvailablePercent === undefined || hasAvailablePercent === null,
         price: !orderForm.price || orderForm.price === '',
         stopLossPrice: !orderForm.stopLossPrice || orderForm.stopLossPrice === '',
         takeProfitPrice: !orderForm.takeProfitPrice || orderForm.takeProfitPrice === ''
@@ -235,7 +292,7 @@ const OrderManagement = () => {
 
     // 将所有分数转换为10分制
     const psychologicalScore10 = evaluationResults.psychological.score > 10 ? evaluationResults.psychological.score / 10 : evaluationResults.psychological.score
-    const strategyScore10 = evaluationResults.strategy.score > 10 ? evaluationResults.strategy.score / 10 : evaluationResults.strategy.score / 10
+    const strategyScore10 = evaluationResults.strategy.score
     const riskScore10 = 10
 
     const overallScore = (
@@ -244,12 +301,17 @@ const OrderManagement = () => {
       riskScore10 * 0.3
     ).toFixed(2)
 
+    // 计算可买数量
+    const calculatedQuantity = orderForm.price
+      ? Math.floor((accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100)) / parseFloat(orderForm.price) / 100) * 100
+      : 0
+
     addOrder({
       ...orderForm,
       price: parseFloat(orderForm.price),
       stopLossPrice: parseFloat(orderForm.stopLossPrice),
       takeProfitPrice: orderForm.takeProfitPrice ? parseFloat(orderForm.takeProfitPrice) : null,
-      quantity: parseInt(orderForm.quantity),
+      quantity: calculatedQuantity,
       psychologicalScore: parseFloat(psychologicalScore10),
       strategyScore: parseFloat(strategyScore10),
       riskScore: riskScore10,
@@ -258,15 +320,22 @@ const OrderManagement = () => {
       evaluationResults
     })
 
+    console.log('订单创建成功，当前订单列表:', orders)
+    console.log('当前筛选状态:', selectedFilter)
+    console.log('筛选后的订单数量:', filteredOrders.length)
+
     setShowModal(false)
-    alert('预约单已创建，请在订单列表中选择执行')
+    setToastType('success')
+    setToastMessage('创建成功')
+    setShowToast(true)
   }
 
   const pendingOrders = orders.filter(o => o.status === 'pending')
   const executedOrders = orders.filter(o => o.status === 'executed')
   const cancelledOrders = orders.filter(o => o.status === 'cancelled')
 
-  const filteredOrders = selectedFilter === 'all' ? orders : orders.filter(o => o.status === selectedFilter)
+  const actualFilter = getActualFilter(selectedFilter)
+  const filteredOrders = actualFilter === 'all' ? orders : orders.filter(o => o.status === actualFilter)
   const totalPages = Math.ceil(filteredOrders.length / pageSize)
   const paginatedData = filteredOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
@@ -299,7 +368,7 @@ const OrderManagement = () => {
             }}
           >
             <div>
-              <p className="text-sm mb-0" style={{ color: '#666' }}>待执行订单</p>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>待执行买入</p>
               <p className="text-2xl font-bold" style={{ color: '#374151' }}>
                 {pendingOrders.length}
               </p>
@@ -322,7 +391,30 @@ const OrderManagement = () => {
             }}
           >
             <div>
-              <p className="text-sm mb-0" style={{ color: '#666' }}>已执行订单</p>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>待卖出清仓</p>
+              <p className="text-2xl font-bold" style={{ color: '#374151' }}>
+                {executedOrders.length}
+              </p>
+            </div>
+          </div>
+          <div
+            onClick={() => setSelectedFilter('sell')}
+            style={{
+              background: '#ffffff',
+              border: selectedFilter === 'sell' ? '1px solid #0F1419' : '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '10px 25px',
+              minHeight: '55px',
+              width: '180px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            <div>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>已卖出清仓</p>
               <p className="text-2xl font-bold" style={{ color: '#374151' }}>
                 {executedOrders.length}
               </p>
@@ -390,6 +482,17 @@ const OrderManagement = () => {
             setToastMessage('执行成功')
             setShowToast(true)
           }}
+          onSell={() => {
+            if (selectedIds.length === 0) {
+              alert('请选择要清仓的订单')
+              return
+            }
+            selectedIds.forEach(id => executeOrder(id))
+            setSelectedIds([])
+            setToastType('success')
+            setToastMessage('清仓成功')
+            setShowToast(true)
+          }}
           onCancel={() => {
             if (selectedIds.length === 0) {
               alert('请选择要作废的订单')
@@ -418,9 +521,12 @@ const OrderManagement = () => {
             }
             setShowDeleteModal(true)
           }}
+          onExport={handleExport}
           canExecute={selectedIds.length > 0}
+          canSell={selectedIds.length > 0}
           canCancel={selectedIds.length > 0}
           canDelete={selectedIds.length > 0}
+          canExport={filteredOrders.length > 0}
           totalCount={filteredOrders.length}
         />
 
@@ -501,7 +607,7 @@ const OrderManagement = () => {
       <OrderModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title="预约订单"
+        title="买入预约"
       >
             {/* 步骤指示器 */}
             <div className="flex items-center justify-center mb-6">
@@ -511,7 +617,7 @@ const OrderManagement = () => {
                     step === evaluationStep
                       ? 'bg-[#0F1419] text-white'
                       : step < evaluationStep
-                      ? 'bg-gray-500 text-white'
+                      ? 'bg-gray-400 text-white'
                       : 'bg-gray-100 text-gray-600'
                   }`}>
                     {step + 1}
@@ -523,7 +629,7 @@ const OrderManagement = () => {
                 3 === evaluationStep
                   ? 'bg-[#0F1419] text-white'
                   : 3 < evaluationStep
-                  ? 'bg-gray-500 text-white'
+                  ? 'bg-gray-400 text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}>
                 4
@@ -700,10 +806,10 @@ const OrderManagement = () => {
               <div>
                 <p className="text-gray-600 mb-2">填写订单信息</p>
 
-                <div className="grid grid-cols-2 gap-4 overflow-auto" style={{ maxHeight: '400px' }}>
+                <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        <span className="text-red-500">*</span> 股票代码
+                        {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 股票代码
                       </label>
                       <CustomInput
                         type="text"
@@ -713,10 +819,11 @@ const OrderManagement = () => {
                           setSymbolError(false)
                           // TODO: 根据股票代码查询股票名称
                         }}
-                        placeholder="请输入"
-                        error={symbolError}
+                        placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入'}
+                        error={symbolError && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail')}
+                        disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
                       />
-                      {symbolError && (
+                      {symbolError && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && (
                         <ErrorMessage message="不能为空" showIcon={true} />
                       )}
                     </div>
@@ -728,7 +835,7 @@ const OrderManagement = () => {
                         type="text"
                         value={orderForm.name || ''}
                         onChange={(value) => setOrderForm({ ...orderForm, name: value })}
-                        placeholder="自动获取"
+                        placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动获取'}
                         disabled
                       />
                     </div>
@@ -738,7 +845,7 @@ const OrderManagement = () => {
                     <>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          <span className="text-red-500">*</span> 可用比例(%)
+                          {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 可用比例(%)
                         </label>
                         <CustomInput
                           type="number"
@@ -750,10 +857,11 @@ const OrderManagement = () => {
                               setRiskErrors({ ...riskErrors, availablePercent: false })
                             }
                           }}
-                          placeholder="请输入"
-                          error={riskErrors.availablePercent}
+                          placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入'}
+                          error={riskErrors.availablePercent && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail')}
+                          disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
                         />
-                        {riskErrors.availablePercent && <ErrorMessage message="不能为空" />}
+                        {riskErrors.availablePercent && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <ErrorMessage message="不能为空" />}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -762,14 +870,14 @@ const OrderManagement = () => {
                         <CustomInput
                           type="number"
                           step="0.01"
-                          value={(accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || 0) / 100)).toFixed(2)}
+                          value={(accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100)).toFixed(2)}
                           disabled
-                          placeholder="自动计算"
+                          placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动计算'}
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          <span className="text-red-500">*</span> 预买入价(元)
+                          {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 预买入价(元)
                         </label>
                         <CustomInput
                           type="number"
@@ -781,10 +889,11 @@ const OrderManagement = () => {
                               setRiskErrors({ ...riskErrors, price: false })
                             }
                           }}
-                          placeholder="请输入"
-                          error={riskErrors.price}
+                          placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入'}
+                          error={riskErrors.price && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail')}
+                          disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
                         />
-                        {riskErrors.price && <ErrorMessage message="不能为空" />}
+                        {riskErrors.price && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <ErrorMessage message="不能为空" />}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -793,14 +902,14 @@ const OrderManagement = () => {
                         <CustomInput
                           type="number"
                           step="1"
-                          value={orderForm.price ? Math.floor((accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || 0) / 100)) / parseFloat(orderForm.price) / 100) * 100 : ''}
+                          value={orderForm.price ? Math.floor((accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100)) / parseFloat(orderForm.price) / 100) * 100 : ''}
                           disabled
-                          placeholder="自动计算"
+                          placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动计算'}
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          <span className="text-red-500">*</span> 止损价(元)
+                          {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 止损价(元)
                         </label>
                         <CustomInput
                           type="number"
@@ -812,14 +921,15 @@ const OrderManagement = () => {
                               setRiskErrors({ ...riskErrors, stopLossPrice: false })
                             }
                           }}
-                          placeholder="请输入"
-                          error={riskErrors.stopLossPrice}
+                          placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入'}
+                          error={riskErrors.stopLossPrice && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail')}
+                          disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
                         />
-                        {riskErrors.stopLossPrice && <ErrorMessage message="不能为空" />}
+                        {riskErrors.stopLossPrice && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <ErrorMessage message="不能为空" />}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          <span className="text-red-500">*</span> 止盈价(元)
+                          {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 止盈价(元)
                         </label>
                         <CustomInput
                           type="number"
@@ -831,10 +941,11 @@ const OrderManagement = () => {
                               setRiskErrors({ ...riskErrors, takeProfitPrice: false })
                             }
                           }}
-                          placeholder="请输入"
-                          error={riskErrors.takeProfitPrice}
+                          placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入'}
+                          error={riskErrors.takeProfitPrice && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail')}
+                          disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
                         />
-                        {riskErrors.takeProfitPrice && <ErrorMessage message="不能为空" />}
+                        {riskErrors.takeProfitPrice && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <ErrorMessage message="不能为空" />}
                       </div>
                     </>
                   )}
@@ -847,15 +958,30 @@ const OrderManagement = () => {
                     <div className="grid grid-cols-3 gap-4 text-sm">
                       <div>
                         <p className="text-gray-600">心理测试</p>
-                        <p className="font-bold text-gray-900">{evaluationResults.psychological?.score || '-'}</p>
+                        <p className="font-bold text-gray-900">{evaluationResults.psychological?.score !== undefined ? Math.round(evaluationResults.psychological.score) : '-'}</p>
                       </div>
                       <div>
                         <p className="text-gray-600">策略评估</p>
-                        <p className="font-bold text-gray-900">{evaluationResults.strategy?.score || '-'}</p>
+                        <p className="font-bold text-gray-900">{evaluationResults.strategy?.score !== undefined ? Math.round(evaluationResults.strategy.score) : '-'}</p>
                       </div>
                       <div>
                         <p className="text-gray-600">风险控制</p>
-                        <p className="font-bold text-green-600">通过</p>
+                        <p className="font-bold" style={(() => {
+                          const status = getRiskControlStatus()
+                          if (status === 'unknown') return { color: '#1f2937' }
+                          if (status === 'zero' || status === 'fail') {
+                            return { color: '#ef4444' }
+                          }
+                          return { color: '#22c55e' }
+                        })()}>
+                          {(() => {
+                            const status = getRiskControlStatus()
+                            if (status === 'unknown') return '-'
+                            if (status === 'zero') return '单项为0'
+                            if (status === 'fail') return '不通过'
+                            return '通过'
+                        })()}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -875,12 +1001,14 @@ const OrderManagement = () => {
                     >
                       取消
                     </button>
-                    <button
-                      type="submit"
-                      className="px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
-                    >
-                      创建预约单
-                    </button>
+                    {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && (
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
+                      >
+                        创建预约单
+                      </button>
+                    )}
                   </div>
                 </form>
               </div>
@@ -893,6 +1021,14 @@ const OrderManagement = () => {
         onConfirm={confirmDelete}
         title="删除"
         message={`确认删除${selectedIds.length}条数据吗？`}
+      />
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onConfirm={confirmExport}
+        exportFormat={exportFormat}
+        onFormatChange={setExportFormat}
+        totalCount={filteredOrders.length}
       />
       </div>
     </div>

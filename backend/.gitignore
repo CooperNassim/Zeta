@@ -6,7 +6,7 @@ package-lock.json
 .env
 
 # 备份文件（包含用户数据）
-backend/backups/
+backups/
 *.backup
 *.sql
 *.dump
@@ -17,27 +17,8 @@ logs/
 npm-debug.log*
 
 # 数据库设计文件（包含敏感信息）
-backend/src/database/init.sql
-backend/src/database/queries/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# 构建输出
-dist/
-build/
-
-# 操作系统
-.DS_Store
-Thumbs.db
-
-# 测试
-coverage/
-.nyc_output/
+src/database/schema.sql
+src/database/queries/
 
 # 临时文件
 tmp/

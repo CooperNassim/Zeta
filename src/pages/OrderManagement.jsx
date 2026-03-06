@@ -17,6 +17,8 @@ import ScoreButtons from '../components/ScoreButtons'
 import FilterSelect from '../components/FilterSelect'
 import CustomInput from '../components/CustomInput'
 import ErrorMessage from '../components/ErrorMessage'
+import EmptyState from '../components/EmptyState'
+
 
 const OrderManagement = () => {
   const navigate = useNavigate()
@@ -24,7 +26,7 @@ const OrderManagement = () => {
   const [orderType, setOrderType] = useState('buy')
   const [evaluationStep, setEvaluationStep] = useState(0)
   const [evaluationResults, setEvaluationResults] = useState({})
-  const [selectedFilter, setSelectedFilter] = useState('pending')
+  const [selectedFilter, setSelectedFilter] = useState('executed')  // 默认显示持仓中
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState([])
   const [showToast, setShowToast] = useState(false)
@@ -44,12 +46,6 @@ const OrderManagement = () => {
   const pageSize = 20
 
   const orders = useStore(state => state.orders)
-
-  // 获取实际的筛选器值（sell也是显示executed的订单）
-  const getActualFilter = (filter) => {
-    if (filter === 'sell') return 'executed'
-    return filter
-  }
   const account = useStore(state => state.account)
   const psychologicalTests = useStore(state => state.psychologicalTests)
   const strategyRecords = useStore(state => state.strategyRecords)
@@ -251,15 +247,6 @@ const OrderManagement = () => {
     console.log('handleSubmitOrder被调用了')
     e.preventDefault()
 
-    // 检查风险控制状态，如果不通过则不允许提交
-    const riskStatus = getRiskControlStatus()
-    if (riskStatus === 'zero' || riskStatus === 'fail') {
-      setToastType('error')
-      setToastMessage('风险控制未通过，无法创建订单')
-      setShowToast(true)
-      return
-    }
-
     // 检查股票代码是否为空
     const isSymbolEmpty = !orderForm.symbol || orderForm.symbol.trim() === ''
 
@@ -278,6 +265,19 @@ const OrderManagement = () => {
       setSymbolError(isSymbolEmpty)
 
       // 如果有错误，显示并返回
+      if (isSymbolEmpty || Object.values(newRiskErrors).some(error => error)) {
+        setRiskErrors(newRiskErrors)
+        return
+      }
+    } else if (orderType === 'sell') {
+      // 卖出订单，验证必填项
+      const newRiskErrors = {
+        price: !orderForm.price || orderForm.price === '',
+        quantity: !orderForm.quantity || orderForm.quantity === ''
+      }
+
+      setSymbolError(isSymbolEmpty)
+
       if (isSymbolEmpty || Object.values(newRiskErrors).some(error => error)) {
         setRiskErrors(newRiskErrors)
         return
@@ -301,41 +301,69 @@ const OrderManagement = () => {
       riskScore10 * 0.3
     ).toFixed(2)
 
-    // 计算可买数量
-    const calculatedQuantity = orderForm.price
-      ? Math.floor((accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100)) / parseFloat(orderForm.price) / 100) * 100
-      : 0
+    // 计算数量（买入自动计算，卖出手动输入）
+    const calculatedQuantity = orderType === 'buy'
+      ? (orderForm.price ? Math.floor((accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100)) / parseFloat(orderForm.price) / 100) * 100 : 0)
+      : (orderForm.quantity ? parseInt(orderForm.quantity) : 0)
+
+    // 卖出订单需要关联买入订单
+    let buyOrderId = null
+    if (orderType === 'sell') {
+      // 如果用户选择了要卖的持仓，则关联该买入订单
+      buyOrderId = orderForm.buyOrderId || null
+    }
 
     addOrder({
       ...orderForm,
+      type: orderType,
       price: parseFloat(orderForm.price),
-      stopLossPrice: parseFloat(orderForm.stopLossPrice),
-      takeProfitPrice: orderForm.takeProfitPrice ? parseFloat(orderForm.takeProfitPrice) : null,
+      stopLossPrice: orderType === 'buy' ? parseFloat(orderForm.stopLossPrice) : null,
+      takeProfitPrice: orderType === 'buy' ? (orderForm.takeProfitPrice ? parseFloat(orderForm.takeProfitPrice) : null) : null,
       quantity: calculatedQuantity,
       psychologicalScore: parseFloat(psychologicalScore10),
       strategyScore: parseFloat(strategyScore10),
       riskScore: riskScore10,
       overallScore: parseFloat(overallScore),
-      status: 'pending',
+      status: 'pending',  // 创建时为待执行状态
+      buyOrderId,  // 卖出订单关联的买入订单ID
       evaluationResults
     })
 
-    console.log('订单创建成功，当前订单列表:', orders)
-    console.log('当前筛选状态:', selectedFilter)
-    console.log('筛选后的订单数量:', filteredOrders.length)
-
     setShowModal(false)
     setToastType('success')
-    setToastMessage('创建成功')
+    setToastMessage('预约成功')
     setShowToast(true)
   }
 
+  // 计算各状态订单数量
   const pendingOrders = orders.filter(o => o.status === 'pending')
   const executedOrders = orders.filter(o => o.status === 'executed')
   const cancelledOrders = orders.filter(o => o.status === 'cancelled')
 
-  const actualFilter = getActualFilter(selectedFilter)
-  const filteredOrders = actualFilter === 'all' ? orders : orders.filter(o => o.status === actualFilter)
+  // 持仓中：已执行的买入订单
+  const holdingOrders = orders.filter(o => o.type === 'buy' && o.status === 'executed')
+  // 已卖出：已执行的卖出订单
+  const soldOrders = orders.filter(o => o.type === 'sell' && o.status === 'executed')
+  // 待执行：pending状态的订单
+  const pendingCount = orders.filter(o => o.status === 'pending').length
+
+  // 筛选逻辑
+  const filteredOrders = (() => {
+    switch (selectedFilter) {
+      case 'executed':
+        return holdingOrders  // 持仓中
+      case 'sell':
+        return soldOrders  // 已卖出
+      case 'cancelled':
+        return cancelledOrders  // 作废订单
+      case 'pending':
+        return pendingOrders  // 待执行
+      case 'all':
+      default:
+        return orders  // 全部订单
+    }
+  })()
+
   const totalPages = Math.ceil(filteredOrders.length / pageSize)
   const paginatedData = filteredOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
@@ -368,9 +396,9 @@ const OrderManagement = () => {
             }}
           >
             <div>
-              <p className="text-sm mb-0" style={{ color: '#666' }}>待执行买入</p>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>待执行</p>
               <p className="text-2xl font-bold" style={{ color: '#374151' }}>
-                {pendingOrders.length}
+                {pendingCount}
               </p>
             </div>
           </div>
@@ -391,9 +419,9 @@ const OrderManagement = () => {
             }}
           >
             <div>
-              <p className="text-sm mb-0" style={{ color: '#666' }}>待卖出清仓</p>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>持仓中</p>
               <p className="text-2xl font-bold" style={{ color: '#374151' }}>
-                {executedOrders.length}
+                {holdingOrders.length}
               </p>
             </div>
           </div>
@@ -414,9 +442,9 @@ const OrderManagement = () => {
             }}
           >
             <div>
-              <p className="text-sm mb-0" style={{ color: '#666' }}>已卖出清仓</p>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>已卖出</p>
               <p className="text-2xl font-bold" style={{ color: '#374151' }}>
-                {executedOrders.length}
+                {soldOrders.length}
               </p>
             </div>
           </div>
@@ -471,28 +499,7 @@ const OrderManagement = () => {
         {/* 功能按钮区域 */}
         <OrderToolbar
           onAdd={() => handleAddOrder('buy')}
-          onExecute={() => {
-            if (selectedIds.length === 0) {
-              alert('请选择要执行的订单')
-              return
-            }
-            selectedIds.forEach(id => executeOrder(id))
-            setSelectedIds([])
-            setToastType('success')
-            setToastMessage('执行成功')
-            setShowToast(true)
-          }}
-          onSell={() => {
-            if (selectedIds.length === 0) {
-              alert('请选择要清仓的订单')
-              return
-            }
-            selectedIds.forEach(id => executeOrder(id))
-            setSelectedIds([])
-            setToastType('success')
-            setToastMessage('清仓成功')
-            setShowToast(true)
-          }}
+          onSell={() => handleAddOrder('sell')}
           onCancel={() => {
             if (selectedIds.length === 0) {
               alert('请选择要作废的订单')
@@ -522,7 +529,6 @@ const OrderManagement = () => {
             setShowDeleteModal(true)
           }}
           onExport={handleExport}
-          canExecute={selectedIds.length > 0}
           canSell={selectedIds.length > 0}
           canCancel={selectedIds.length > 0}
           canDelete={selectedIds.length > 0}
@@ -551,12 +557,15 @@ const OrderManagement = () => {
           }}>
           <DataTable
             fields={[
-              { key: 'name', label: '资产名称', width: '150px' },
+              { key: 'type', label: '订单类型', width: '100px' },
               { key: 'symbol', label: '资产代码', width: '120px' },
-              { key: 'type', label: '类型', width: '100px' },
+              { key: 'name', label: '资产名称', width: '150px' },
+              { key: 'status', label: '状态', width: '100px' },
               { key: 'price', label: '价格', width: '120px' },
               { key: 'quantity', label: '数量', width: '100px' },
-              { key: 'status', label: '状态', width: '100px' },
+              { key: 'stopLossPrice', label: '止损价', width: '120px' },
+              { key: 'takeProfitPrice', label: '止盈价', width: '120px' },
+              { key: 'availablePercent', label: '可用比例', width: '120px' },
               { key: 'createdAt', label: '创建时间', width: '200px' }
             ]}
             data={paginatedData}
@@ -570,6 +579,9 @@ const OrderManagement = () => {
               }
             }}
             renderCell={(field, item) => {
+              if (field.key === 'type') {
+                return item.type === 'buy' ? '买入' : '卖出'
+              }
               if (field.key === 'status') {
                 const statusMap = {
                   'pending': { text: '待执行' },
@@ -579,11 +591,16 @@ const OrderManagement = () => {
                 const status = statusMap[item.status]
                 return <span>{status.text}</span>
               }
-              if (field.key === 'type') {
-                return item.type === 'buy' ? '买入' : '卖出'
-              }
               if (field.key === 'createdAt') {
                 return format(new Date(item.createdAt), 'yyyy-MM-dd HH:mm')
+              }
+              if (field.key === 'stopLossPrice' || field.key === 'takeProfitPrice') {
+                // 只有买入订单显示止损止盈
+                return item.type === 'buy' ? (item[field.key] || '-') : '-'
+              }
+              if (field.key === 'availablePercent') {
+                // 只有买入订单显示可用比例
+                return item.type === 'buy' ? (item[field.key] || '-') : '-'
               }
               return null
             }}
@@ -607,7 +624,7 @@ const OrderManagement = () => {
       <OrderModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title="买入预约"
+        title={orderType === 'buy' ? '买入预约单' : '卖出预约单'}
       >
             {/* 步骤指示器 */}
             <div className="flex items-center justify-center mb-6">
@@ -686,31 +703,36 @@ const OrderManagement = () => {
               <div>
                 <p className="text-gray-600 mb-2">选择交易策略</p>
                 <div className="mb-4 overflow-auto" style={{ maxHeight: '400px' }}>
-                  <div className="grid grid-cols-2 gap-4">
-                    {strategyRecords
-                      .filter(record => record.status === '启用' && record.strategyType === '买入')
-                      .map((record) => (
-                        <div
-                          key={record.id}
-                          onClick={() => setOrderForm({ ...orderForm, strategyId: record.id, strategyScores: {} })}
-                          className={`p-4 rounded-lg cursor-pointer transition-all ${
-                            orderForm.strategyId === record.id
-                              ? 'bg-[#0F1419]'
-                              : 'border border-gray-200 hover:border-gray-900 bg-white'
-                          }`}
-                        >
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h4 className={`font-bold mb-1 ${orderForm.strategyId === record.id ? 'text-white' : 'text-gray-900'}`}>{record.name}</h4>
-                              <p className={`text-xs ${orderForm.strategyId === record.id ? 'text-gray-300' : 'text-gray-500'}`}>{record._id || '-'}</p>
+                  {strategyRecords
+                    .filter(record => record.status === '启用' && record.strategyType === (orderType === 'buy' ? '买入' : '卖出')).length === 0 ? (
+                    <EmptyState message="暂无数据" height="200px" containerStyle={{ marginLeft: '0' }} />
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      {strategyRecords
+                        .filter(record => record.status === '启用' && record.strategyType === (orderType === 'buy' ? '买入' : '卖出'))
+                        .map((record) => (
+                          <div
+                            key={record.id}
+                            onClick={() => setOrderForm({ ...orderForm, strategyId: record.id, strategyScores: {} })}
+                            className={`p-4 rounded-lg cursor-pointer transition-all ${
+                              orderForm.strategyId === record.id
+                                ? 'bg-[#0F1419]'
+                                : 'border border-gray-200 hover:border-gray-900 bg-white'
+                            }`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h4 className={`font-bold mb-1 ${orderForm.strategyId === record.id ? 'text-white' : 'text-gray-900'}`}>{record.name}</h4>
+                                <p className={`text-xs ${orderForm.strategyId === record.id ? 'text-gray-300' : 'text-gray-500'}`}>{record._id || '-'}</p>
+                              </div>
+                              <span className={`px-2 py-1 text-xs rounded ${orderForm.strategyId === record.id ? 'bg-white text-gray-900' : 'bg-gray-100 text-gray-600'}`}>
+                                {record.strategyType}
+                              </span>
                             </div>
-                            <span className={`px-2 py-1 text-xs rounded ${orderForm.strategyId === record.id ? 'bg-white text-gray-900' : 'bg-gray-100 text-gray-600'}`}>
-                              {record.strategyType}
-                            </span>
                           </div>
-                        </div>
-                      ))}
-                  </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-3 justify-end">
@@ -736,7 +758,7 @@ const OrderManagement = () => {
               </div>
             )}
 
-            {evaluationStep === 2 && orderType === 'buy' && (
+            {evaluationStep === 2 && (
               <div>
                 <p className="text-gray-600 mb-2">客观评估标准化</p>
                 {(() => {
@@ -989,7 +1011,7 @@ const OrderManagement = () => {
                   <div className="flex gap-3 justify-end" style={{ marginTop: '10px' }}>
                     <button
                       type="button"
-                      onClick={() => setEvaluationStep(orderType === 'buy' ? 2 : 1)}
+                      onClick={() => setEvaluationStep(2)}
                       className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       上一步
@@ -1006,7 +1028,7 @@ const OrderManagement = () => {
                         type="submit"
                         className="px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
                       >
-                        创建预约单
+                        确认创建
                       </button>
                     )}
                   </div>

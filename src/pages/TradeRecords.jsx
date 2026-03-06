@@ -1,264 +1,308 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
-import { TrendingUp, TrendingDown, DollarSign, Award, BarChart3 } from 'lucide-react'
+import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Calendar, Clock, DollarSign } from 'lucide-react'
+import DataTable from '../components/DataTable'
+import Pagination from '../components/Pagination'
+import EmptyState from '../components/EmptyState'
 import useStore from '../store/useStore'
-import { format } from 'date-fns'
-import Counter from '../components/Counter'
-import ScrollAnimation from '../components/ScrollAnimation'
+
+// 格式化日期
+const formatDate = (date) => {
+  if (!date) return '-'
+  const d = new Date(date)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hours = String(d.getHours()).padStart(2, '0')
+  const minutes = String(d.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}`
+}
 
 const TradeRecords = () => {
-  const [filterType, setFilterType] = useState('all')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [selectedFilter, setSelectedFilter] = useState('all')
+  const pageSize = 20
 
   const tradeRecords = useStore(state => state.tradeRecords)
-  const calculateTradeProfit = useStore(state => state.calculateTradeProfit)
 
-  const filteredRecords = filterType === 'all'
-    ? tradeRecords
-    : tradeRecords.filter(t => t.type === filterType)
+  // 筛选交易记录
+  const filteredRecords = (() => {
+    switch (selectedFilter) {
+      case 'profit':
+        return tradeRecords.filter(r => parseFloat(r.profit) > 0)
+      case 'loss':
+        return tradeRecords.filter(r => parseFloat(r.profit) < 0)
+      case 'all':
+      default:
+        return tradeRecords
+    }
+  })()
 
-  const totalProfit = tradeRecords.reduce((sum, t) => sum + (t.profit || 0), 0)
-  const winCount = tradeRecords.filter(t => (t.profit || 0) > 0).length
-  const totalCount = tradeRecords.length
-  const winRate = totalCount > 0 ? (winCount / totalCount * 100).toFixed(1) : 0
-
-  const updateProfit = (record, profit) => {
-    calculateTradeProfit(record.id, parseFloat(profit))
+  // 计算统计数据
+  const stats = {
+    totalTrades: tradeRecords.length,
+    profitTrades: tradeRecords.filter(r => parseFloat(r.profit) > 0).length,
+    lossTrades: tradeRecords.filter(r => parseFloat(r.profit) < 0).length,
+    totalProfit: tradeRecords.reduce((sum, r) => sum + parseFloat(r.profit), 0),
+    winRate: tradeRecords.length > 0
+      ? (tradeRecords.filter(r => parseFloat(r.profit) > 0).length / tradeRecords.length * 100).toFixed(2)
+      : 0
   }
 
+  const totalPages = Math.ceil(filteredRecords.length / pageSize)
+  const paginatedData = filteredRecords.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
   return (
-    <div className="space-y-6 pt-20 px-4 md:px-6 lg:pl-64">
-      {/* 头部 */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
-      >
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">交易记录</h1>
-          <p className="text-gray-600">查看买入卖出记录和交易统计</p>
-        </div>
-      </motion.div>
+    <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative', paddingBottom: '10px' }}>
+        {/* 内容区域 */}
+        <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {/* 统计卡片 */}
+          <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', flexShrink: 0 }}>
+            <div style={{
+              background: '#ffffff',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '15px 20px',
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <p style={{ color: '#666', fontSize: '14px', marginBottom: '4px' }}>总交易数</p>
+                <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#374151' }}>{stats.totalTrades}</p>
+              </div>
+              <Calendar className="w-8 h-8 text-blue-500" />
+            </div>
 
-      {/* 统计卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <ScrollAnimation delay={0.1}>
-          <motion.div className="glass rounded-xl p-6 border border-gray-200 hover-float cursor-pointer" whileHover={{ scale: 1.02 }}>
-            <div className="flex items-center justify-between">
+            <div style={{
+              background: '#ffffff',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '15px 20px',
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
               <div>
-                <p className="text-sm text-gray-600 mb-1">总交易次数</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  <Counter end={totalCount} duration={1} />
+                <p style={{ color: '#666', fontSize: '14px', marginBottom: '4px' }}>盈利交易</p>
+                <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{stats.profitTrades}</p>
+              </div>
+              <TrendingUp className="w-8 h-8 text-green-500" />
+            </div>
+
+            <div style={{
+              background: '#ffffff',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '15px 20px',
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <p style={{ color: '#666', fontSize: '14px', marginBottom: '4px' }}>亏损交易</p>
+                <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>{stats.lossTrades}</p>
+              </div>
+              <TrendingDown className="w-8 h-8 text-red-500" />
+            </div>
+
+            <div style={{
+              background: '#ffffff',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '15px 20px',
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <p style={{ color: '#666', fontSize: '14px', marginBottom: '4px' }}>胜率</p>
+                <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#374151' }}>{stats.winRate}%</p>
+              </div>
+              <ArrowUpRight className="w-8 h-8 text-gray-500" />
+            </div>
+
+            <div style={{
+              background: '#ffffff',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '15px 20px',
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <p style={{ color: '#666', fontSize: '14px', marginBottom: '4px' }}>总盈亏</p>
+                <p style={{
+                  fontSize: '24px',
+                  fontWeight: 'bold',
+                  color: parseFloat(stats.totalProfit) >= 0 ? '#16a34a' : '#dc2626'
+                }}>
+                  {parseFloat(stats.totalProfit) >= 0 ? '+' : ''}${parseFloat(stats.totalProfit).toFixed(2)}
                 </p>
               </div>
-              <motion.div
-                animate={{ rotate: [0, 5, -5, 0] }}
-                transition={{ duration: 3, repeat: Infinity, repeatDelay: 2 }}
-              >
-                <BarChart3 className="w-10 h-10 text-primary-600" />
-              </motion.div>
+              <DollarSign className="w-8 h-8 text-gray-500" />
             </div>
-          </motion.div>
-        </ScrollAnimation>
-        <ScrollAnimation delay={0.2}>
-          <motion.div className="glass rounded-xl p-6 border border-gray-200 hover-float cursor-pointer" whileHover={{ scale: 1.02 }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">总盈亏</p>
-                <p className={`text-3xl font-bold ${totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {totalProfit >= 0 ? '+' : ''}¥{totalProfit.toLocaleString()}
-                </p>
+          </div>
+
+          {/* 筛选器 */}
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexShrink: 0 }}>
+            {[
+              { key: 'all', label: '全部交易' },
+              { key: 'profit', label: '盈利交易' },
+              { key: 'loss', label: '亏损交易' }
+            ].map((filter) => (
+              <div
+                key={filter.key}
+                onClick={() => setSelectedFilter(filter.key)}
+                style={{
+                  background: '#ffffff',
+                  border: selectedFilter === filter.key ? '2px solid #0F1419' : '1px solid #e5e7eb',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  fontSize: '14px'
+                }}
+              >
+                {filter.label}
               </div>
-              <motion.div
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                <DollarSign className={`w-10 h-10 ${totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`} />
-              </motion.div>
-            </div>
-          </motion.div>
-        </ScrollAnimation>
-        <ScrollAnimation delay={0.3}>
-          <motion.div className="glass rounded-xl p-6 border border-gray-200 hover-float cursor-pointer" whileHover={{ scale: 1.02 }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">盈利次数</p>
-                <p className="text-3xl font-bold text-green-600">
-                  <Counter end={winCount} duration={1} />
-                </p>
-              </div>
-              <motion.div
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 2, repeat: Infinity, delay: 0.2 }}
-              >
-                <TrendingUp className="w-10 h-10 text-green-600" />
-              </motion.div>
-            </div>
-          </motion.div>
-        </ScrollAnimation>
-        <ScrollAnimation delay={0.4}>
-          <motion.div className="glass rounded-xl p-6 border border-gray-200 hover-float cursor-pointer" whileHover={{ scale: 1.02 }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">胜率</p>
-                <p className="text-3xl font-bold text-primary-600">{winRate}%</p>
-              </div>
-              <motion.div
-                animate={{ scale: [1, 1.1, 1] }}
-                transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-              >
-                <Award className="w-10 h-10 text-primary-600" />
-              </motion.div>
-            </div>
-          </motion.div>
-        </ScrollAnimation>
+            ))}
+          </div>
+
+          {/* 表格 */}
+          {paginatedData.length > 0 ? (
+            <DataTable
+              fields={[
+                { key: 'symbol', label: '股票代码', width: '100px' },
+                { key: 'name', label: '股票名称', width: '120px' },
+                { key: 'buyInfo', label: '买入信息', width: '180px' },
+                { key: 'sellInfo', label: '卖出信息', width: '180px' },
+                { key: 'holdDuration', label: '持仓天数', width: '100px' },
+                { key: 'profit', label: '盈亏金额', width: '120px' },
+                { key: 'profitPercent', label: '盈亏比例', width: '120px' },
+                { key: 'grades', label: '操作评分', width: '150px' },
+                { key: 'overallScore', label: '整体评分', width: '120px' },
+                { key: 'createdAt', label: '记录时间', width: '180px' }
+              ]}
+              data={paginatedData}
+              selectedIds={[]}
+              onSelectAll={() => {}}
+              onSelectOne={() => {}}
+              renderCell={(field, item) => {
+                if (field.key === 'buyInfo') {
+                  return (
+                    <div style={{ fontSize: '12px' }}>
+                      <div>${item.buyPrice.toFixed(2)}</div>
+                      <div style={{ color: '#666' }}>{item.buyQuantity}股</div>
+                      <div style={{ color: '#666' }}>{formatDate(item.buyTime)}</div>
+                    </div>
+                  )
+                }
+                if (field.key === 'sellInfo') {
+                  return (
+                    <div style={{ fontSize: '12px' }}>
+                      <div>${item.sellPrice.toFixed(2)}</div>
+                      <div style={{ color: '#666' }}>{item.sellQuantity}股</div>
+                      <div style={{ color: '#666' }}>{formatDate(item.sellTime)}</div>
+                    </div>
+                  )
+                }
+                if (field.key === 'profit') {
+                  const profit = parseFloat(item.profit)
+                  return (
+                    <span style={{
+                      color: profit >= 0 ? '#16a34a' : '#dc2626',
+                      fontWeight: 'bold'
+                    }}>
+                      {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
+                    </span>
+                  )
+                }
+                if (field.key === 'profitPercent') {
+                  const percent = parseFloat(item.profitPercent)
+                  return (
+                    <span style={{
+                      color: percent >= 0 ? '#16a34a' : '#dc2626',
+                      fontWeight: 'bold'
+                    }}>
+                      {percent >= 0 ? '+' : ''}{percent.toFixed(2)}%
+                    </span>
+                  )
+                }
+                if (field.key === 'grades') {
+                  return (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        background: item.buyGrade === 'A' ? '#dcfce7' : item.buyGrade === 'B' ? '#fef9c3' : '#fee2e2'
+                      }}>
+                        买{item.buyGrade}
+                      </span>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        background: item.sellGrade === 'A' ? '#dcfce7' : item.sellGrade === 'B' ? '#fef9c3' : '#fee2e2'
+                      }}>
+                        卖{item.sellGrade}
+                      </span>
+                    </div>
+                  )
+                }
+                if (field.key === 'overallScore') {
+                  return (
+                    <div style={{
+                      display: 'inline-block',
+                      padding: '4px 12px',
+                      borderRadius: '12px',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      background: item.overallScore >= 70 ? '#dcfce7' : item.overallScore >= 40 ? '#fef9c3' : '#fee2e2',
+                      color: item.overallScore >= 70 ? '#16a34a' : item.overallScore >= 40 ? '#854d0e' : '#dc2626'
+                    }}>
+                      {item.overallScore.toFixed(1)}
+                    </div>
+                  )
+                }
+                if (field.key === 'createdAt') {
+                  return formatDate(item.createdAt)
+                }
+                if (field.key === 'holdDuration') {
+                  return `${item.holdDuration}天`
+                }
+                return null
+              }}
+            />
+          ) : (
+            <EmptyState
+              message={tradeRecords.length === 0 ? '暂无交易记录' : '未找到匹配的交易记录'}
+              icon={TrendingUp}
+            />
+          )}
+        </div>
+
+        {/* 分页器 */}
+        <div style={{ position: 'absolute', right: '0', bottom: '0', height: '50px', zIndex: '10', width: '100%' }}>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={(page) => setCurrentPage(page)}
+            selectedCount={0}
+            totalCount={filteredRecords.length}
+          />
+        </div>
       </div>
-
-      {/* 筛选器 */}
-      <div className="flex gap-4">
-        {['all', 'buy', 'sell'].map((type) => (
-          <motion.button
-            key={type}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setFilterType(type)}
-            className={`px-6 py-3 rounded-lg font-medium transition-all duration-300 ${
-              filterType === type
-                ? 'bg-gradient-to-r from-primary-500 to-blue-500 text-gray-900 shadow-lg shadow-primary-500/30'
-                : 'glass text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            {type === 'all' ? '全部' : type === 'buy' ? '买入' : '卖出'}
-          </motion.button>
-        ))}
-      </div>
-
-      {/* 交易记录列表 */}
-      <ScrollAnimation delay={0.5}>
-        <div className="glass rounded-xl border border-gray-200 overflow-hidden hover:border-primary-200 transition-all duration-300">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-gray-600 text-sm border-b border-gray-200">
-                <th className="px-6 py-4">执行时间</th>
-                <th className="px-6 py-4">类型</th>
-                <th className="px-6 py-4">代码</th>
-                <th className="px-6 py-4">价格</th>
-                <th className="px-6 py-4">数量</th>
-                <th className="px-6 py-4">金额</th>
-                <th className="px-6 py-4">心理评分</th>
-                <th className="px-6 py-4">策略评分</th>
-                <th className="px-6 py-4">综合评分</th>
-                <th className="px-6 py-4">盈亏</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRecords.length === 0 ? (
-                <tr>
-                  <td colSpan="10" className="px-6 py-12 text-center text-gray-500">
-                    暂无交易记录
-                  </td>
-                </tr>
-              ) : (
-                filteredRecords
-                  .slice()
-                  .reverse()
-                  .map((record, index) => (
-                    <motion.tr
-                      key={record.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.3, delay: index * 0.02 }}
-                      className="border-b border-gray-200 hover:bg-white transition-colors"
-                    >
-                      <td className="px-6 py-4 text-gray-700">
-                        {format(new Date(record.executedAt), 'yyyy-MM-dd HH:mm:ss')}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded text-xs font-medium ${
-                          record.type === 'buy' ? 'bg-green-500/20 text-green-600' : 'bg-red-500/20 text-red-600'
-                        }`}>
-                          {record.type === 'buy' ? '买入' : '卖出'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 font-medium text-gray-900">{record.symbol}</td>
-                      <td className="px-6 py-4">¥{record.price.toLocaleString()}</td>
-                      <td className="px-6 py-4">{record.quantity}</td>
-                      <td className="px-6 py-4">¥{record.amount.toLocaleString()}</td>
-                      <td className="px-6 py-4">
-                        <span className={`font-bold ${record.psychologicalScore >= 70 ? 'text-green-600' : 'text-red-600'}`}>
-                          {record.psychologicalScore}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`font-bold ${record.strategyScore >= 70 ? 'text-green-600' : 'text-red-600'}`}>
-                          {record.strategyScore}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`font-bold ${record.overallScore >= 70 ? 'text-green-600' : 'text-red-600'}`}>
-                          {record.overallScore}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        {record.type === 'buy' ? (
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={record.profit || ''}
-                            onChange={(e) => updateProfit(record, e.target.value)}
-                            placeholder="¥0.00"
-                            className="w-24 px-3 py-1 bg-white border border-gray-200 rounded text-gray-900 text-sm focus:outline-none focus:border-primary-500 transition-colors"
-                          />
-                        ) : (
-                          <span className={`font-bold ${(record.profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {(record.profit || 0) >= 0 ? '+' : ''}¥{(record.profit || 0).toLocaleString()}
-                          </span>
-                        )}
-                      </td>
-                    </motion.tr>
-                  ))
-              )}
-            </tbody>
-          </table>
-        </div>
-        </div>
-      </ScrollAnimation>
-
-      {/* 交易详情说明 */}
-      <ScrollAnimation delay={0.6}>
-        <div className="glass rounded-xl border border-gray-200 p-6 hover:border-primary-200 transition-all duration-300">
-          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-            <Award className="w-5 h-5 mr-2 text-primary-600" />
-            交易记录说明
-          </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
-          <div>
-            <h4 className="font-semibold text-gray-900 mb-2">评分体系</h4>
-            <ul className="space-y-1 text-gray-600">
-              <li>• 心理评分：根据心理测试结果</li>
-              <li>• 策略评分：根据交易策略评估</li>
-              <li>• 综合评分：综合各项评分计算</li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="font-semibold text-gray-900 mb-2">盈亏计算</h4>
-            <ul className="space-y-1 text-gray-600">
-              <li>• 买入交易：卖出时可填写盈亏</li>
-              <li>• 卖出交易：显示实际盈亏</li>
-              <li>• 负值表示亏损，正值表示盈利</li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="font-semibold text-gray-900 mb-2">统计分析</h4>
-            <ul className="space-y-1 text-gray-600">
-              <li>• 胜率：盈利次数 / 总交易次数</li>
-              <li>• 盈亏：所有交易的盈亏总和</li>
-              <li>• 根据交易记录评估策略效果</li>
-            </ul>
-          </div>
-        </div>
-        </div>
-      </ScrollAnimation>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { calculateTradeGrade, calculateOverallScore } from '../utils/technicalIndicators'
 
 // 心理测试指标
 export const initialPsychologicalIndicators = [
@@ -213,7 +214,76 @@ const useStore = create(
       transactions: [],
 
       // 交易记录
-      tradeRecords: [],
+      tradeRecords: Array.from({ length: 10 }, (_, i) => {
+        const isProfit = Math.random() > 0.4
+        const basePrice = 50 + Math.random() * 200
+        const buyPrice = parseFloat(basePrice.toFixed(2))
+        const profitPercent = isProfit ? (Math.random() * 20 + 5) : -(Math.random() * 15 + 3)
+        const sellPrice = parseFloat((buyPrice * (1 + profitPercent / 100)).toFixed(2))
+        const quantity = Math.floor(Math.random() * 500) + 100
+        const buyAmount = buyPrice * quantity
+        const sellAmount = sellPrice * quantity
+        const profit = sellAmount - buyAmount
+
+        const now = new Date()
+        const buyTime = new Date(now - Math.random() * 30 * 24 * 60 * 60 * 1000)
+        const sellTime = new Date(buyTime.getTime() + Math.random() * 20 * 24 * 60 * 60 * 1000)
+
+        return {
+          id: `trade_${i + 1}`,
+          symbol: ['000001', '600036', '600519', '000333', '601318'][i % 5],
+          name: ['平安银行', '招商银行', '贵州茅台', '美的集团', '中国平安'][i % 5],
+          buyOrderId: `buy_${i + 1}`,
+          sellOrderId: `sell_${i + 1}`,
+          buyPrice: buyPrice,
+          buyQuantity: quantity,
+          buyTime: buyTime.toISOString(),
+          buyPsychologicalScore: parseFloat((6 + Math.random() * 3).toFixed(1)),
+          buyStrategyScore: parseFloat((70 + Math.random() * 25).toFixed(1)),
+          buyStrategyId: 1,
+          sellPrice: sellPrice,
+          sellQuantity: quantity,
+          sellTime: sellTime.toISOString(),
+          sellPsychologicalScore: parseFloat((6 + Math.random() * 3).toFixed(1)),
+          sellStrategyScore: parseFloat((70 + Math.random() * 25).toFixed(1)),
+          sellStrategyId: 1,
+          buyAmount: buyAmount.toFixed(2),
+          sellAmount: sellAmount.toFixed(2),
+          profit: profit.toFixed(2),
+          profitPercent: profitPercent.toFixed(2),
+          holdDuration: Math.floor((sellTime - buyTime) / (1000 * 60 * 60 * 24)),
+          buyGrade: ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)],
+          sellGrade: ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)],
+          overallScore: parseFloat((Math.random() * 100).toFixed(2)),
+          buyChannel: {
+            high: parseFloat((buyPrice * 1.05).toFixed(2)),
+            low: parseFloat((buyPrice * 0.95).toFixed(2)),
+            upperBand: parseFloat((buyPrice * 1.08).toFixed(2)),
+            lowerBand: parseFloat((buyPrice * 0.92).toFixed(2)),
+            type: 'bollinger'
+          },
+          sellChannel: {
+            high: parseFloat((sellPrice * 1.05).toFixed(2)),
+            low: parseFloat((sellPrice * 0.95).toFixed(2)),
+            upperBand: parseFloat((sellPrice * 1.08).toFixed(2)),
+            lowerBand: parseFloat((sellPrice * 0.92).toFixed(2)),
+            type: 'bollinger'
+          },
+          createdAt: sellTime.toISOString()
+        }
+      }),
+
+      // 股票池数据
+      stockPool: [
+        { id: 1, symbol: '000001', name: '平安银行', market: 'cn', exchange: '深交所', sector: '银行', currentPrice: 10.50, change: 0.15, changePercent: 1.45, volume: 52000000, createdAt: new Date().toISOString() },
+        { id: 2, symbol: '600036', name: '招商银行', market: 'cn', exchange: '上交所', sector: '银行', currentPrice: 35.20, change: 0.50, changePercent: 1.44, volume: 28000000, createdAt: new Date().toISOString() },
+        { id: 3, symbol: '600519', name: '贵州茅台', market: 'cn', exchange: '上交所', sector: '白酒', currentPrice: 1680.00, change: -12.00, changePercent: -0.71, volume: 2500000, createdAt: new Date().toISOString() },
+        { id: 4, symbol: '000333', name: '美的集团', market: 'cn', exchange: '深交所', sector: '家电', currentPrice: 62.80, change: 1.20, changePercent: 1.95, volume: 35000000, createdAt: new Date().toISOString() },
+        { id: 5, symbol: '601318', name: '中国平安', market: 'cn', exchange: '上交所', sector: '保险', currentPrice: 45.60, change: -0.80, changePercent: -1.72, volume: 48000000, createdAt: new Date().toISOString() }
+      ],
+
+      // 股票K线数据（按symbol存储）
+      stockKlineData: {},
 
       // 更新账户余额
       updateBalance: (amount) => set((state) => ({
@@ -502,6 +572,215 @@ const useStore = create(
           riskRatio: 5.85,
           accountAvailable: 95.9,
           singleAvailable: 94.15
+        },
+        stockPool: [],
+        stockKlineData: {}
+      }),
+
+      // ====== 股票池相关 ======
+
+      // 添加股票到股票池
+      addStock: (stock) => set((state) => ({
+        stockPool: [...state.stockPool, { ...stock, id: Date.now(), createdAt: new Date().toISOString() }]
+      })),
+
+      // 更新股票信息
+      updateStock: (id, data) => set((state) => ({
+        stockPool: state.stockPool.map(s =>
+          s.id === id ? { ...s, ...data, updatedAt: new Date().toISOString() } : s
+        )
+      })),
+
+      // 删除股票
+      deleteStock: (id) => set((state) => ({
+        stockPool: state.stockPool.filter(s => s.id !== id)
+      })),
+
+      // 批量删除股票
+      deleteMultipleStocks: (ids) => set((state) => ({
+        stockPool: state.stockPool.filter(s => !ids.includes(s.id))
+      })),
+
+      // 批量导入股票
+      importStocks: (stocks) => set((state) => {
+        const now = new Date().toISOString()
+        return {
+          stockPool: [
+            ...state.stockPool,
+            ...stocks.map(s => ({ ...s, id: Date.now() + Math.random(), createdAt: now }))
+          ]
+        }
+      }),
+
+      // 更新股票K线数据
+      updateStockKlineData: (symbol, klineData) => set((state) => ({
+        stockKlineData: {
+          ...state.stockKlineData,
+          [symbol]: klineData
+        }
+      })),
+
+      // 获取股票的K线数据
+      getStockKlineData: (symbol) => {
+        const state = get()
+        return state.stockKlineData[symbol] || []
+      },
+
+      // ====== 完整交易记录相关 ======
+
+      // 添加完整交易记录（买入和卖出都完成后自动生成）
+      addCompleteTradeRecord: (tradeRecord) => set((state) => ({
+        tradeRecords: [...state.tradeRecords, { ...tradeRecord, id: Date.now(), createdAt: new Date().toISOString() }]
+      })),
+
+      // 更新交易记录
+      updateTradeRecord: (id, data) => set((state) => ({
+        tradeRecords: state.tradeRecords.map(t =>
+          t.id === id ? { ...t, ...data, updatedAt: new Date().toISOString() } : t
+        )
+      })),
+
+      // 删除交易记录
+      deleteTradeRecord: (id) => set((state) => ({
+        tradeRecords: state.tradeRecords.filter(t => t.id !== id)
+      })),
+
+      // 批量删除交易记录
+      deleteMultipleTradeRecords: (ids) => set((state) => ({
+        tradeRecords: state.tradeRecords.filter(t => !ids.includes(t.id))
+      })),
+
+      // 检查并自动生成交易记录（当卖出订单执行后）
+      checkAndGenerateTradeRecord: (sellOrder) => set((state) => {
+        if (!sellOrder.buyOrderId) return state
+
+        const buyOrder = state.orders.find(o => o.id === sellOrder.buyOrderId)
+        if (!buyOrder || buyOrder.status !== 'executed') return state
+
+        // 计算持仓天数
+        const buyTime = new Date(buyOrder.executedAt || buyOrder.createdAt)
+        const sellTime = new Date(sellOrder.executedAt || sellOrder.createdAt)
+        const holdDuration = Math.ceil((sellTime - buyTime) / (1000 * 60 * 60 * 24))
+
+        // 获取K线数据用于计算评分
+        const buyKline = state.stockKlineData[buyOrder.symbol] || []
+        const sellKline = state.stockKlineData[sellOrder.symbol] || []
+
+        // 获取买入当天的价格通道数据
+        const buyDateKline = buyKline.find(k => {
+          const kDate = new Date(k.timestamp)
+          const buyDate = new Date(buyOrder.executedAt || buyOrder.createdAt)
+          return kDate.toDateString() === buyDate.toDateString()
+        })
+
+        // 获取卖出当天的价格通道数据
+        const sellDateKline = sellKline.find(k => {
+          const kDate = new Date(k.timestamp)
+          const sellDate = new Date(sellOrder.executedAt || sellOrder.createdAt)
+          return kDate.toDateString() === sellDate.toDateString()
+        })
+
+        // 计算买入评分
+        let buyGrade = 'C'
+        let buyChannel = null
+        if (buyDateKline) {
+          const high = buyDateKline.bb_upper || buyDateKline.high
+          const low = buyDateKline.bb_lower || buyDateKline.low
+          buyGrade = calculateTradeGrade(buyOrder.price, high, low, 'buy')
+          buyChannel = {
+            high: buyDateKline.high,
+            low: buyDateKline.low,
+            upperBand: buyDateKline.bb_upper,
+            lowerBand: buyDateKline.bb_lower,
+            type: 'bollinger'
+          }
+        }
+
+        // 计算卖出评分
+        let sellGrade = 'C'
+        let sellChannel = null
+        if (sellDateKline) {
+          const high = sellDateKline.bb_upper || sellDateKline.high
+          const low = sellDateKline.bb_lower || sellDateKline.low
+          sellGrade = calculateTradeGrade(sellOrder.price, high, low, 'sell')
+          sellChannel = {
+            high: sellDateKline.high,
+            low: sellDateKline.low,
+            upperBand: sellDateKline.bb_upper,
+            lowerBand: sellDateKline.bb_lower,
+            type: 'bollinger'
+          }
+        }
+
+        // 计算盈亏
+        const buyAmount = buyOrder.price * buyOrder.quantity
+        const sellAmount = sellOrder.price * sellOrder.quantity
+        const profit = sellAmount - buyAmount
+        const profitPercent = ((profit / buyAmount) * 100).toFixed(2)
+
+        // 计算整体评分
+        let overallScore = 0
+        if (buyChannel && sellChannel) {
+          overallScore = calculateOverallScore(
+            buyOrder.price,
+            sellOrder.price,
+            buyChannel.upperBand,
+            buyChannel.lowerBand
+          )
+        }
+
+        const tradeRecord = {
+          symbol: buyOrder.symbol,
+          name: buyOrder.name,
+
+          // 买入信息
+          buyOrderId: buyOrder.id,
+          buyPrice: buyOrder.price,
+          buyQuantity: buyOrder.quantity,
+          buyTime: buyOrder.executedAt || buyOrder.createdAt,
+          buyPsychologicalScore: buyOrder.psychologicalScore,
+          buyStrategyScore: buyOrder.strategyScore,
+          buyStrategyId: buyOrder.strategyId,
+
+          // 卖出信息
+          sellOrderId: sellOrder.id,
+          sellPrice: sellOrder.price,
+          sellQuantity: sellOrder.quantity,
+          sellTime: sellOrder.executedAt || sellOrder.createdAt,
+          sellPsychologicalScore: sellOrder.psychologicalScore,
+          sellStrategyScore: sellOrder.strategyScore,
+          sellStrategyId: sellOrder.strategyId,
+
+          // 价格通道数据
+          buyChannel,
+          sellChannel,
+
+          // 交易明细
+          totalBuyQuantity: buyOrder.quantity,
+          totalSellQuantity: sellOrder.quantity,
+          buyAmount: buyAmount.toFixed(2),
+          sellAmount: sellAmount.toFixed(2),
+          profit: profit.toFixed(2),
+          profitPercent: profitPercent,
+          holdDuration: holdDuration,
+
+          // 评分
+          buyGrade,
+          sellGrade,
+          overallScore: parseFloat((overallScore * 100).toFixed(2))
+        }
+
+        // 检查是否已存在该交易记录
+        const existingRecord = state.tradeRecords.find(t =>
+          t.buyOrderId === buyOrder.id && t.sellOrderId === sellOrder.id
+        )
+
+        if (existingRecord) {
+          return state
+        }
+
+        return {
+          tradeRecords: [...state.tradeRecords, { ...tradeRecord, id: Date.now(), createdAt: new Date().toISOString() }]
         }
       })
     }),

@@ -1,6 +1,6 @@
 import React from 'react'
 
-const EmptyState = ({ message = '暂无数据', icon = null, height = 'calc(100vh - 52px - 10px - 80px - 10px - 50px - 100px)' }) => {
+const EmptyState = ({ message = '暂无数据', icon = null, height = 'calc(100vh - 52px - 10px - 80px - 10px - 50px - 100px)', containerStyle = {} }) => {
   const defaultIcon = (
     <svg viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" width="86" height="86">
       <path d="M688.551724 0m26.482759 0l0 0q26.482759 0 26.482758 26.482759l0 52.965517q0 26.482759-26.482758 26.482758l0 0q-26.482759 0-26.482759-26.482758l0-52.965517q0-26.482759 26.482759-26.482759Z" fill="#E9ECF0"></path>
@@ -14,8 +14,11 @@ const EmptyState = ({ message = '暂无数据', icon = null, height = 'calc(100v
     </svg>
   )
 
+  const defaultStyle = { height, display: 'flex', alignItems: 'center' }
+  const mergedStyle = { ...defaultStyle, ...containerStyle }
+
   return (
-    <div className="flex flex-col items-center justify-center gap-3" style={{ height, display: 'flex', alignItems: 'center', marginLeft: '-20%' }}>
+    <div className="flex flex-col items-center justify-center gap-3" style={mergedStyle}>
       {icon || defaultIcon}
       <p>{message}</p>
     </div>

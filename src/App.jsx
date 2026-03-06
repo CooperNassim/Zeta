@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { TrendingUp, Brain, Target, Shield, Clock, Receipt, Activity, Home as HomeIcon, ChevronDown, Wallet2 } from 'lucide-react'
+import { TrendingUp, Brain, Target, Shield, Clock, Receipt, Activity, Home as HomeIcon, ChevronDown, Wallet2, Database } from 'lucide-react'
 import Home from './pages/Home'
 import DailyWork from './pages/DailyWork'
 import PsychologicalTest from './pages/PsychologicalTest'
@@ -11,6 +11,7 @@ import RiskModel from './pages/RiskModel'
 import OrderManagement from './pages/OrderManagement'
 import TransactionHistory from './pages/TransactionHistory'
 import TradeRecords from './pages/TradeRecords'
+import StockPool from './pages/StockPool'
 import useStore from './store/useStore'
 import { ToastProvider } from './contexts/ToastContext'
 
@@ -24,6 +25,7 @@ function Navigation() {
     { id: 'strategy', icon: Target, label: '交易策略', path: '/trading-strategy', customIcon: 'strategy' },
     { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
     { id: 'risk', icon: Shield, label: '风险模型', path: '/risk-model', customIcon: 'risk' },
+    { id: 'stockpool', icon: Database, label: '股票池', path: '/stock-pool', customIcon: 'stockpool' },
     { id: 'order', icon: Clock, label: '预约订单', path: '/order-management', customIcon: 'order' },
     { id: 'transaction', icon: Receipt, label: '账单明细', path: '/transaction-history', customIcon: 'transaction' },
     { id: 'record', icon: Activity, label: '交易记录', path: '/trade-records', customIcon: 'record' },
@@ -152,6 +154,21 @@ function Navigation() {
                         fill={isActive ? '#ffffff' : '#0F1419'}
                       />
                     </svg>
+                  ) : item.customIcon === 'stockpool' ? (
+                    <svg
+                      viewBox="0 0 1024 1024"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className={`w-5 h-5 mr-3 ${isActive ? 'text-white' : 'text-[#0F1419]'}`}
+                    >
+                      <path
+                        d="M512 0a512 512 0 1 0 512 512A512 512 0 0 0 512 0z m0 981.333333a469.333333 469.333333 0 1 1 469.333333-469.333333 469.333333 469.333333 0 0 1-469.333333 469.333333z"
+                        fill={isActive ? '#ffffff' : '#0F1419'}
+                      />
+                      <path
+                        d="M725.333333 469.333333H576V320a42.666667 42.666667 0 0 0-85.333333 0v149.333333H341.333333a42.666667 42.666667 0 0 0 0 85.333334h149.333334v149.333333a42.666667 42.666667 0 0 0 85.333333 0v-149.333333h149.333333a42.666667 42.666667 0 0 0 0-85.333334z"
+                        fill={isActive ? '#ffffff' : '#0F1419'}
+                      />
+                    </svg>
                   ) : item.customIcon === 'order' ? (
                     <svg
                       viewBox="0 0 1024 1024"
@@ -213,6 +230,7 @@ function App() {
               <Route path="/trading-strategy" element={<TradingStrategy />} />
               <Route path="/technical-indicators" element={<TechnicalIndicators />} />
               <Route path="/risk-model" element={<RiskModel />} />
+              <Route path="/stock-pool" element={<StockPool />} />
               <Route path="/order-management" element={<OrderManagement />} />
               <Route path="/transaction-history" element={<TransactionHistory />} />
               <Route path="/trade-records" element={<TradeRecords />} />

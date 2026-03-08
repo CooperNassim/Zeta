@@ -121,6 +121,9 @@ const StockPool = () => {
 
   // 筛选股票
   const filteredStocks = stockPool.filter(stock => {
+    // 过滤已删除的数据
+    if (stock.deleted) return false
+
     if (!searchKeyword) return true
     const keyword = searchKeyword.toLowerCase()
     return (

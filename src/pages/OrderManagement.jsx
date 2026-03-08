@@ -68,7 +68,8 @@ const OrderManagement = () => {
     strategyId: '',
     riskModelId: '',
     strategyScores: {},
-    psychologicalScores: {}
+    psychologicalScores: {},
+    isVirtual: false
   })
 
   const handleAddOrder = (type) => {
@@ -86,7 +87,8 @@ const OrderManagement = () => {
       quantity: '',
       strategyId: '',
       riskModelId: '',
-      psychologicalScores: {}
+      psychologicalScores: {},
+      isVirtual: false
     })
     setShowModal(true)
   }
@@ -326,7 +328,8 @@ const OrderManagement = () => {
       overallScore: parseFloat(overallScore),
       status: 'pending',  // 创建时为待执行状态
       buyOrderId,  // 卖出订单关联的买入订单ID
-      evaluationResults
+      evaluationResults,
+      isVirtual: orderForm.isVirtual || false  // 虚拟盘标记
     })
 
     setShowModal(false)
@@ -336,16 +339,16 @@ const OrderManagement = () => {
   }
 
   // 计算各状态订单数量
-  const pendingOrders = orders.filter(o => o.status === 'pending')
-  const executedOrders = orders.filter(o => o.status === 'executed')
-  const cancelledOrders = orders.filter(o => o.status === 'cancelled')
+  const pendingOrders = orders.filter(o => !o.deleted && o.status === 'pending')
+  const executedOrders = orders.filter(o => !o.deleted && o.status === 'executed')
+  const cancelledOrders = orders.filter(o => !o.deleted && o.status === 'cancelled')
 
   // 持仓中：已执行的买入订单
-  const holdingOrders = orders.filter(o => o.type === 'buy' && o.status === 'executed')
+  const holdingOrders = orders.filter(o => !o.deleted && o.type === 'buy' && o.status === 'executed')
   // 已卖出：已执行的卖出订单
-  const soldOrders = orders.filter(o => o.type === 'sell' && o.status === 'executed')
+  const soldOrders = orders.filter(o => !o.deleted && o.type === 'sell' && o.status === 'executed')
   // 待执行：pending状态的订单
-  const pendingCount = orders.filter(o => o.status === 'pending').length
+  const pendingCount = orders.filter(o => !o.deleted && o.status === 'pending').length
 
   // 筛选逻辑
   const filteredOrders = (() => {
@@ -360,7 +363,7 @@ const OrderManagement = () => {
         return pendingOrders  // 待执行
       case 'all':
       default:
-        return orders  // 全部订单
+        return orders.filter(o => !o.deleted)  // 全部订单，排除已删除的
     }
   })()
 
@@ -860,6 +863,20 @@ const OrderManagement = () => {
                         placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动获取'}
                         disabled
                       />
+                    </div>
+
+                    {/* 虚拟盘勾选 */}
+                    <div>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={orderForm.isVirtual || false}
+                          onChange={(e) => setOrderForm({ ...orderForm, isVirtual: e.target.checked })}
+                          className="w-4 h-4 text-[#0F1419] border-gray-300 rounded focus:ring-[#0F1419]"
+                        />
+                        <span className="text-sm font-medium text-gray-700">虚拟盘</span>
+                      </label>
+                      <p className="text-xs text-gray-500 mt-1">勾选后该订单将记录到虚拟账户</p>
                     </div>
 
 

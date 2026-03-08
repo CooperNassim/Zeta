@@ -9,6 +9,10 @@ const {
   update,
   remove,
   bulkDelete,
+  permanentDelete,
+  bulkPermanentDelete,
+  restore,
+  bulkRestore,
   query
 } = require('../database/queries');
 
@@ -18,13 +22,14 @@ const {
 router.get('/:table', async (req, res) => {
   try {
     const { table } = req.params;
-    const { where, orderBy, limit, offset } = req.query;
+    const { where, orderBy, limit, offset, includeDeleted } = req.query;
 
     const options = {};
     if (where) options.where = JSON.parse(where);
     if (orderBy) options.orderBy = orderBy;
     if (limit) options.limit = parseInt(limit);
     if (offset) options.offset = parseInt(offset);
+    if (includeDeleted === 'true') options.includeDeleted = true;
 
     const data = await findAll(table, options);
     res.json({ success: true, data });
@@ -247,6 +252,72 @@ router.get('/sync/all', async (req, res) => {
     });
   } catch (error) {
     console.error('Sync error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PATCH /api/:table/:id/restore - 恢复已删除的数据
+router.patch('/:table/:id/restore', async (req, res) => {
+  try {
+    const { table, id } = req.params;
+    const result = await restore(table, id);
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('RESTORE error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PATCH /api/:table/bulk/restore - 批量恢复已删除的数据
+router.patch('/:table/bulk/restore', async (req, res) => {
+  try {
+    const { table } = req.params;
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids)) {
+      return res.status(400).json({ success: false, error: 'ids must be an array' });
+    }
+
+    const results = await bulkRestore(table, ids);
+    res.json({ success: true, data: results, count: results.length });
+  } catch (error) {
+    console.error('BULK RESTORE error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/:table/:id/permanent - 永久删除（硬删除）
+router.delete('/:table/:id/permanent', async (req, res) => {
+  try {
+    const { table, id } = req.params;
+    const result = await permanentDelete(table, id);
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('PERMANENT DELETE error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/:table/bulk/permanent - 批量永久删除（硬删除）
+router.delete('/:table/bulk/permanent', async (req, res) => {
+  try {
+    const { table } = req.params;
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids)) {
+      return res.status(400).json({ success: false, error: 'ids must be an array' });
+    }
+
+    const results = await bulkPermanentDelete(table, ids);
+    res.json({ success: true, data: results, count: results.length });
+  } catch (error) {
+    console.error('BULK PERMANENT DELETE error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

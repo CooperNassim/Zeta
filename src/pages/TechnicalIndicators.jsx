@@ -26,6 +26,9 @@ const TechnicalIndicators = () => {
 
   // 筛选数据
   const filteredIndicators = technicalIndicators.filter(indicator => {
+    // 过滤已删除的数据
+    if (indicator.deleted) return false
+
     const matchName = !filterName || indicator.name.toLowerCase().includes(filterName.toLowerCase())
     const matchTag = filterTag === '全部' || (indicator.tags && indicator.tags.includes(filterTag))
     return matchName && matchTag

@@ -455,6 +455,9 @@ const TradingStrategy = () => {
   })
 
   const filteredData = sortedData.filter(data => {
+    // 过滤已删除的数据
+    if (data.deleted) return false
+
     let matchDate = true
     let matchStrategyType = true
     let matchStatus = true

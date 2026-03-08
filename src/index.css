@@ -193,3 +193,21 @@ body {
 .animate-bounce-slow {
   animation: bounce 1s ease-in-out infinite;
 }
+
+/* Toast容器样式 */
+.toast-container {
+  position: fixed;
+  top: 70px;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.toast-container > * {
+  pointer-events: auto;
+}

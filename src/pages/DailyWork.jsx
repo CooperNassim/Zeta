@@ -496,6 +496,7 @@ const DailyWork = () => {
   const filteredData = sortedData.filter(data => {
     let matchDate = true
     let matchSentiment = true
+    let matchDeleted = !data.deleted
 
     if (filterDateRange) {
       const [start, end] = filterDateRange.split('~')
@@ -511,7 +512,7 @@ const DailyWork = () => {
       matchSentiment = data.sentiment === filterSentiment
     }
 
-    return matchDate && matchSentiment
+    return matchDate && matchSentiment && matchDeleted
   })
 
   const latestData = sortedData[0]
@@ -609,7 +610,7 @@ const DailyWork = () => {
 
         {/* 数据表格 */}
         <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', marginTop: '10px', paddingBottom: '50px', zIndex: '1', background: 'rgb(249, 250, 251)' }}>
-          <div className="overflow-y-auto overflow-x-auto" style={{ flex: 1, minHeight: 'calc(100vh - 52px - 10px - 80px - 10px - 50px - 4px)', maxHeight: 'calc(100vh - 52px - 10px - 80px - 10px - 50px - 4px)', position: 'relative', zIndex: '1' }}>
+          <div className="overflow-y-auto overflow-x-auto" style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: '1' }}>
             <DataTable
               fields={FIELDS}
               data={paginatedData}

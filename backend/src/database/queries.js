@@ -17,6 +17,11 @@ const buildQuery = (table, options = {}) => {
     }
   }
 
+  // 默认过滤已删除记录（除非显式包含已删除）
+  if (!options.includeDeleted) {
+    conditions.push(`deleted = false`);
+  }
+
   if (conditions.length > 0) {
     query += ' WHERE ' + conditions.join(' AND ');
   }
@@ -113,16 +118,52 @@ const update = async (table, id, data) => {
   return result.rows[0] || null;
 };
 
-// 删除数据
+// 删除数据（软删除）
 const remove = async (table, id) => {
+  const result = await pool.query(
+    `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+    [id]
+  );
+  return result.rows[0] || null;
+};
+
+// 批量删除（软删除）
+const bulkDelete = async (table, ids) => {
+  const result = await pool.query(
+    `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = ANY($1) RETURNING *`,
+    [ids]
+  );
+  return result.rows;
+};
+
+// 永久删除（硬删除）
+const permanentDelete = async (table, id) => {
   const result = await pool.query(`DELETE FROM ${table} WHERE id = $1 RETURNING *`, [id]);
   return result.rows[0] || null;
 };
 
-// 批量删除
-const bulkDelete = async (table, ids) => {
+// 批量永久删除（硬删除）
+const bulkPermanentDelete = async (table, ids) => {
   const result = await pool.query(
     `DELETE FROM ${table} WHERE id = ANY($1) RETURNING *`,
+    [ids]
+  );
+  return result.rows;
+};
+
+// 恢复已删除的数据
+const restore = async (table, id) => {
+  const result = await pool.query(
+    `UPDATE ${table} SET deleted = false, deleted_at = NULL WHERE id = $1 RETURNING *`,
+    [id]
+  );
+  return result.rows[0] || null;
+};
+
+// 批量恢复已删除的数据
+const bulkRestore = async (table, ids) => {
+  const result = await pool.query(
+    `UPDATE ${table} SET deleted = false, deleted_at = NULL WHERE id = ANY($1) RETURNING *`,
     [ids]
   );
   return result.rows;

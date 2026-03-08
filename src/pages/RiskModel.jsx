@@ -66,7 +66,7 @@ const RiskConfigModal = ({ isOpen, onClose, initialData, onSave }) => {
       <div className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            <span className="text-red-500">* </span>账户风险额度比例 (%)
+            <span className="text-red-500">* </span>账户风险额度 (%)
           </label>
           <CustomInput
             type="number"
@@ -75,16 +75,14 @@ const RiskConfigModal = ({ isOpen, onClose, initialData, onSave }) => {
             step="0.1"
             value={totalRiskPercent}
             onChange={handleTotalRiskChange}
-            placeholder="请输入账户风险额度比例"
+            placeholder="请输入"
             error={errors.totalRisk}
           />
-          {errors.totalRisk && (
-            <ErrorMessage message="不能为空" showIcon={true} icon={AlertCircle} />
-          )}
+          {errors.totalRisk && <ErrorMessage />}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            <span className="text-red-500">* </span>单笔风险额度比例 (%)
+            <span className="text-red-500">* </span>单笔风险额度 (%)
           </label>
           <CustomInput
             type="number"
@@ -93,12 +91,10 @@ const RiskConfigModal = ({ isOpen, onClose, initialData, onSave }) => {
             step="0.1"
             value={singleRiskPercent}
             onChange={handleSingleRiskChange}
-            placeholder="请输入单笔风险额度比例"
+            placeholder="请输入"
             error={errors.singleRisk}
           />
-          {errors.singleRisk && (
-            <ErrorMessage message="不能为空" showIcon={true} icon={AlertCircle} />
-          )}
+          {errors.singleRisk && <ErrorMessage />}
         </div>
       </div>
     </Modal>
@@ -413,37 +409,37 @@ const AccountRisk = () => {
         <div style={{ marginTop: '12px', width: '100%', flex: 1, minHeight: 0 }}>
           <div style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', rowGap: '10px' }}>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>当前账户(元)</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>当前账户</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
                 ¥{accountRiskData.currentAccount.toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>本月亏损(元)</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>本月亏损</div>
               <div style={{ fontWeight: 'bold', color: '#EF4444', fontSize: '16px' }}>
                 ¥{accountRiskData.monthlyLoss.toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>月初账户(元)</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>月初账户</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
                 ¥{accountRiskData.startMonthTotal.toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>持仓占用(元)</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>持仓占用</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
                 ¥{accountRiskData.stopLossPreLoss.toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>账户可用(%)</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>账户可用</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
                 {accountRiskData.accountAvailable}%
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>单笔可用(%)</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>单笔可用</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
                 {accountRiskData.singleAvailable}%
               </div>

@@ -273,64 +273,82 @@ const useStore = create(
       virtualTransactions: [],
 
       // 交易记录
-      tradeRecords: Array.from({ length: 10 }, (_, i) => {
-        const isProfit = Math.random() > 0.4
-        const basePrice = 50 + Math.random() * 200
-        const buyPrice = parseFloat(basePrice.toFixed(2))
-        const profitPercent = isProfit ? (Math.random() * 20 + 5) : -(Math.random() * 15 + 3)
-        const sellPrice = parseFloat((buyPrice * (1 + profitPercent / 100)).toFixed(2))
-        const quantity = Math.floor(Math.random() * 500) + 100
-        const buyAmount = buyPrice * quantity
-        const sellAmount = sellPrice * quantity
-        const profit = sellAmount - buyAmount
-
-        const now = new Date()
-        const buyTime = new Date(now - Math.random() * 30 * 24 * 60 * 60 * 1000)
-        const sellTime = new Date(buyTime.getTime() + Math.random() * 20 * 24 * 60 * 60 * 1000)
-
-        return {
-          id: `trade_${i + 1}`,
-          symbol: ['000001', '600036', '600519', '000333', '601318'][i % 5],
-          name: ['平安银行', '招商银行', '贵州茅台', '美的集团', '中国平安'][i % 5],
-          buyOrderId: `buy_${i + 1}`,
-          sellOrderId: `sell_${i + 1}`,
-          buyPrice: buyPrice,
-          buyQuantity: quantity,
-          buyTime: buyTime.toISOString(),
-          buyPsychologicalScore: parseFloat((6 + Math.random() * 3).toFixed(1)),
-          buyStrategyScore: parseFloat((70 + Math.random() * 25).toFixed(1)),
+      tradeRecords: [
+        {
+          id: 'trade_001',
+          tradeNumber: '20240215001',
+          tradeType: '买入',
+          symbol: '600519',
+          name: '贵州茅台',
+          buyOrderId: 'buy_001',
+          sellOrderId: 'sell_001',
+          buyPrice: 1650.00,
+          buyQuantity: 100,
+          buyTime: '2024-02-15T09:30:00.000Z',
+          buyOrderPrice: 1645.00,
+          buyOrderTime: '2024-02-14T15:00:00.000Z',
+          buyPsychologicalScore: 7.5,
+          buyStrategyScore: 85.2,
           buyStrategyId: 1,
-          sellPrice: sellPrice,
-          sellQuantity: quantity,
-          sellTime: sellTime.toISOString(),
-          sellPsychologicalScore: parseFloat((6 + Math.random() * 3).toFixed(1)),
-          sellStrategyScore: parseFloat((70 + Math.random() * 25).toFixed(1)),
+          sellPrice: null,
+          sellQuantity: null,
+          sellTime: null,
+          sellOrderPrice: null,
+          sellOrderTime: null,
+          sellPsychologicalScore: null,
+          sellStrategyScore: null,
+          sellStrategyId: null,
+          buyAmount: '165000.00',
+          sellAmount: null,
+          profit: null,
+          profitPercent: null,
+          holdDuration: 0,
+          buyGrade: 'A',
+          sellGrade: null,
+          overallScore: 85.5,
+          buyChannel: { high: 1682.50, low: 1617.50, upperBand: 1702.00, lowerBand: 1598.00, type: 'bollinger' },
+          sellChannel: null,
+          tradeSummary: null,
+          createdAt: '2024-02-15T09:30:00.000Z'
+        },
+        {
+          id: 'trade_001_sell',
+          tradeNumber: '20240215001',
+          tradeType: '卖出',
+          symbol: '600519',
+          name: '贵州茅台',
+          buyOrderId: 'buy_001',
+          sellOrderId: 'sell_001',
+          buyPrice: 1650.00,
+          buyQuantity: 100,
+          buyTime: '2024-02-15T09:30:00.000Z',
+          buyOrderPrice: 1645.00,
+          buyOrderTime: '2024-02-14T15:00:00.000Z',
+          buyPsychologicalScore: 7.5,
+          buyStrategyScore: 85.2,
+          buyStrategyId: 1,
+          sellPrice: 1725.00,
+          sellQuantity: 100,
+          sellTime: '2024-03-01T10:15:00.000Z',
+          sellOrderPrice: 1720.00,
+          sellOrderTime: '2024-02-28T14:30:00.000Z',
+          sellPsychologicalScore: 8.0,
+          sellStrategyScore: 88.5,
           sellStrategyId: 1,
-          buyAmount: buyAmount.toFixed(2),
-          sellAmount: sellAmount.toFixed(2),
-          profit: profit.toFixed(2),
-          profitPercent: profitPercent.toFixed(2),
-          holdDuration: Math.floor((sellTime - buyTime) / (1000 * 60 * 60 * 24)),
-          buyGrade: ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)],
-          sellGrade: ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)],
-          overallScore: parseFloat((Math.random() * 100).toFixed(2)),
-          buyChannel: {
-            high: parseFloat((buyPrice * 1.05).toFixed(2)),
-            low: parseFloat((buyPrice * 0.95).toFixed(2)),
-            upperBand: parseFloat((buyPrice * 1.08).toFixed(2)),
-            lowerBand: parseFloat((buyPrice * 0.92).toFixed(2)),
-            type: 'bollinger'
-          },
-          sellChannel: {
-            high: parseFloat((sellPrice * 1.05).toFixed(2)),
-            low: parseFloat((sellPrice * 0.95).toFixed(2)),
-            upperBand: parseFloat((sellPrice * 1.08).toFixed(2)),
-            lowerBand: parseFloat((sellPrice * 0.92).toFixed(2)),
-            type: 'bollinger'
-          },
-          createdAt: sellTime.toISOString()
+          buyAmount: '165000.00',
+          sellAmount: '172500.00',
+          profit: '7500.00',
+          profitPercent: '4.55',
+          holdDuration: 15,
+          buyGrade: 'A',
+          sellGrade: 'A',
+          overallScore: 85.5,
+          buyChannel: { high: 1682.50, low: 1617.50, upperBand: 1702.00, lowerBand: 1598.00, type: 'bollinger' },
+          sellChannel: { high: 1761.25, low: 1688.75, upperBand: 1783.00, lowerBand: 1667.00, type: 'bollinger' },
+          tradeSummary: null,
+          createdAt: '2024-03-01T10:15:00.000Z'
         }
-      }),
+      ],
 
       // 股票池数据
       stockPool: [

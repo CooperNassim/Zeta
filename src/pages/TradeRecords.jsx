@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Download } from 'lucide-react'
+import { Download, Edit3 } from 'lucide-react'
 import DataTable from '../components/DataTable'
 import Pagination from '../components/Pagination'
 import EmptyState from '../components/EmptyState'
@@ -8,6 +8,8 @@ import DateRangePicker from '../components/DateRangePicker'
 import FilterSelect from '../components/FilterSelect'
 import SearchInput from '../components/SearchInput'
 import ExportModal from '../components/ExportModal'
+import FormModal from '../components/FormModal'
+import ErrorMessage from '../components/ErrorMessage'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
 import ExcelJS from 'exceljs'
@@ -34,9 +36,14 @@ const TradeRecords = () => {
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportFormat, setExportFormat] = useState('xlsx')
   const [selectedIds, setSelectedIds] = useState([])
+  const [showSummaryModal, setShowSummaryModal] = useState(false)
+  const [summaryFormData, setSummaryFormData] = useState({})
+  const [summaryFormErrors, setSummaryFormErrors] = useState({})
+  const [editingTradeId, setEditingTradeId] = useState(null)
   const pageSize = 20
 
   const tradeRecords = useStore(state => state.tradeRecords)
+  const updateTradeRecord = useStore(state => state.updateTradeRecord)
 
   // 筛选交易记录
   const filteredRecords = (() => {
@@ -131,6 +138,51 @@ const TradeRecords = () => {
       setSelectedIds(selectedIds.filter(sid => sid !== id))
     }
   }
+
+  const handleEditSummary = () => {
+    if (selectedIds.length !== 1) return
+
+    const record = tradeRecords.find(r => r.id === selectedIds[0])
+    if (!record) return
+
+    setEditingTradeId(selectedIds[0])
+    setSummaryFormData({ tradeSummary: record.tradeSummary || '' })
+    setSummaryFormErrors({})
+    setShowSummaryModal(true)
+  }
+
+  const handleSummaryFormSubmit = (e) => {
+    e.preventDefault()
+
+    if (!summaryFormData.tradeSummary || summaryFormData.tradeSummary.trim() === '') {
+      setSummaryFormErrors({ tradeSummary: '不能为空' })
+      return
+    }
+
+    updateTradeRecord(editingTradeId, { tradeSummary: summaryFormData.tradeSummary.trim() })
+    setShowSummaryModal(false)
+    setEditingTradeId(null)
+    setSummaryFormData({})
+    setSummaryFormErrors({})
+  }
+
+  const handleSummaryFormDataChange = (newFormData) => {
+    setSummaryFormData(newFormData)
+    if (newFormData.tradeSummary && newFormData.tradeSummary.trim() !== '') {
+      setSummaryFormErrors({})
+    }
+  }
+
+  const summaryFields = [
+    {
+      key: 'tradeSummary',
+      label: '交易总结',
+      type: 'textarea',
+      placeholder: '请输入交易总结...',
+      required: true,
+      rows: 4
+    }
+  ]
 
   const handleExport = () => {
     if (filteredRecords.length === 0) {
@@ -254,6 +306,16 @@ const TradeRecords = () => {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
+                  onClick={handleEditSummary}
+                  disabled={selectedIds.length !== 1}
+                  className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  交易总结
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={handleExport}
                   disabled={filteredRecords.length === 0}
                   className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -278,13 +340,26 @@ const TradeRecords = () => {
                   { key: 'tradeType', label: '交易类型', width: '80px' },
                   { key: 'symbol', label: '股票代码', width: '100px' },
                   { key: 'name', label: '股票名称', width: '120px' },
-                  { key: 'buyInfo', label: '买入信息', width: '180px' },
-                  { key: 'sellInfo', label: '卖出信息', width: '180px' },
+                  { key: 'tradePrice', label: '交易价格', width: '120px' },
+                  { key: 'orderPrice', label: '预约价格', width: '120px' },
+                  { key: 'tradeQuantity', label: '交易数量', width: '100px' },
+                  { key: 'tradeAmount', label: '交易金额', width: '150px' },
+                  { key: 'tradeSlippage', label: '交易滑点', width: '120px' },
+                  { key: 'tradeCommission', label: '交易佣金', width: '120px' },
+                  { key: 'otherFees', label: '其他费用', width: '120px' },
+                  { key: 'tradeStrategy', label: '交易策略', width: '150px' },
+                  { key: 'tradeTime', label: '交易时间', width: '180px' },
                   { key: 'holdDuration', label: '持仓天数', width: '100px' },
-                  { key: 'profit', label: '盈亏金额', width: '120px' },
-                  { key: 'profitPercent', label: '盈亏比例', width: '120px' },
                   { key: 'grades', label: '操作评分', width: '150px' },
-                  { key: 'overallScore', label: '整体评分', width: '120px' }
+                  { key: 'profitPercent', label: '盈亏比例', width: '120px' },
+                  { key: 'profit', label: '盈亏金额', width: '120px' },
+                  { key: 'fees', label: '手续费', width: '120px' },
+                  { key: 'netProfitPercent', label: '净盈亏比', width: '120px' },
+                  { key: 'netProfit', label: '净盈亏额', width: '120px' },
+                  { key: 'totalSlippage', label: '滑点', width: '120px' },
+                  { key: 'slippageNetProfitRatio', label: '滑净盈比', width: '120px' },
+                  { key: 'overallScore', label: '整体评分', width: '120px' },
+                  { key: 'tradeSummary', label: '交易总结', width: '200px' }
                 ]}
                 data={paginatedData}
                 selectedIds={selectedIds}
@@ -305,23 +380,90 @@ const TradeRecords = () => {
                       </span>
                     )
                   }
-                  if (field.key === 'buyInfo') {
-                    return (
-                      <div style={{ fontSize: '12px' }}>
-                        <div>{item.buyQuantity}股</div>
-                        <div>${item.buyPrice ? item.buyPrice.toFixed(2) : '-'}</div>
-                        <div style={{ color: '#666' }}>{formatDate(item.buyTime)}</div>
-                      </div>
-                    )
+                  if (field.key === 'tradePrice') {
+                    if (item.tradeType === '买入') {
+                      const price = item.buyPrice
+                      return <span>{price !== null && price !== undefined ? (Number.isInteger(price) ? price : price.toFixed(2)) : '-'}</span>
+                    } else {
+                      const price = item.sellPrice
+                      return <span>{price !== null && price !== undefined ? (Number.isInteger(price) ? price : price.toFixed(2)) : '-'}</span>
+                    }
                   }
-                  if (field.key === 'sellInfo') {
-                    return (
-                      <div style={{ fontSize: '12px' }}>
-                        <div>{item.sellQuantity ? item.sellQuantity + '股' : '-'}</div>
-                        <div>{item.sellPrice ? '$' + item.sellPrice.toFixed(2) : '-'}</div>
-                        <div style={{ color: '#666' }}>{item.sellTime ? formatDate(item.sellTime) : '-'}</div>
-                      </div>
-                    )
+                  if (field.key === 'orderPrice') {
+                    if (item.tradeType === '买入') {
+                      const orderPrice = item.buyOrderPrice
+                      const tradePrice = item.buyPrice
+                      const price = orderPrice !== null && orderPrice !== undefined ? orderPrice : tradePrice
+                      return <span>{price !== null && price !== undefined ? (Number.isInteger(price) ? price : price.toFixed(2)) : '-'}</span>
+                    } else {
+                      const orderPrice = item.sellOrderPrice
+                      const tradePrice = item.sellPrice
+                      const price = orderPrice !== null && orderPrice !== undefined ? orderPrice : tradePrice
+                      return <span>{price !== null && price !== undefined ? (Number.isInteger(price) ? price : price.toFixed(2)) : '-'}</span>
+                    }
+                  }
+                  if (field.key === 'tradeQuantity') {
+                    if (item.tradeType === '买入') {
+                      return <span>{item.buyQuantity ? item.buyQuantity : '-'}</span>
+                    } else {
+                      return <span>{item.sellQuantity ? item.sellQuantity : '-'}</span>
+                    }
+                  }
+                  if (field.key === 'tradeAmount') {
+                    if (item.tradeType === '买入') {
+                      const amount = item.buyAmount ? parseFloat(item.buyAmount) : (item.buyPrice && item.buyQuantity ? item.buyPrice * item.buyQuantity : null)
+                      return <span>{amount !== null && amount !== undefined ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</span>
+                    } else {
+                      const amount = item.sellAmount ? parseFloat(item.sellAmount) : (item.sellPrice && item.sellQuantity ? item.sellPrice * item.sellQuantity : null)
+                      return <span>{amount !== null && amount !== undefined ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</span>
+                    }
+                  }
+                  if (field.key === 'tradeSlippage') {
+                    if (item.tradeType === '买入') {
+                      const tradePrice = item.buyPrice
+                      const orderPrice = item.buyOrderPrice
+                      const quantity = item.buyQuantity
+                      if (tradePrice !== null && tradePrice !== undefined && orderPrice !== null && orderPrice !== undefined && quantity) {
+                        const slippage = (tradePrice - orderPrice) * quantity
+                        return <span style={{ color: slippage > 0 ? '#dc2626' : slippage < 0 ? '#16a34a' : '#6b7280' }}>{slippage.toFixed(2)}</span>
+                      }
+                      return <span>-</span>
+                    } else {
+                      const tradePrice = item.sellPrice
+                      const orderPrice = item.sellOrderPrice
+                      const quantity = item.sellQuantity
+                      if (tradePrice !== null && tradePrice !== undefined && orderPrice !== null && orderPrice !== undefined && quantity) {
+                        const slippage = (tradePrice - orderPrice) * quantity
+                        return <span style={{ color: slippage > 0 ? '#16a34a' : slippage < 0 ? '#dc2626' : '#6b7280' }}>{slippage.toFixed(2)}</span>
+                      }
+                      return <span>-</span>
+                    }
+                  }
+                  if (field.key === 'tradeCommission') {
+                    return <span>-</span>
+                  }
+                  if (field.key === 'otherFees') {
+                    return <span>-</span>
+                  }
+                  if (field.key === 'tradeStrategy') {
+                    if (item.tradeType === '买入') {
+                      const strategyId = item.buyStrategyId
+                      const strategies = useStore.getState().strategies.buy || []
+                      const strategy = strategies.find(s => s.id === strategyId)
+                      return <span>{strategy ? strategy.name : '-'}</span>
+                    } else {
+                      const strategyId = item.sellStrategyId
+                      const strategies = useStore.getState().strategies.sell || []
+                      const strategy = strategies.find(s => s.id === strategyId)
+                      return <span>{strategy ? strategy.name : '-'}</span>
+                    }
+                  }
+                  if (field.key === 'tradeTime') {
+                    if (item.tradeType === '买入') {
+                      return <span>{item.buyTime ? formatDate(item.buyTime) : '-'}</span>
+                    } else {
+                      return <span>{item.sellTime ? formatDate(item.sellTime) : '-'}</span>
+                    }
                   }
                   if (field.key === 'profit') {
                     const profit = parseFloat(item.profit)
@@ -333,6 +475,21 @@ const TradeRecords = () => {
                         {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
                       </span>
                     )
+                  }
+                  if (field.key === 'fees') {
+                    return <span>-</span>
+                  }
+                  if (field.key === 'netProfitPercent') {
+                    return <span>-</span>
+                  }
+                  if (field.key === 'netProfit') {
+                    return <span>-</span>
+                  }
+                  if (field.key === 'totalSlippage') {
+                    return <span>-</span>
+                  }
+                  if (field.key === 'slippageNetProfitRatio') {
+                    return <span>-</span>
                   }
                   if (field.key === 'profitPercent') {
                     const percent = parseFloat(item.profitPercent)
@@ -368,6 +525,19 @@ const TradeRecords = () => {
                           卖{item.sellGrade || '-'}
                         </span>
                       </div>
+                    )
+                  }
+                  if (field.key === 'tradeSummary') {
+                    return (
+                      <span style={{
+                        display: 'block',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '180px'
+                      }}>
+                        {item.tradeSummary || '-'}
+                      </span>
                     )
                   }
                   if (field.key === 'overallScore') {
@@ -419,6 +589,49 @@ const TradeRecords = () => {
         exportFormat={exportFormat}
         onFormatChange={(format) => setExportFormat(format)}
         totalCount={filteredRecords.length}
+      />
+
+      {/* 交易总结弹窗 */}
+      <FormModal
+        isOpen={showSummaryModal}
+        onClose={() => {
+          setShowSummaryModal(false)
+          setEditingTradeId(null)
+          setSummaryFormData({})
+          setSummaryFormErrors({})
+        }}
+        onSubmit={handleSummaryFormSubmit}
+        title="填写交易总结"
+        fields={summaryFields}
+        formData={summaryFormData}
+        formErrors={summaryFormErrors}
+        onFormDataChange={handleSummaryFormDataChange}
+        getFieldComponent={(field) => {
+          if (field.type === 'textarea') {
+            return (
+              <div key={field.key}>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {field.label}
+                  {field.required && <span className="text-red-500 ml-1">*</span>}
+                </label>
+                <textarea
+                  name={field.key}
+                  value={summaryFormData[field.key] || ''}
+                  onChange={(e) => handleSummaryFormDataChange({ ...summaryFormData, [field.key]: e.target.value })}
+                  placeholder={field.placeholder}
+                  rows={field.rows}
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    summaryFormErrors[field.key] ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {summaryFormErrors[field.key] && (
+                  <ErrorMessage message={summaryFormErrors[field.key]} />
+                )}
+              </div>
+            )
+          }
+          return null
+        }}
       />
     </div>
   )

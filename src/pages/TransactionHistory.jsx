@@ -579,7 +579,8 @@ const TransactionHistory = () => {
             onSelectOne={handleSelectOne}
             renderCell={(field, item) => {
               if (field.key === 'createdAt') {
-                return format(new Date(item.createdAt), 'yyyy-MM-dd HH:mm:ss')
+                const date = item.createdAt ? new Date(item.createdAt) : null
+                return date && !isNaN(date.getTime()) ? format(date, 'yyyy-MM-dd HH:mm:ss') : '-'
               }
               if (field.key === 'type') {
                 const typeMap = { '买入': '买入股票', '卖出': '卖出股票' }

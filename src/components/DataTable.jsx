@@ -12,7 +12,7 @@ const DataTable = ({
   showCheckbox = true
 }) => {
   const handleSelectAll = (checked) => {
-    if (checked) {
+    if (checked && data) {
       onSelectAll(data.map(d => d.id))
     } else {
       onSelectAll([])
@@ -27,7 +27,7 @@ const DataTable = ({
             <th className="px-0 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap w-10 sticky left-0 bg-[#F4F5F7]" style={{ backgroundColor: '#F4F5F7', margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px', zIndex: '30' }}>
               <input
                 type="checkbox"
-                checked={selectedIds.length === data.length && data.length > 0}
+                checked={data && selectedIds.length === data.length && data.length > 0}
                 onChange={(e) => handleSelectAll(e.target.checked)}
                 className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                 style={{ position: 'relative', zIndex: '1' }}
@@ -42,7 +42,7 @@ const DataTable = ({
         </tr>
       </thead>
       <tbody>
-        {data.length === 0 ? (
+        {!data || data.length === 0 ? (
           <tr>
             <td colSpan={fields.filter(field => !field.hideInTable).length + (showCheckbox ? 1 : 0)} className="px-0 py-4 text-center text-gray-500 text-sm" style={{ backgroundColor: '#ffffff' }}>
               {emptyStateProps.Component && <emptyStateProps.Component {...emptyStateProps.props} />}
@@ -52,7 +52,7 @@ const DataTable = ({
           <>
             {data.map((item, index) => (
               <tr
-                key={item.id}
+                key={`${item.id || item.tradeNumber || ''}-${index}`}
                 className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                 style={{ backgroundColor: '#ffffff' }}
               >

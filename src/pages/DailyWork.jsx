@@ -538,6 +538,9 @@ const DailyWork = () => {
   }
 
   const confirmDelete = () => {
+    // 获取选中的数据项（包含日期）
+    const selectedItems = dailyWorkData.filter(d => selectedIds.includes(d.id))
+    console.log('[DailyWork] 选中要删除的数据:', selectedItems.map(d => ({ id: d.id, date: d.date })))
     deleteMultipleDailyWorkData(selectedIds)
     setSelectedIds([])
     setShowDeleteModal(false)

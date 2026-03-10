@@ -3,7 +3,8 @@ import { persist } from 'zustand/middleware'
 import { calculateTradeGrade, calculateOverallScore } from '../utils/technicalIndicators'
 
 // API基础URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+// 使用相对路径，通过 Vite 代理到后端
+const API_BASE_URL = ''
 
 // API调用函数
 const apiCall = async (endpoint, method = 'GET', data = null) => {
@@ -178,8 +179,45 @@ const useStore = create(
       // 风险配置
       riskConfig: {
         totalRiskPercent: 6,
-        singleRiskPercent: 2
+        singleRiskPercent: 2,
+        // 单笔风控
+        singleOrder: {
+          maxQuantity: 10000,
+          maxAmount: 1000000,
+          minQuantity: 100,
+        },
+        // 单股风控
+        singleStock: {
+          maxPositionRatio: 0.3,
+          maxPositionAmount: 500000,
+        },
+        // 单日风控
+        daily: {
+          maxTrades: 10,
+          maxLoss: 50000,
+          maxBuyAmount: 2000000,
+          maxSellAmount: 2000000,
+        },
+        // 熔断机制
+        circuitBreaker: {
+          enabled: true,
+          consecutiveLosses: 3,
+          pauseDuration: 30,
+        }
       },
+
+      // 实时风控数据
+      riskData: {
+        todayTrades: 0,
+        todayBuyAmount: 0,
+        todayLoss: 0,
+        consecutiveLosses: 0,
+        isCircuitBroken: false,
+        breakUntil: null,
+      },
+
+      // 止损止盈订单列表
+      stopOrders: [],
 
       // 账户风险数据
       accountRiskData: {
@@ -198,45 +236,29 @@ const useStore = create(
       // 交易策略记录（扁平化存储，用于表格展示）
       strategyRecords: [],
 
-      // 预约单
-      orders: Array.from({ length: 40 }, (_, i) => {
-        const types = ['buy', 'sell']
-        const statuses = ['pending', 'executed', 'cancelled']
-        const isVirtual = Math.random() > 0.5
-        const createdAt = new Date(Date.now() - (39 - i) * 24 * 60 * 60 * 1000 - Math.random() * 24 * 60 * 60 * 1000)
-
-        // 生成模拟数据
-        const order = {
-          id: Date.now() + i,
-          tradeNumber: createdAt.getFullYear() +
-            String(createdAt.getMonth() + 1).padStart(2, '0') +
-            String(createdAt.getDate()).padStart(2, '0') +
-            String(i + 1).padStart(3, '0'),
-          type: types[Math.floor(Math.random() * types.length)],
-          symbol: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA'][Math.floor(Math.random() * 6)],
-          price: (Math.random() * 200 + 50).toFixed(2),
-          quantity: Math.floor(Math.random() * 20 + 1) * 10,
-          name: ['苹果公司', '微软', '谷歌', '亚马逊', '特斯拉', '英伟达'][Math.floor(Math.random() * 6)],
-          status: statuses[Math.floor(Math.random() * statuses.length)],
-          isVirtual,
-          psychologicalScore: Math.floor(Math.random() * 100),
-          strategyScore: Math.floor(Math.random() * 100),
-          riskScore: Math.floor(Math.random() * 100),
-          overallScore: Math.floor(Math.random() * 100),
-          createdAt: createdAt.toISOString(),
-          executedAt: null,
-          cancelledAt: null
-        }
-
-        // 如果已执行或已取消，设置相应的时间
-        if (order.status === 'executed') {
-          order.executedAt = new Date(new Date(order.createdAt).getTime() + Math.random() * 60 * 60 * 1000).toISOString()
-        } else if (order.status === 'cancelled') {
-          order.cancelledAt = new Date(new Date(order.createdAt).getTime() + Math.random() * 60 * 60 * 1000).toISOString()
-        }
-
-        return order
-      }),
+      // 预约单（固定数据）
+      orders: [
+        { id: 1700000000001, tradeNumber: '20240101001', type: 'buy', symbol: '600519', name: '贵州茅台', price: '1650.00', quantity: 100, status: 'executed', isVirtual: false, psychologicalScore: 75, strategyScore: 82, riskScore: 88, overallScore: 82, createdAt: '2024-01-01T09:30:00.000Z', executedAt: '2024-01-01T09:30:00.000Z', cancelledAt: null },
+        { id: 1700000000002, tradeNumber: '20240101002', type: 'sell', symbol: '600519', name: '贵州茅台', price: '1725.00', quantity: 100, status: 'executed', isVirtual: false, psychologicalScore: 80, strategyScore: 85, riskScore: 90, overallScore: 85, createdAt: '2024-01-02T10:15:00.000Z', executedAt: '2024-01-02T10:15:00.000Z', cancelledAt: null },
+        { id: 1700000000003, tradeNumber: '20240102001', type: 'buy', symbol: '000333', name: '美的集团', price: '62.50', quantity: 200, status: 'pending', isVirtual: true, psychologicalScore: 70, strategyScore: 78, riskScore: 85, overallScore: 78, createdAt: '2024-01-03T14:00:00.000Z', executedAt: null, cancelledAt: null },
+        { id: 1700000000004, tradeNumber: '20240103001', type: 'buy', symbol: '601318', name: '中国平安', price: '45.20', quantity: 300, status: 'executed', isVirtual: false, psychologicalScore: 65, strategyScore: 75, riskScore: 80, overallScore: 73, createdAt: '2024-01-04T11:00:00.000Z', executedAt: '2024-01-04T11:00:00.000Z', cancelledAt: null },
+        { id: 1700000000005, tradeNumber: '20240104001', type: 'sell', symbol: '601318', name: '中国平安', price: '46.80', quantity: 300, status: 'executed', isVirtual: false, psychologicalScore: 85, strategyScore: 88, riskScore: 92, overallScore: 88, createdAt: '2024-01-05T13:30:00.000Z', executedAt: '2024-01-05T13:30:00.000Z', cancelledAt: null },
+        { id: 1700000000006, tradeNumber: '20240105001', type: 'buy', symbol: '600036', name: '招商银行', price: '35.00', quantity: 500, status: 'pending', isVirtual: true, psychologicalScore: 72, strategyScore: 80, riskScore: 86, overallScore: 79, createdAt: '2024-01-06T09:15:00.000Z', executedAt: null, cancelledAt: null },
+        { id: 1700000000007, tradeNumber: '20240106001', type: 'buy', symbol: '000001', name: '平安银行', price: '10.20', quantity: 1000, status: 'cancelled', isVirtual: false, psychologicalScore: 60, strategyScore: 70, riskScore: 75, overallScore: 68, createdAt: '2024-01-07T10:00:00.000Z', executedAt: null, cancelledAt: '2024-01-07T10:05:00.000Z' },
+        { id: 1700000000008, tradeNumber: '20240107001', type: 'sell', symbol: '000333', name: '美的集团', price: '65.00', quantity: 200, status: 'pending', isVirtual: true, psychologicalScore: 78, strategyScore: 82, riskScore: 88, overallScore: 83, createdAt: '2024-01-08T14:30:00.000Z', executedAt: null, cancelledAt: null },
+        { id: 1700000000009, tradeNumber: '20240108001', type: 'buy', symbol: 'AAPL', name: '苹果公司', price: '185.50', quantity: 50, status: 'executed', isVirtual: true, psychologicalScore: 88, strategyScore: 90, riskScore: 92, overallScore: 90, createdAt: '2024-01-09T08:00:00.000Z', executedAt: '2024-01-09T08:00:00.000Z', cancelledAt: null },
+        { id: 1700000000010, tradeNumber: '20240109001', type: 'sell', symbol: 'AAPL', name: '苹果公司', price: '192.00', quantity: 50, status: 'executed', isVirtual: true, psychologicalScore: 82, strategyScore: 86, riskScore: 90, overallScore: 86, createdAt: '2024-01-10T09:30:00.000Z', executedAt: '2024-01-10T09:30:00.000Z', cancelledAt: null },
+        { id: 1700000000011, tradeNumber: '20240110001', type: 'buy', symbol: 'MSFT', name: '微软', price: '375.00', quantity: 30, status: 'pending', isVirtual: false, psychologicalScore: 75, strategyScore: 80, riskScore: 85, overallScore: 80, createdAt: '2024-01-11T10:00:00.000Z', executedAt: null, cancelledAt: null },
+        { id: 1700000000012, tradeNumber: '20240111001', type: 'sell', symbol: 'MSFT', name: '微软', price: '385.00', quantity: 30, status: 'pending', isVirtual: false, psychologicalScore: 80, strategyScore: 85, riskScore: 88, overallScore: 84, createdAt: '2024-01-12T11:00:00.000Z', executedAt: null, cancelledAt: null },
+        { id: 1700000000013, tradeNumber: '20240112001', type: 'buy', symbol: 'GOOGL', name: '谷歌', price: '140.00', quantity: 40, status: 'executed', isVirtual: true, psychologicalScore: 70, strategyScore: 78, riskScore: 82, overallScore: 77, createdAt: '2024-01-13T09:00:00.000Z', executedAt: '2024-01-13T09:00:00.000Z', cancelledAt: null },
+        { id: 1700000000014, tradeNumber: '20240113001', type: 'sell', symbol: 'GOOGL', name: '谷歌', price: '145.00', quantity: 40, status: 'cancelled', isVirtual: true, psychologicalScore: 65, strategyScore: 72, riskScore: 78, overallScore: 72, createdAt: '2024-01-14T10:30:00.000Z', executedAt: null, cancelledAt: '2024-01-14T10:35:00.000Z' },
+        { id: 1700000000015, tradeNumber: '20240114001', type: 'buy', symbol: 'AMZN', name: '亚马逊', price: '155.00', quantity: 35, status: 'pending', isVirtual: false, psychologicalScore: 78, strategyScore: 82, riskScore: 86, overallScore: 82, createdAt: '2024-01-15T13:00:00.000Z', executedAt: null, cancelledAt: null },
+        { id: 1700000000016, tradeNumber: '20240115001', type: 'sell', symbol: 'AMZN', name: '亚马逊', price: '160.00', quantity: 35, status: 'pending', isVirtual: false, psychologicalScore: 83, strategyScore: 87, riskScore: 90, overallScore: 87, createdAt: '2024-01-16T14:00:00.000Z', executedAt: null, cancelledAt: null },
+        { id: 1700000000017, tradeNumber: '20240116001', type: 'buy', symbol: 'TSLA', name: '特斯拉', price: '245.00', quantity: 25, status: 'executed', isVirtual: true, psychologicalScore: 90, strategyScore: 92, riskScore: 95, overallScore: 92, createdAt: '2024-01-17T08:30:00.000Z', executedAt: '2024-01-17T08:30:00.000Z', cancelledAt: null },
+        { id: 1700000000018, tradeNumber: '20240117001', type: 'sell', symbol: 'TSLA', name: '特斯拉', price: '260.00', quantity: 25, status: 'executed', isVirtual: true, psychologicalScore: 85, strategyScore: 88, riskScore: 92, overallScore: 88, createdAt: '2024-01-18T09:00:00.000Z', executedAt: '2024-01-18T09:00:00.000Z', cancelledAt: null },
+        { id: 1700000000019, tradeNumber: '20240118001', type: 'buy', symbol: 'NVDA', name: '英伟达', price: '520.00', quantity: 20, status: 'pending', isVirtual: false, psychologicalScore: 92, strategyScore: 95, riskScore: 98, overallScore: 95, createdAt: '2024-01-19T10:00:00.000Z', executedAt: null, cancelledAt: null },
+        { id: 1700000000020, tradeNumber: '20240119001', type: 'sell', symbol: 'NVDA', name: '英伟达', price: '550.00', quantity: 20, status: 'pending', isVirtual: false, psychologicalScore: 88, strategyScore: 91, riskScore: 94, overallScore: 91, createdAt: '2024-01-20T11:00:00.000Z', executedAt: null, cancelledAt: null }
+      ],
 
       // 交易编号计数器 (日期 -> 当前序号)
       tradeNumberCounter: {},
@@ -377,14 +399,86 @@ const useStore = create(
       getAccount: (accountType = 'real') => (state) => state.account[accountType],
 
       // 添加每日功课数据
-      addDailyWorkData: (data) => set((state) => ({
-        dailyWorkData: [...state.dailyWorkData, { ...data, id: Date.now() }]
-      })),
+      addDailyWorkData: (data) => set((state) => {
+        const now = new Date().toISOString()
+        // 只发送数据库需要的字段
+        const dbData = {
+          date: data.date || null,
+          market_trend: data.sentiment || null,
+          market_volume: data.volume || null,
+          emotion_score: data.emotionScore || null,
+          confidence_score: data.confidenceScore || null,
+          notes: data.notes || null
+        }
+        console.log('[Store] 发送到数据库的每日功课数据:', dbData)
+        
+        // 创建一个临时 id 用于本地显示
+        const tempId = Date.now()
+        
+        apiCall('/api/daily_work_data', 'POST', dbData).then(res => {
+          console.log('[Store] 每日功课同步结果:', res)
+          // 如果数据库返回了真实 id，更新本地数据
+          if (res.success && res.data && res.data.id) {
+            // 这里可以触发一个更新操作，但简单起见，我们依赖同步来获取真实数据
+          }
+        }).catch(err => console.error('同步每日功课到数据库失败:', err))
 
-      // 批量导入每日功课数据
-      importDailyWorkData: (dataList) => set((state) => ({
-        dailyWorkData: [...dataList.map(d => ({ ...d, id: Date.now() + Math.random(), deleted: false, deletedAt: null }))]
-      })),
+        // 本地保存，用日期作为唯一标识
+        const newData = { ...data, id: tempId, date: data.date, deleted: false, deletedAt: null, createdAt: now, updatedAt: now }
+        return {
+          dailyWorkData: [...state.dailyWorkData, newData]
+        }
+      }),
+
+      // 批量导入每日功课数据（从数据库同步）
+      importDailyWorkData: (dataList) => set((state) => {
+        console.log('[Store] 从数据库导入的每日功课数据:', dataList)
+        
+        // 过滤已删除的数据
+        const activeData = dataList.filter(d => d.deleted !== true)
+        console.log('[Store] 过滤已删除后的数据:', activeData.map(d => d.date))
+        
+        // 转换数据库字段名 (snake_case -> camelCase)
+        const newData = activeData.map(d => {
+          // 处理日期格式
+          let dateStr = d.date
+          if (d.date && typeof d.date === 'object') {
+            dateStr = d.date.toISOString().split('T')[0]
+          } else if (d.date) {
+            dateStr = String(d.date).split('T')[0]
+          }
+          
+          return {
+            ...d,
+            date: dateStr,
+            // 数据库字段 -> 前端字段
+            sentiment: d.market_trend || '',
+            volume: d.market_volume || '',
+            emotionScore: d.emotion_score || '',
+            confidenceScore: d.confidence_score || '',
+            notes: d.notes || '',
+            createdAt: d.created_at || new Date().toISOString(),
+            updatedAt: d.updated_at || new Date().toISOString(),
+            deleted: d.deleted || false,
+            deletedAt: d.deleted_at || null
+          }
+        })
+        
+        // 使用 Map 按日期去重，数据库数据优先
+        const dataMap = new Map()
+        // 先加本地数据
+        state.dailyWorkData.forEach(d => {
+          if (d.date) dataMap.set(d.date, d)
+        })
+        // 再加数据库数据（覆盖本地）
+        newData.forEach(d => {
+          if (d.date) dataMap.set(d.date, d)
+        })
+        
+        const mergedData = Array.from(dataMap.values())
+        console.log('[Store] 合并后的数据:', mergedData.map(d => d.date))
+        return { dailyWorkData: mergedData }
+      }),
 
       // 删除每日功课数据
       deleteDailyWorkData: (id) => set((state) => {
@@ -396,9 +490,25 @@ const useStore = create(
         }
       }),
 
-      // 批量删除每日功课数据
+      // 批量删除每日功课数据（使用日期删除）
       deleteMultipleDailyWorkData: (ids) => set((state) => {
-        apiCall(`/api/daily_work_data/bulk`, 'DELETE', { ids })
+        console.log('[Store] 删除每日功课，接收到的ids:', ids)
+        
+        // 无论 id 匹配与否，都获取选中项对应的数据
+        const selectedData = state.dailyWorkData.filter(d => ids.includes(d.id))
+        const datesToDelete = selectedData.map(d => d.date).filter(d => d)
+        
+        console.log('[Store] 删除每日功课，选中数据:', selectedData.map(d => ({ id: d.id, date: d.date })))
+        console.log('[Store] 删除每日功课，要删除的日期:', datesToDelete)
+        
+        // 按日期删除
+        if (datesToDelete.length > 0) {
+          apiCall(`/api/daily_work_data/bulk`, 'DELETE', { dates: datesToDelete }).then(res => {
+            console.log('[Store] 删除结果:', res)
+          }).catch(err => console.error('[Store] 删除失败:', err))
+        }
+        
+        // 本地也标记删除
         return {
           dailyWorkData: state.dailyWorkData.map(d =>
             ids.includes(d.id) ? { ...d, deleted: true, deletedAt: new Date().toISOString() } : d
@@ -676,8 +786,13 @@ const useStore = create(
       // 添加预约单
       addOrder: (order) => set((state) => {
         const tradeNumber = state.generateTradeNumber()
+        const newOrder = { ...order, id: Date.now(), tradeNumber, createdAt: new Date().toISOString(), deleted: false, deletedAt: null }
+
+        // 同步到数据库
+        apiCall('/api/orders', 'POST', newOrder).catch(err => console.error('同步订单到数据库失败:', err))
+
         return {
-          orders: [...state.orders, { ...order, id: Date.now(), tradeNumber, createdAt: new Date().toISOString(), deleted: false, deletedAt: null }]
+          orders: [...state.orders, newOrder]
         }
       }),
 
@@ -876,6 +991,74 @@ const useStore = create(
         }
       }),
 
+      // 添加止损止盈订单
+      addStopOrder: (order) => set((state) => {
+        const orderId = 'SO' + Date.now()
+        return {
+          stopOrders: [...state.stopOrders, {
+            ...order,
+            id: orderId,
+            orderId,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            activatedAt: null,
+            executedAt: null,
+            cancelledAt: null,
+          }]
+        }
+      }),
+
+      // 更新止损止盈订单
+      updateStopOrder: (id, data) => set((state) => ({
+        stopOrders: state.stopOrders.map(o =>
+          o.id === id ? { ...o, ...data, updatedAt: new Date().toISOString() } : o
+        )
+      })),
+
+      // 删除止损止盈订单
+      deleteStopOrder: (id) => set((state) => ({
+        stopOrders: state.stopOrders.filter(o => o.id !== id)
+      })),
+
+      // 触发止损止盈订单（系统调用）
+      triggerStopOrder: (id, triggerPrice, triggerType) => set((state) => {
+        const order = state.stopOrders.find(o => o.id === id)
+        if (!order) return state
+
+        return {
+          stopOrders: state.stopOrders.map(o =>
+            o.id === id ? {
+              ...o,
+              status: 'executed',
+              triggerPrice,
+              triggerType,
+              executedAt: new Date().toISOString()
+            } : o
+          )
+        }
+      }),
+
+      // 取消止损止盈订单
+      cancelStopOrder: (id) => set((state) => ({
+        stopOrders: state.stopOrders.map(o =>
+          o.id === id ? { ...o, status: 'cancelled', cancelledAt: new Date().toISOString() } : o
+        )
+      })),
+
+      // 更新风控数据
+      updateRiskData: (data) => set((state) => ({
+        riskData: { ...state.riskData, ...data }
+      })),
+
+      // 重置熔断
+      resetCircuitBreaker: () => set((state) => ({
+        riskData: {
+          ...state.riskData,
+          isCircuitBroken: false,
+          breakUntil: null
+        }
+      })),
+
       // 恢复预约单
       restoreOrder: (id) => set((state) => {
         apiCall(`/api/orders/${id}/restore`, 'PATCH')
@@ -913,21 +1096,28 @@ const useStore = create(
       }),
 
       // 添加账单
-      addTransaction: (transaction, accountType = 'real') => set((state) => ({
-        transactions: accountType === 'real'
-          ? [...state.transactions, { ...transaction, id: Date.now(), deleted: false, deletedAt: null }]
-          : state.transactions,
-        virtualTransactions: accountType === 'virtual'
-          ? [...state.virtualTransactions, { ...transaction, id: Date.now(), deleted: false, deletedAt: null }]
-          : state.virtualTransactions,
-        account: {
-          ...state.account,
-          [accountType]: {
-            ...state.account[accountType],
-            balance: state.account[accountType].balance + transaction.amount
+      addTransaction: (transaction, accountType = 'real') => set((state) => {
+        const newTransaction = { ...transaction, id: Date.now(), deleted: false, deletedAt: null }
+
+        // 同步到数据库
+        apiCall('/api/transactions', 'POST', newTransaction).catch(err => console.error('同步账单到数据库失败:', err))
+
+        return {
+          transactions: accountType === 'real'
+            ? [...state.transactions, newTransaction]
+            : state.transactions,
+          virtualTransactions: accountType === 'virtual'
+            ? [...state.virtualTransactions, newTransaction]
+            : state.virtualTransactions,
+          account: {
+            ...state.account,
+            [accountType]: {
+              ...state.account[accountType],
+              balance: state.account[accountType].balance + transaction.amount
+            }
           }
         }
-      })),
+      }),
 
       // 删除账单
       deleteTransaction: (id, accountType = 'real') => set((state) => {
@@ -1192,9 +1382,112 @@ const useStore = create(
       // ====== 股票池相关 ======
 
       // 添加股票到股票池
-      addStock: (stock) => set((state) => ({
-        stockPool: [...state.stockPool, { ...stock, id: Date.now(), createdAt: new Date().toISOString(), deleted: false, deletedAt: null }]
-      })),
+      addStock: (stock) => set((state) => {
+        const newStock = { ...stock, id: Date.now(), createdAt: new Date().toISOString(), deleted: false, deletedAt: null }
+
+        // 同步到数据库
+        apiCall('/api/stock_pool', 'POST', newStock).catch(err => console.error('同步股票到数据库失败:', err))
+
+        return {
+          stockPool: [...state.stockPool, newStock]
+        }
+      }),
+
+      // 批量导入订单（从数据库同步）- 合并去重，优先使用数据库数据
+      importOrders: (orders) => set((state) => {
+        // 转换数据库字段名 (snake_case -> camelCase)
+        const newOrders = orders.map(o => ({
+          ...o,
+          id: o.id?.toString(),
+          tradeNumber: o.tradeNumber || o.order_id || o.id?.toString(),
+          createdAt: o.created_at || o.createdAt || new Date().toISOString(),
+          executedAt: o.executed_at || o.executedAt || null,
+          deleted: o.deleted || false,
+          deletedAt: o.deleted_at || o.deletedAt || null
+        }))
+        // 如果本地没有订单，直接使用数据库数据
+        if (state.orders.length === 0) {
+          return { orders: newOrders }
+        }
+        // 合并去重：使用 tradeNumber 作为唯一标识
+        // 优先使用数据库数据（更新），同时清理本地重复数据
+        const orderMap = new Map()
+        // 先添加本地订单（如果本地有重复，后面的会覆盖前面的，只保留一条）
+        state.orders.forEach(o => {
+          const key = o.tradeNumber || o.id?.toString()
+          if (key) orderMap.set(key, o)
+        })
+        // 再添加数据库订单（覆盖本地旧数据，确保最新）
+        newOrders.forEach(o => {
+          const key = o.tradeNumber || o.id?.toString()
+          if (key) {
+            orderMap.set(key, o)
+          }
+        })
+        const mergedOrders = Array.from(orderMap.values())
+        // 按创建时间排序
+        mergedOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        return { orders: mergedOrders }
+      }),
+
+      // 批量导入账单（从数据库同步）- 合并到现有数据
+      importTransactions: (transactions) => set((state) => {
+        const newTransactions = transactions.map(t => ({
+          ...t,
+          createdAt: t.created_at || t.createdAt || new Date().toISOString(),
+          deleted: t.deleted || false,
+          deletedAt: t.deleted_at || t.deletedAt || null
+        }))
+        // 按 id 去重
+        const existingIds = new Set(state.transactions.map(t => t.id))
+        const mergedTransactions = [...state.transactions]
+        newTransactions.forEach(t => {
+          if (!existingIds.has(t.id)) {
+            mergedTransactions.push(t)
+          }
+        })
+        return { transactions: mergedTransactions }
+      }),
+
+      // 批量导入交易记录（从数据库同步）- 合并到现有数据
+      importTradeRecords: (records) => set((state) => {
+        const newRecords = records.map(r => ({
+          ...r,
+          tradeNumber: r.tradeNumber || r.id,
+          createdAt: r.created_at || r.createdAt || new Date().toISOString(),
+          deleted: r.deleted || false,
+          deletedAt: r.deleted_at || r.deletedAt || null
+        }))
+        // 按 tradeNumber 去重
+        const existingTradeNumbers = new Set(state.tradeRecords.map(r => r.tradeNumber))
+        const mergedRecords = [...state.tradeRecords]
+        newRecords.forEach(r => {
+          if (!existingTradeNumbers.has(r.tradeNumber)) {
+            mergedRecords.push(r)
+          }
+        })
+        return { tradeRecords: mergedRecords }
+      }),
+
+      // 批量导入股票（从数据库同步）- 合并到现有数据
+      importStocks: (stocks) => set((state) => {
+        const newStocks = stocks.map(s => ({
+          ...s,
+          createdAt: s.created_at || s.createdAt || new Date().toISOString(),
+          updatedAt: s.updated_at || s.updatedAt || null,
+          deleted: s.deleted || false,
+          deletedAt: s.deleted_at || s.deletedAt || null
+        }))
+        // 按 symbol 去重
+        const existingSymbols = new Set(state.stockPool.map(s => s.symbol))
+        const mergedStocks = [...state.stockPool]
+        newStocks.forEach(s => {
+          if (!existingSymbols.has(s.symbol)) {
+            mergedStocks.push(s)
+          }
+        })
+        return { stockPool: mergedStocks }
+      }),
 
       // 更新股票信息
       updateStock: (id, data) => set((state) => ({
@@ -1287,9 +1580,16 @@ const useStore = create(
       // ====== 完整交易记录相关 ======
 
       // 添加完整交易记录（买入和卖出都完成后自动生成）
-      addCompleteTradeRecord: (tradeRecord) => set((state) => ({
-        tradeRecords: [...state.tradeRecords, { ...tradeRecord, id: Date.now(), createdAt: new Date().toISOString(), deleted: false, deletedAt: null }]
-      })),
+      addCompleteTradeRecord: (tradeRecord) => set((state) => {
+        const newRecord = { ...tradeRecord, id: Date.now(), createdAt: new Date().toISOString(), deleted: false, deletedAt: null }
+
+        // 同步到数据库
+        apiCall('/api/trade_records', 'POST', newRecord).catch(err => console.error('同步交易记录到数据库失败:', err))
+
+        return {
+          tradeRecords: [...state.tradeRecords, newRecord]
+        }
+      }),
 
       // 更新交易记录
       updateTradeRecord: (id, data) => set((state) => ({

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { pool } = require('../config/database');
 const {
   findAll,
   findOne,
@@ -15,6 +16,136 @@ const {
   bulkRestore,
   query
 } = require('../database/queries');
+
+// 特殊路由（必须在通用CRUD路由之前）
+
+// GET /api/sync - 同步数据（从数据库获取所有数据）
+router.get('/sync/all', async (req, res) => {
+  try {
+    const tables = [
+      'account',
+      'daily_work_data',
+      'psychological_indicators',
+      'psychological_tests',
+      'trading_strategies',
+      'risk_models',
+      'risk_config',
+      'account_risk_data',
+      'technical_indicators',
+      'orders',
+      'transactions',
+      'trade_records',
+      'stock_pool',
+      'stock_kline_data',
+      'strategy_records',
+      'scheduled_orders'
+    ];
+
+    const syncData = {};
+
+    for (const table of tables) {
+      try {
+        const data = await findAll(table);
+        syncData[table] = data;
+      } catch (err) {
+        console.error(`Sync error for table ${table}:`, err.message);
+        syncData[table] = [];
+      }
+    }
+
+    res.json({
+      success: true,
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      data: syncData
+    });
+  } catch (error) {
+    console.error('Sync error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/export - 导出所有数据
+router.get('/export/all', async (req, res) => {
+  try {
+    const tables = [
+      'account',
+      'daily_work_data',
+      'psychological_indicators',
+      'psychological_tests',
+      'trading_strategies',
+      'risk_models',
+      'risk_config',
+      'account_risk_data',
+      'technical_indicators',
+      'orders',
+      'transactions',
+      'trade_records',
+      'stock_pool',
+      'stock_kline_data',
+      'strategy_records'
+    ];
+
+    const allData = {};
+    for (const table of tables) {
+      try {
+        allData[table] = await findAll(table);
+      } catch (err) {
+        allData[table] = [];
+      }
+    }
+
+    const backup = {
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      data: allData
+    };
+
+    const filename = `backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const backupDir = path.join(__dirname, '..', '..', 'backups');
+    const filepath = path.join(backupDir, filename);
+    
+    fs.writeFileSync(filepath, JSON.stringify(backup, null, 2));
+
+    res.json({ success: true, filename, data: backup });
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/import - 导入数据
+router.post('/import/all', async (req, res) => {
+  try {
+    const { data } = req.body;
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ success: false, error: 'Invalid data format' });
+    }
+
+    const results = {};
+
+    for (const [table, records] of Object.entries(data)) {
+      if (!Array.isArray(records)) continue;
+
+      results[table] = { imported: 0, errors: [] };
+
+      for (const record of records) {
+        try {
+          await insert(table, record);
+          results[table].imported++;
+        } catch (err) {
+          results[table].errors.push({ record, error: err.message });
+        }
+      }
+    }
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('Import error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // 通用CRUD路由
 
@@ -118,140 +249,35 @@ router.delete('/:table/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/:table/bulk - 批量删除
+// DELETE /api/:table/bulk - 批量删除（支持 id 或 date）
 router.delete('/:table/bulk', async (req, res) => {
   try {
     const { table } = req.params;
-    const { ids } = req.body;
+    const { ids, dates } = req.body;
 
-    if (!Array.isArray(ids)) {
-      return res.status(400).json({ success: false, error: 'ids must be an array' });
+    let results = []
+    
+    // 按 id 删除
+    if (ids && Array.isArray(ids)) {
+      results = await bulkDelete(table, ids);
     }
-
-    const results = await bulkDelete(table, ids);
-    res.json({ success: true, data: results, count: results.length });
-  } catch (error) {
-    console.error('BULK DELETE error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// GET /api/export - 导出所有数据
-router.get('/export/all', async (req, res) => {
-  try {
-    const tables = [
-      'account',
-      'daily_work_data',
-      'psychological_indicators',
-      'psychological_tests',
-      'trading_strategies',
-      'risk_models',
-      'risk_config',
-      'account_risk_data',
-      'technical_indicators',
-      'orders',
-      'transactions',
-      'trade_records',
-      'stock_pool',
-      'stock_kline_data',
-      'strategy_records'
-    ];
-
-    const exportData = {};
-
-    for (const table of tables) {
-      const data = await findAll(table);
-      exportData[table] = data;
-    }
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `zeta-backup-${timestamp}.json`;
-
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.json({
-      version: '1.0',
-      timestamp: new Date().toISOString(),
-      data: exportData
-    });
-  } catch (error) {
-    console.error('Export error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// POST /api/import - 导入数据
-router.post('/import/all', async (req, res) => {
-  try {
-    const { data } = req.body;
-
-    if (!data || typeof data !== 'object') {
-      return res.status(400).json({ success: false, error: 'Invalid data format' });
-    }
-
-    const results = {};
-
-    // 清空现有数据（可选，根据需求决定）
-    // await query('TRUNCATE TABLE trade_records CASCADE');
-    // await query('TRUNCATE TABLE transactions CASCADE');
-    // await query('TRUNCATE TABLE orders CASCADE');
-    // ... 其他表
-
-    // 导入数据
-    for (const [table, records] of Object.entries(data)) {
-      if (Array.isArray(records) && records.length > 0) {
-        try {
-          await bulkInsert(table, records);
-          results[table] = { success: true, count: records.length };
-        } catch (error) {
-          results[table] = { success: false, error: error.message };
+    
+    // 按日期删除（针对 daily_work_data 等用日期作为唯一标识的表）
+    if (dates && Array.isArray(dates) && table === 'daily_work_data') {
+      for (const date of dates) {
+        const result = await pool.query(
+          `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE date = $1 RETURNING *`,
+          [date]
+        );
+        if (result.rows.length > 0) {
+          results.push(...result.rows);
         }
       }
     }
-
-    res.json({ success: true, results });
+    
+    res.json({ success: true, data: results, count: results.length });
   } catch (error) {
-    console.error('Import error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// GET /api/sync - 同步数据（从数据库获取所有数据）
-router.get('/sync/all', async (req, res) => {
-  try {
-    const tables = [
-      'account',
-      'daily_work_data',
-      'psychological_indicators',
-      'psychological_tests',
-      'trading_strategies',
-      'risk_models',
-      'risk_config',
-      'account_risk_data',
-      'technical_indicators',
-      'orders',
-      'transactions',
-      'trade_records',
-      'stock_pool',
-      'stock_kline_data',
-      'strategy_records'
-    ];
-
-    const syncData = {};
-
-    for (const table of tables) {
-      const data = await findAll(table);
-      syncData[table] = data;
-    }
-
-    res.json({
-      success: true,
-      version: '1.0',
-      timestamp: new Date().toISOString(),
-      data: syncData
-    });
-  } catch (error) {
-    console.error('Sync error:', error);
+    console.error('BULK DELETE error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

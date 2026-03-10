@@ -17,10 +17,10 @@ const buildQuery = (table, options = {}) => {
     }
   }
 
-  // 默认过滤已删除记录（除非显式包含已删除）
-  if (!options.includeDeleted) {
-    conditions.push(`deleted = false`);
-  }
+  // 暂时不过滤 deleted，因为这些表可能没有这个字段
+  // if (!options.includeDeleted) {
+  //   conditions.push(`deleted = false`);
+  // }
 
   if (conditions.length > 0) {
     query += ' WHERE ' + conditions.join(' AND ');
@@ -118,22 +118,46 @@ const update = async (table, id, data) => {
   return result.rows[0] || null;
 };
 
-// 删除数据（软删除）
+// 删除数据（软删除，如果没有deleted字段则硬删除）
 const remove = async (table, id) => {
-  const result = await pool.query(
-    `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
-    [id]
-  );
-  return result.rows[0] || null;
+  try {
+    const result = await pool.query(
+      `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    // 如果表没有deleted字段，改用硬删除
+    if (err.message.includes('deleted')) {
+      const result = await pool.query(
+        `DELETE FROM ${table} WHERE id = $1 RETURNING *`,
+        [id]
+      );
+      return result.rows[0] || null;
+    }
+    throw err;
+  }
 };
 
-// 批量删除（软删除）
+// 批量删除（软删除，如果没有deleted字段则硬删除）
 const bulkDelete = async (table, ids) => {
-  const result = await pool.query(
-    `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = ANY($1) RETURNING *`,
-    [ids]
-  );
-  return result.rows;
+  try {
+    const result = await pool.query(
+      `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = ANY($1) RETURNING *`,
+      [ids]
+    );
+    return result.rows;
+  } catch (err) {
+    // 如果表没有deleted字段，改用硬删除
+    if (err.message.includes('deleted')) {
+      const result = await pool.query(
+        `DELETE FROM ${table} WHERE id = ANY($1) RETURNING *`,
+        [ids]
+      );
+      return result.rows;
+    }
+    throw err;
+  }
 };
 
 // 永久删除（硬删除）

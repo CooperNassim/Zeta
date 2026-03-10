@@ -334,7 +334,7 @@ const TradeRecords = () => {
           <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', marginTop: '10px', paddingBottom: '50px', zIndex: '1', background: 'rgb(249, 250, 251)' }}>
             <div className="overflow-y-auto overflow-x-auto" style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: '1' }}>
               <DataTable
-                showCheckbox={false}
+                showCheckbox={true}
                 fields={[
                   { key: 'tradeNumber', label: '交易编号', width: '120px' },
                   { key: 'tradeType', label: '交易类型', width: '80px' },

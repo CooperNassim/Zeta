@@ -21,7 +21,7 @@ if (!fs.existsSync(backupDir)) {
 app.use(helmet());
 app.use(compression());
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: process.env.CORS_ORIGIN || true,  // 允许所有来源，方便开发
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));

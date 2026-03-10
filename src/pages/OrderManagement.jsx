@@ -554,9 +554,7 @@ const OrderManagement = () => {
             flex: 1,
             minHeight: 0,
             position: 'relative',
-            zIndex: '1',
-            overflowY: 'scroll',
-            scrollbarGutter: 'stable'
+            zIndex: '1'
           }}>
           <DataTable
             fields={[
@@ -595,7 +593,8 @@ const OrderManagement = () => {
                 return <span>{status.text}</span>
               }
               if (field.key === 'createdAt') {
-                return format(new Date(item.createdAt), 'yyyy-MM-dd HH:mm')
+                const date = item.createdAt ? new Date(item.createdAt) : null
+                return date && !isNaN(date.getTime()) ? format(date, 'yyyy-MM-dd HH:mm') : '-'
               }
               if (field.key === 'stopLossPrice' || field.key === 'takeProfitPrice') {
                 // 只有买入订单显示止损止盈
@@ -606,6 +605,10 @@ const OrderManagement = () => {
                 return item.type === 'buy' ? (item[field.key] || '-') : '-'
               }
               return null
+            }}
+            emptyStateProps={{
+              Component: EmptyState,
+              props: { message: '暂无数据' }
             }}
           />
           </div>

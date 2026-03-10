@@ -19,6 +19,11 @@ const {
 
 // 特殊路由（必须在通用CRUD路由之前）
 
+// GET /api/test - 测试路由
+router.get('/test', (req, res) => {
+  res.json({ success: true, message: 'Test route works!' });
+});
+
 // GET /api/sync - 同步数据（从数据库获取所有数据）
 router.get('/sync/all', async (req, res) => {
   try {
@@ -162,7 +167,22 @@ router.get('/:table', async (req, res) => {
     if (offset) options.offset = parseInt(offset);
     if (includeDeleted === 'true') options.includeDeleted = true;
 
-    const data = await findAll(table, options);
+    let data = await findAll(table, options);
+
+    // 对于 daily_work_data 表，转换日期格式以避免时区问题
+    if (table === 'daily_work_data') {
+      data = data.map(row => {
+        if (row.date) {
+          const dateObj = new Date(row.date);
+          const year = dateObj.getFullYear();
+          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+          const day = String(dateObj.getDate()).padStart(2, '0');
+          row.date = `${year}-${month}-${day}`;
+        }
+        return row;
+      });
+    }
+
     res.json({ success: true, data });
   } catch (error) {
     console.error('GET error:', error);
@@ -174,10 +194,20 @@ router.get('/:table', async (req, res) => {
 router.get('/:table/:id', async (req, res) => {
   try {
     const { table, id } = req.params;
-    const data = await findById(table, id);
+    let data = await findById(table, id);
     if (!data) {
       return res.status(404).json({ success: false, error: 'Not found' });
     }
+
+    // 对于 daily_work_data 表，转换日期格式以避免时区问题
+    if (table === 'daily_work_data' && data.date) {
+      const dateObj = new Date(data.date);
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      data.date = `${year}-${month}-${day}`;
+    }
+
     res.json({ success: true, data });
   } catch (error) {
     console.error('GET by id error:', error);
@@ -199,8 +229,57 @@ router.post('/:table', async (req, res) => {
   }
 });
 
+// POST /api/:table/bulk/delete - 批量删除（支持 id 或 date）
+// 注意：这个路由必须在 /:table/bulk 之前，否则会被错误匹配
+router.post('/:table/bulk/delete', async (req, res) => {
+  console.log('[BULK DELETE] 路由被调用 v3!');
+  console.log('[BULK DELETE] 请求路径:', req.path);
+  try {
+    const { table } = req.params;
+    const { ids, dates } = req.body;
+
+    console.log('[BULK DELETE] table:', table);
+    console.log('[BULK DELETE] req.body:', req.body);
+    console.log('[BULK DELETE] ids:', ids);
+    console.log('[BULK DELETE] dates:', dates);
+
+    let results = []
+
+    // 按 id 删除
+    if (ids && Array.isArray(ids)) {
+      console.log('[BULK DELETE] 按ID删除, ids:', ids);
+      results = await bulkDelete(table, ids);
+    }
+
+    // 按日期删除（针对 daily_work_data 等用日期作为唯一标识的表）
+    if (dates && Array.isArray(dates) && table === 'daily_work_data') {
+      console.log('[BULK DELETE] 按日期删除, dates:', dates);
+      for (const date of dates) {
+        const result = await pool.query(
+          `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE date = $1 RETURNING *`,
+          [date]
+        );
+        if (result.rows.length > 0) {
+          results.push(...result.rows);
+        }
+      }
+    }
+
+    console.log('[BULK DELETE] results count:', results.length);
+    res.json({ success: true, data: results, count: results.length });
+  } catch (error) {
+    console.error('[BULK DELETE error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // POST /api/:table/bulk - 批量创建
-router.post('/:table/bulk', async (req, res) => {
+router.post('/:table/bulk', async (req, res, next) => {
+  // 如果路径是 /:table/bulk/delete，跳过这个路由
+  if (req.path.endsWith('/delete')) {
+    return next('route');
+  }
+
   try {
     const { table } = req.params;
     const dataArray = req.body;
@@ -235,7 +314,12 @@ router.put('/:table/:id', async (req, res) => {
 });
 
 // DELETE /api/:table/:id - 删除
-router.delete('/:table/:id', async (req, res) => {
+router.delete('/:table/:id', async (req, res, next) => {
+  // 如果 id 是 'bulk',跳过这个路由,让下一个路由处理
+  if (req.params.id === 'bulk') {
+    return next('route');
+  }
+
   try {
     const { table, id } = req.params;
     const result = await remove(table, id);
@@ -245,39 +329,6 @@ router.delete('/:table/:id', async (req, res) => {
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('DELETE error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// DELETE /api/:table/bulk - 批量删除（支持 id 或 date）
-router.delete('/:table/bulk', async (req, res) => {
-  try {
-    const { table } = req.params;
-    const { ids, dates } = req.body;
-
-    let results = []
-    
-    // 按 id 删除
-    if (ids && Array.isArray(ids)) {
-      results = await bulkDelete(table, ids);
-    }
-    
-    // 按日期删除（针对 daily_work_data 等用日期作为唯一标识的表）
-    if (dates && Array.isArray(dates) && table === 'daily_work_data') {
-      for (const date of dates) {
-        const result = await pool.query(
-          `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE date = $1 RETURNING *`,
-          [date]
-        );
-        if (result.rows.length > 0) {
-          results.push(...result.rows);
-        }
-      }
-    }
-    
-    res.json({ success: true, data: results, count: results.length });
-  } catch (error) {
-    console.error('BULK DELETE error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

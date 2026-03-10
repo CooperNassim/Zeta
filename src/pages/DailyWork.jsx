@@ -123,6 +123,7 @@ const DailyWork = () => {
     })
 
     // 检查日期是否重复(新增和编辑模式都检查)
+    // 只检查当前显示的未删除数据，已删除的数据可以重复创建
     if (formData.date) {
       const dateExists = dailyWorkData.some(data =>
         data.date === formData.date &&
@@ -537,14 +538,26 @@ const DailyWork = () => {
     setShowDeleteModal(true)
   }
 
-  const confirmDelete = () => {
-    // 获取选中的数据项（包含日期）
-    const selectedItems = dailyWorkData.filter(d => selectedIds.includes(d.id))
-    console.log('[DailyWork] 选中要删除的数据:', selectedItems.map(d => ({ id: d.id, date: d.date })))
-    deleteMultipleDailyWorkData(selectedIds)
-    setSelectedIds([])
-    setShowDeleteModal(false)
-    showToast(`删除成功`)
+  const confirmDelete = async () => {
+    try {
+      // 获取选中的数据项（包含日期）
+      const selectedItems = dailyWorkData.filter(d => selectedIds.includes(d.id))
+      console.log('[DailyWork] 选中要删除的数据:', selectedItems.map(d => ({ id: d.id, date: d.date })))
+
+      // 调用删除函数（现在是异步的）
+      const result = await deleteMultipleDailyWorkData(selectedIds)
+
+      if (result.success) {
+        setSelectedIds([])
+        setShowDeleteModal(false)
+        showToast(`删除成功`)
+      } else {
+        showToast('删除失败,请重试')
+      }
+    } catch (error) {
+      console.error('[DailyWork] 删除出错:', error)
+      showToast('删除失败,请重试')
+    }
   }
 
   const sentimentOptions = [

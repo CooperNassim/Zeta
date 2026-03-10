@@ -30,36 +30,56 @@ function DataSync() {
     syncedRef.current = true
 
     console.log('[DataSync] 从数据库同步数据...')
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/sync/all`)
-      const result = await response.json()
 
-      console.log('[DataSync] 原始响应:', result)
+    let retryCount = 0
+    const maxRetries = 3
+    const retryDelay = 1000
 
-      if (result.success && result.data) {
-        const { orders, transactions, trade_records, stock_pool, daily_work_data } = result.data
-
-        console.log('[DataSync] 数据库返回数据:', {
-          orders: orders?.length || 0,
-          transactions: transactions?.length || 0,
-          trade_records: trade_records?.length || 0,
-          stock_pool: stock_pool?.length || 0,
-          daily_work_data: daily_work_data?.length || 0
+    const attemptSync = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/sync/all`, {
+          cache: 'no-store'
         })
+        const result = await response.json()
 
-        if (orders?.length > 0) store.importOrders(orders)
-        if (transactions?.length > 0) store.importTransactions(transactions)
-        if (trade_records?.length > 0) store.importTradeRecords(trade_records)
-        if (stock_pool?.length > 0) store.importStocks(stock_pool)
-        if (daily_work_data?.length > 0) store.importDailyWorkData(daily_work_data)
+        console.log('[DataSync] 原始响应:', result)
 
-        console.log('[DataSync] 同步完成')
-      } else {
-        console.error('[DataSync] 同步失败:', result.error)
+        if (result.success && result.data) {
+          const { orders, transactions, trade_records, stock_pool, daily_work_data } = result.data
+
+          console.log('[DataSync] 数据库返回数据:', {
+            orders: orders?.length || 0,
+            transactions: transactions?.length || 0,
+            trade_records: trade_records?.length || 0,
+            stock_pool: stock_pool?.length || 0,
+            daily_work_data: daily_work_data?.length || 0
+          })
+
+          // 总是导入数据，即使是空数组也会清空本地旧数据
+          if (orders) store.importOrders(orders)
+          if (transactions) store.importTransactions(transactions)
+          if (trade_records) store.importTradeRecords(trade_records)
+          if (stock_pool) store.importStocks(stock_pool)
+          if (daily_work_data !== undefined) store.importDailyWorkData(daily_work_data)
+
+          console.log('[DataSync] 同步完成')
+        } else {
+          console.error('[DataSync] 同步失败:', result.error)
+        }
+      } catch (error) {
+        console.error('[DataSync] 数据同步失败:', error)
+        retryCount++
+        if (retryCount < maxRetries) {
+          console.log(`[DataSync] ${retryDelay / 1000}秒后重试 (${retryCount}/${maxRetries})...`)
+          await new Promise(resolve => setTimeout(resolve, retryDelay))
+          return attemptSync()
+        } else {
+          console.error('[DataSync] 达到最大重试次数，放弃同步')
+        }
       }
-    } catch (error) {
-      console.error('[DataSync] 数据同步失败:', error)
     }
+
+    await attemptSync()
 
     // 1秒后重置，允许下次同步
     setTimeout(() => {

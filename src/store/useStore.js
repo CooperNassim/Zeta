@@ -399,122 +399,229 @@ const useStore = create(
       getAccount: (accountType = 'real') => (state) => state.account[accountType],
 
       // 添加每日功课数据
-      addDailyWorkData: (data) => set((state) => {
+      addDailyWorkData: async (data) => {
+        console.log('[Store] 添加每日功课数据:', data)
+
+        // 直接发送完整的前端数据到数据库
         const now = new Date().toISOString()
-        // 只发送数据库需要的字段
         const dbData = {
           date: data.date || null,
-          market_trend: data.sentiment || null,
-          market_volume: data.volume || null,
-          emotion_score: data.emotionScore || null,
-          confidence_score: data.confidenceScore || null,
-          notes: data.notes || null
+          nasdaq: data.nasdaq || null,
+          ftse: data.ftse || null,
+          dax: data.dax || null,
+          n225: data.n225 || null,
+          hsi: data.hsi || null,
+          bitcoin: data.bitcoin || null,
+          eurusd: data.eurusd || null,
+          usdjpy: data.usdjpy || null,
+          usdcny: data.usdcny || null,
+          oil: data.oil || null,
+          gold: data.gold || null,
+          bond: data.bond || null,
+          consecutive: data.consecutive || null,
+          a50: data.a50 || null,
+          sh_index: data.shIndex || null,
+          sh_2day_power: data.sh2dayPower || null,
+          sh_13day_power: data.sh13dayPower || null,
+          up_count: data.upCount || null,
+          limit_up: data.limitUp || null,
+          down_count: data.downCount || null,
+          limit_down: data.limitDown || null,
+          volume: data.volume || null,
+          sentiment: data.sentiment || null,
+          prediction: data.prediction || null,
+          trade_status: data.tradeStatus || null,
+          review_plan: data.reviewPlan || null,
+          review_execution: data.reviewExecution || null,
+          review_result: data.reviewResult || null,
+          deleted: false,
+          deleted_at: null,
+          created_at: now,
+          updated_at: now
         }
-        console.log('[Store] 发送到数据库的每日功课数据:', dbData)
-        
-        // 创建一个临时 id 用于本地显示
-        const tempId = Date.now()
-        
-        apiCall('/api/daily_work_data', 'POST', dbData).then(res => {
-          console.log('[Store] 每日功课同步结果:', res)
-          // 如果数据库返回了真实 id，更新本地数据
-          if (res.success && res.data && res.data.id) {
-            // 这里可以触发一个更新操作，但简单起见，我们依赖同步来获取真实数据
-          }
-        }).catch(err => console.error('同步每日功课到数据库失败:', err))
 
-        // 本地保存，用日期作为唯一标识
-        const newData = { ...data, id: tempId, date: data.date, deleted: false, deletedAt: null, createdAt: now, updatedAt: now }
-        return {
-          dailyWorkData: [...state.dailyWorkData, newData]
+        try {
+          // 等待数据库保存完成
+          const res = await apiCall('/api/daily_work_data', 'POST', dbData)
+          console.log('[Store] 每日功课保存到数据库结果:', res)
+
+          if (res.success && res.data && res.data.id) {
+            // 保存成功后，从数据库重新同步数据，确保数据一致性
+            const syncResponse = await apiCall('/api/sync/all')
+            if (syncResponse.success && syncResponse.data && syncResponse.data.daily_work_data !== undefined) {
+              const { daily_work_data } = syncResponse.data
+              set((state) => {
+                // 使用 importDailyWorkData 来更新数据
+                state.importDailyWorkData(daily_work_data)
+                return {}
+              })
+            }
+            return { ...data, id: res.data.id }
+          } else {
+            console.warn('[Store] 数据库返回数据不完整')
+            // 即使返回数据不完整，也同步一次以确保状态一致
+            const syncResponse = await apiCall('/api/sync/all')
+            if (syncResponse.success && syncResponse.data && syncResponse.data.daily_work_data !== undefined) {
+              const { daily_work_data } = syncResponse.data
+              set((state) => {
+                state.importDailyWorkData(daily_work_data)
+                return {}
+              })
+            }
+            return data
+          }
+        } catch (error) {
+          console.error('[Store] 保存每日功课到数据库失败:', error)
+          throw error
         }
-      }),
+      },
 
       // 批量导入每日功课数据（从数据库同步）
       importDailyWorkData: (dataList) => set((state) => {
         console.log('[Store] 从数据库导入的每日功课数据:', dataList)
-        
+
+        // 如果 dataList 为 null 或 undefined，保持现有数据不变
+        if (dataList === null || dataList === undefined) {
+          console.log('[Store] 数据未提供，保持现有数据')
+          return {}
+        }
+
         // 过滤已删除的数据
         const activeData = dataList.filter(d => d.deleted !== true)
         console.log('[Store] 过滤已删除后的数据:', activeData.map(d => d.date))
-        
+
+        // 如果数据库返回空数组，清空本地数据
+        if (activeData.length === 0) {
+          console.log('[Store] 数据库返回空数组，清空本地数据')
+          return { dailyWorkData: [] }
+        }
+
         // 转换数据库字段名 (snake_case -> camelCase)
         const newData = activeData.map(d => {
-          // 处理日期格式
+          // 处理日期格式 - 正确处理时区
           let dateStr = d.date
           if (d.date && typeof d.date === 'object') {
-            dateStr = d.date.toISOString().split('T')[0]
-          } else if (d.date) {
-            dateStr = String(d.date).split('T')[0]
+            // Date对象：使用本地时区的年月日
+            const year = d.date.getFullYear()
+            const month = String(d.date.getMonth() + 1).padStart(2, '0')
+            const day = String(d.date.getDate()).padStart(2, '0')
+            dateStr = `${year}-${month}-${day}`
+          } else if (d.date && typeof d.date === 'string') {
+            // 字符串：可能是ISO格式，需要转换为本地日期
+            if (d.date.includes('T')) {
+              // ISO格式字符串，如 "2026-03-01T16:00:00.000Z"
+              const dateObj = new Date(d.date)
+              const year = dateObj.getFullYear()
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+              const day = String(dateObj.getDate()).padStart(2, '0')
+              dateStr = `${year}-${month}-${day}`
+            } else {
+              // 已经是简单日期格式，如 "2026-03-01"
+              dateStr = d.date.split('T')[0].split(' ')[0]
+            }
           }
-          
+
           return {
-            ...d,
+            id: d.id,
             date: dateStr,
-            // 数据库字段 -> 前端字段
-            sentiment: d.market_trend || '',
-            volume: d.market_volume || '',
-            emotionScore: d.emotion_score || '',
-            confidenceScore: d.confidence_score || '',
-            notes: d.notes || '',
+            // 数据库字段 (snake_case) -> 前端字段 (camelCase)
+            nasdaq: d.nasdaq || '',
+            ftse: d.ftse || '',
+            dax: d.dax || '',
+            n225: d.n225 || '',
+            hsi: d.hsi || '',
+            bitcoin: d.bitcoin || '',
+            eurusd: d.eurusd || '',
+            usdjpy: d.usdjpy || '',
+            usdcny: d.usdcny || '',
+            oil: d.oil || '',
+            gold: d.gold || '',
+            bond: d.bond || '',
+            consecutive: d.consecutive || '',
+            a50: d.a50 || '',
+            shIndex: d.sh_index || '',
+            sh2dayPower: d.sh_2day_power || '',
+            sh13dayPower: d.sh_13day_power || '',
+            upCount: d.up_count || '',
+            limitUp: d.limit_up || '',
+            downCount: d.down_count || '',
+            limitDown: d.limit_down || '',
+            volume: d.volume || '',
+            sentiment: d.sentiment || '',
+            prediction: d.prediction || '',
+            tradeStatus: d.trade_status || '',
+            reviewPlan: d.review_plan || '',
+            reviewExecution: d.review_execution || '',
+            reviewResult: d.review_result || '',
             createdAt: d.created_at || new Date().toISOString(),
             updatedAt: d.updated_at || new Date().toISOString(),
             deleted: d.deleted || false,
             deletedAt: d.deleted_at || null
           }
         })
-        
+
         // 使用 Map 按日期去重，数据库数据优先
         const dataMap = new Map()
-        // 先加本地数据
-        state.dailyWorkData.forEach(d => {
-          if (d.date) dataMap.set(d.date, d)
-        })
-        // 再加数据库数据（覆盖本地）
+        // 只加数据库数据（不再合并本地数据）
         newData.forEach(d => {
           if (d.date) dataMap.set(d.date, d)
         })
-        
+
         const mergedData = Array.from(dataMap.values())
+        // 按日期降序排序
+        mergedData.sort((a, b) => new Date(b.date) - new Date(a.date))
+
         console.log('[Store] 合并后的数据:', mergedData.map(d => d.date))
         return { dailyWorkData: mergedData }
       }),
 
       // 删除每日功课数据
-      deleteDailyWorkData: (id) => set((state) => {
-        apiCall(`/api/daily_work_data/${id}`, 'DELETE')
-        return {
-          dailyWorkData: state.dailyWorkData.map(d =>
-            d.id === id ? { ...d, deleted: true, deletedAt: new Date().toISOString() } : d
-          )
+      deleteDailyWorkData: async (id) => {
+        console.log('[Store] 删除每日功课，id:', id)
+        try {
+          await apiCall(`/api/daily_work_data/${id}`, 'DELETE')
+          set((state) => ({
+            dailyWorkData: state.dailyWorkData.filter(d => d.id !== id)
+          }))
+          return { success: true }
+        } catch (err) {
+          console.error('[Store] 删除失败:', err)
+          return { success: false, error: err }
         }
-      }),
+      },
 
-      // 批量删除每日功课数据（使用日期删除）
-      deleteMultipleDailyWorkData: (ids) => set((state) => {
+      // 批量删除每日功课数据（使用ID删除）
+      deleteMultipleDailyWorkData: async (ids) => {
         console.log('[Store] 删除每日功课，接收到的ids:', ids)
-        
-        // 无论 id 匹配与否，都获取选中项对应的数据
-        const selectedData = state.dailyWorkData.filter(d => ids.includes(d.id))
-        const datesToDelete = selectedData.map(d => d.date).filter(d => d)
-        
-        console.log('[Store] 删除每日功课，选中数据:', selectedData.map(d => ({ id: d.id, date: d.date })))
-        console.log('[Store] 删除每日功课，要删除的日期:', datesToDelete)
-        
-        // 按日期删除
-        if (datesToDelete.length > 0) {
-          apiCall(`/api/daily_work_data/bulk`, 'DELETE', { dates: datesToDelete }).then(res => {
-            console.log('[Store] 删除结果:', res)
-          }).catch(err => console.error('[Store] 删除失败:', err))
+
+        try {
+          // 按ID逐条删除
+          const deleteResults = []
+          for (const id of ids) {
+            console.log('[Store] 删除ID:', id)
+            const result = await apiCall(`/api/daily_work_data/${id}`, 'DELETE')
+            deleteResults.push(result)
+          }
+
+          console.log('[Store] 所有删除结果:', deleteResults)
+
+          // 从数据库重新同步数据（确保删除已生效）
+          const syncResponse = await apiCall('/api/sync/all')
+          if (syncResponse.success && syncResponse.data && syncResponse.data.daily_work_data !== undefined) {
+            const { daily_work_data } = syncResponse.data
+            set((state) => {
+              // 使用 importDailyWorkData 来更新数据
+              state.importDailyWorkData(daily_work_data)
+              return {}
+            })
+          }
+
+          return { success: true, results: deleteResults }
+        } catch (err) {
+          console.error('[Store] 删除失败:', err)
+          return { success: false, error: err }
         }
-        
-        // 本地也标记删除
-        return {
-          dailyWorkData: state.dailyWorkData.map(d =>
-            ids.includes(d.id) ? { ...d, deleted: true, deletedAt: new Date().toISOString() } : d
-          )
-        }
-      }),
+      },
 
       // 恢复每日功课数据
       restoreDailyWorkData: (ids) => set((state) => {
@@ -535,11 +642,63 @@ const useStore = create(
       }),
 
       // 更新每日功课数据
-      updateDailyWorkData: (id, data) => set((state) => ({
-        dailyWorkData: state.dailyWorkData.map(d =>
-          d.id === id ? { ...d, ...data } : d
-        )
-      })),
+      updateDailyWorkData: async (id, data) => {
+        console.log('[Store] 更新每日功课数据:', id, data)
+
+        // 构造数据库更新数据 - 使用下划线命名
+        const dbData = {
+          date: data.date || null,
+          nasdaq: data.nasdaq || null,
+          ftse: data.ftse || null,
+          dax: data.dax || null,
+          n225: data.n225 || null,
+          hsi: data.hsi || null,
+          bitcoin: data.bitcoin || null,
+          eurusd: data.eurusd || null,
+          usdjpy: data.usdjpy || null,
+          usdcny: data.usdcny || null,
+          oil: data.oil || null,
+          gold: data.gold || null,
+          bond: data.bond || null,
+          consecutive: data.consecutive || null,
+          a50: data.a50 || null,
+          sh_index: data.shIndex || null,
+          sh_2day_power: data.sh2dayPower || null,
+          sh_13day_power: data.sh13dayPower || null,
+          up_count: data.upCount || null,
+          limit_up: data.limitUp || null,
+          down_count: data.downCount || null,
+          limit_down: data.limitDown || null,
+          volume: data.volume || null,
+          sentiment: data.sentiment || null,
+          prediction: data.prediction || null,
+          trade_status: data.tradeStatus || null,
+          review_plan: data.reviewPlan || null,
+          review_execution: data.reviewExecution || null,
+          review_result: data.reviewResult || null,
+          updated_at: new Date().toISOString()
+        }
+
+        try {
+          // 更新数据库
+          const res = await apiCall(`/api/daily_work_data/${id}`, 'PUT', dbData)
+          console.log('[Store] 更新数据库结果:', res)
+
+          // 更新后从数据库重新同步数据，确保数据一致性
+          const syncResponse = await apiCall('/api/sync/all')
+          if (syncResponse.success && syncResponse.data && syncResponse.data.daily_work_data !== undefined) {
+            const { daily_work_data } = syncResponse.data
+            set((state) => {
+              // 使用 importDailyWorkData 来更新数据
+              state.importDailyWorkData(daily_work_data)
+              return {}
+            })
+          }
+        } catch (error) {
+          console.error('[Store] 更新数据库失败:', error)
+          throw error
+        }
+      },
 
       // 添加心理测试
       addPsychologicalTest: (test) => set((state) => ({

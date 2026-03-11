@@ -8,8 +8,11 @@ package-lock.json
 # 备份文件（包含用户数据）
 backups/
 *.backup
-*.sql
 *.dump
+
+# SQL文件（排除迁移目录）
+*.sql
+!migrations/*.sql
 
 # 日志
 logs/

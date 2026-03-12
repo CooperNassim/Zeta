@@ -38,15 +38,17 @@ const ImportModal = ({
               onClick={onClose}
               className="px-4 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
             >
-              取消
+              {importResult ? '关闭' : '取消'}
             </button>
-            <button
-              onClick={onConfirm}
-              className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: '#0F1419' }}
-            >
-              确定
-            </button>
+            {!importResult && (
+              <button
+                onClick={onConfirm}
+                className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity"
+                style={{ backgroundColor: '#0F1419' }}
+              >
+                确定
+              </button>
+            )}
           </div>
         </div>
       }

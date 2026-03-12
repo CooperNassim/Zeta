@@ -26,10 +26,40 @@ const OrderManagement = () => {
   const [orderType, setOrderType] = useState('buy')
   const [evaluationStep, setEvaluationStep] = useState(0)
   const [evaluationResults, setEvaluationResults] = useState({})
-  const [selectedFilter, setSelectedFilter] = useState('executed')  // 默认显示持仓中
+  const [selectedFilter, setSelectedFilter] = useState('all')  // 默认显示全部订单
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState([])
   const [showToast, setShowToast] = useState(false)
+
+  // 格式化数字：整数取整，有小数点保留2位，四舍五入，千位分隔符
+  const formatAmount = (num) => {
+    if (num === undefined || num === null || isNaN(num)) return ''
+    
+    // 四舍五入到两位小数
+    const rounded = Math.round(num * 100) / 100
+    
+    // 检查是否实际上是整数（四舍五入后）
+    const isInteger = Math.abs(rounded - Math.round(rounded)) < 0.000001
+    
+    // 格式化为字符串：整数不显示小数位，非整数显示最多2位小数
+    let formattedNumber
+    if (isInteger) {
+      formattedNumber = Math.round(rounded).toString()
+    } else {
+      // 移除不必要的尾随零
+      formattedNumber = rounded.toFixed(2).replace(/\.?0+$/, '')
+      // 如果小数点后没有数字，移除小数点
+      if (formattedNumber.endsWith('.')) {
+        formattedNumber = formattedNumber.slice(0, -1)
+      }
+    }
+    
+    // 添加千位分隔符
+    const parts = formattedNumber.split('.')
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+    
+    return parts.length > 1 ? `${parts[0]}.${parts[1]}` : parts[0]
+  }
   const [toastType, setToastType] = useState('success')
   const [toastMessage, setToastMessage] = useState('')
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -54,7 +84,6 @@ const OrderManagement = () => {
   const accountRiskData = useStore(state => state.accountRiskData)
   const addOrder = useStore(state => state.addOrder)
   const executeOrder = useStore(state => state.executeOrder)
-  const cancelOrder = useStore(state => state.cancelOrder)
   const deleteMultipleOrders = useStore(state => state.deleteMultipleOrders)
 
   const [orderForm, setOrderForm] = useState({
@@ -325,42 +354,30 @@ const OrderManagement = () => {
       psychologicalScore: parseFloat(psychologicalScore10),
       strategyScore: parseFloat(strategyScore10),
       riskScore: riskScore10,
-      overallScore: parseFloat(overallScore),
-      status: 'pending',  // 创建时为待执行状态
-      buyOrderId,  // 卖出订单关联的买入订单ID
+    overallScore: parseFloat(overallScore),
+    buyOrderId,  // 卖出订单关联的买入订单ID
       evaluationResults,
       isVirtual: orderForm.isVirtual || false  // 虚拟盘标记
     })
 
     setShowModal(false)
     setToastType('success')
-    setToastMessage('预约成功')
+    setToastMessage('创建成功')
     setShowToast(true)
   }
 
-  // 计算各状态订单数量
-  const pendingOrders = orders.filter(o => !o.deleted && o.status === 'pending')
-  const executedOrders = orders.filter(o => !o.deleted && o.status === 'executed')
-  const cancelledOrders = orders.filter(o => !o.deleted && o.status === 'cancelled')
-
-  // 持仓中：已执行的买入订单
-  const holdingOrders = orders.filter(o => !o.deleted && o.type === 'buy' && o.status === 'executed')
-  // 已卖出：已执行的卖出订单
-  const soldOrders = orders.filter(o => !o.deleted && o.type === 'sell' && o.status === 'executed')
-  // 待执行：pending状态的订单
-  const pendingCount = orders.filter(o => !o.deleted && o.status === 'pending').length
+  // 持仓中：买入订单
+  const holdingOrders = orders.filter(o => !o.deleted && o.type === 'buy')
+  // 已卖出：卖出订单
+  const soldOrders = orders.filter(o => !o.deleted && o.type === 'sell')
 
   // 筛选逻辑
   const filteredOrders = (() => {
     switch (selectedFilter) {
-      case 'executed':
-        return holdingOrders  // 持仓中
+      case 'buy':
+        return orders.filter(o => !o.deleted && o.type === 'buy')  // 买入订单
       case 'sell':
-        return soldOrders  // 已卖出
-      case 'cancelled':
-        return cancelledOrders  // 作废订单
-      case 'pending':
-        return pendingOrders  // 待执行
+        return orders.filter(o => !o.deleted && o.type === 'sell')  // 卖出订单
       case 'all':
       default:
         return orders.filter(o => !o.deleted)  // 全部订单，排除已删除的
@@ -383,10 +400,10 @@ const OrderManagement = () => {
         {/* 筛选卡片 */}
         <div style={{ display: 'flex', gap: '10px', flexShrink: 0, alignItems: 'flex-start', marginTop: '10px' }}>
           <div
-            onClick={() => setSelectedFilter('pending')}
+            onClick={() => setSelectedFilter('all')}
             style={{
               background: '#ffffff',
-              border: selectedFilter === 'pending' ? '1px solid #0F1419' : '1px solid #e5e7eb',
+              border: selectedFilter === 'all' ? '1px solid #0F1419' : '1px solid #e5e7eb',
               borderRadius: '8px',
               padding: '10px 25px',
               minHeight: '55px',
@@ -399,17 +416,17 @@ const OrderManagement = () => {
             }}
           >
             <div>
-              <p className="text-sm mb-0" style={{ color: '#666' }}>待执行</p>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>全部交易</p>
               <p className="text-2xl font-bold" style={{ color: '#374151' }}>
-                {pendingCount}
+                {orders.length}
               </p>
             </div>
           </div>
           <div
-            onClick={() => setSelectedFilter('executed')}
+            onClick={() => setSelectedFilter('buy')}
             style={{
               background: '#ffffff',
-              border: selectedFilter === 'executed' ? '1px solid #0F1419' : '1px solid #e5e7eb',
+              border: selectedFilter === 'buy' ? '1px solid #0F1419' : '1px solid #e5e7eb',
               borderRadius: '8px',
               padding: '10px 25px',
               minHeight: '55px',
@@ -422,9 +439,9 @@ const OrderManagement = () => {
             }}
           >
             <div>
-              <p className="text-sm mb-0" style={{ color: '#666' }}>持仓中</p>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>买入交易</p>
               <p className="text-2xl font-bold" style={{ color: '#374151' }}>
-                {holdingOrders.length}
+                {orders.filter(o => !o.deleted && o.type === 'buy').length}
               </p>
             </div>
           </div>
@@ -445,55 +462,9 @@ const OrderManagement = () => {
             }}
           >
             <div>
-              <p className="text-sm mb-0" style={{ color: '#666' }}>已卖出</p>
+              <p className="text-sm mb-0" style={{ color: '#666' }}>卖出交易</p>
               <p className="text-2xl font-bold" style={{ color: '#374151' }}>
                 {soldOrders.length}
-              </p>
-            </div>
-          </div>
-          <div
-            onClick={() => setSelectedFilter('cancelled')}
-            style={{
-              background: '#ffffff',
-              border: selectedFilter === 'cancelled' ? '1px solid #0F1419' : '1px solid #e5e7eb',
-              borderRadius: '8px',
-              padding: '10px 25px',
-              minHeight: '55px',
-              width: '180px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            <div>
-              <p className="text-sm mb-0" style={{ color: '#666' }}>作废订单</p>
-              <p className="text-2xl font-bold" style={{ color: '#374151' }}>
-                {cancelledOrders.length}
-              </p>
-            </div>
-          </div>
-          <div
-            onClick={() => setSelectedFilter('all')}
-            style={{
-              background: '#ffffff',
-              border: selectedFilter === 'all' ? '1px solid #0F1419' : '1px solid #e5e7eb',
-              borderRadius: '8px',
-              padding: '10px 25px',
-              minHeight: '55px',
-              width: '180px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            <div>
-              <p className="text-sm mb-0" style={{ color: '#666' }}>全部订单</p>
-              <p className="text-2xl font-bold" style={{ color: '#374151' }}>
-                {orders.length}
               </p>
             </div>
           </div>
@@ -503,27 +474,6 @@ const OrderManagement = () => {
         <OrderToolbar
           onAdd={() => handleAddOrder('buy')}
           onSell={() => handleAddOrder('sell')}
-          onCancel={() => {
-            if (selectedIds.length === 0) {
-              alert('请选择要作废的订单')
-              return
-            }
-            // 所有订单都可以作废，包括已作废的订单
-            const ordersToCancel = selectedIds.map(id => orders.find(o => o.id === id)).filter(Boolean)
-
-            ordersToCancel.forEach(order => {
-              // 只有待执行或已执行的订单才更新状态为cancelled
-              if (order.status === 'pending' || order.status === 'executed') {
-                cancelOrder(order.id)
-              }
-              // 已作废的订单状态不变，不做处理
-            })
-
-            setSelectedIds([])
-            setToastType('success')
-            setToastMessage('作废成功')
-            setShowToast(true)
-          }}
           onDelete={() => {
             if (selectedIds.length === 0) {
               alert('请选择要删除的订单')
@@ -532,8 +482,19 @@ const OrderManagement = () => {
             setShowDeleteModal(true)
           }}
           onExport={handleExport}
-          canSell={selectedIds.length > 0}
-          canCancel={selectedIds.length > 0}
+          canSell={(() => {
+            // 卖出交易条件：
+            // 1) 只能选择一个订单
+            // 2) 选中的必须是买入类型的订单
+            // 3) 订单不能是已删除的
+            if (selectedIds.length !== 1) return false
+            
+            // 找到选中的订单
+            const selectedOrder = orders.find(order => order.id === selectedIds[0] && !order.deleted)
+            
+            // 检查订单是否存在且是买入类型
+            return selectedOrder && selectedOrder.type === 'buy'
+          })()}
           canDelete={selectedIds.length > 0}
           canExport={filteredOrders.length > 0}
           totalCount={filteredOrders.length}
@@ -558,16 +519,17 @@ const OrderManagement = () => {
           }}>
           <DataTable
             fields={[
-              { key: 'type', label: '订单类型', width: '100px' },
-              { key: 'symbol', label: '资产代码', width: '120px' },
-              { key: 'name', label: '资产名称', width: '150px' },
-              { key: 'status', label: '状态', width: '100px' },
-              { key: 'price', label: '价格', width: '120px' },
-              { key: 'quantity', label: '数量', width: '100px' },
+              { key: 'tradeNumber', label: '交易编号', width: '120px' },
+              { key: 'type', label: '交易类型', width: '100px' },
+              { key: 'symbol', label: '股票代码', width: '120px' },
+              { key: 'name', label: '股票名称', width: '150px' },
+              { key: 'price', label: '交易价格', width: '120px' },
+              { key: 'quantity', label: '交易数量', width: '100px' },
               { key: 'stopLossPrice', label: '止损价', width: '120px' },
               { key: 'takeProfitPrice', label: '止盈价', width: '120px' },
-              { key: 'availablePercent', label: '可用比例', width: '120px' },
-              { key: 'createdAt', label: '创建时间', width: '200px' }
+              { key: 'psychologicalScore', label: '心理测试', width: '100px' },
+              { key: 'strategyScore', label: '策略评估', width: '100px' },
+              { key: 'createdAt', label: '交易时间', width: '200px' }
             ]}
             data={paginatedData}
             selectedIds={selectedIds}
@@ -583,15 +545,6 @@ const OrderManagement = () => {
               if (field.key === 'type') {
                 return item.type === 'buy' ? '买入' : '卖出'
               }
-              if (field.key === 'status') {
-                const statusMap = {
-                  'pending': { text: '待执行' },
-                  'executed': { text: '已执行' },
-                  'cancelled': { text: '作废' }
-                }
-                const status = statusMap[item.status]
-                return <span>{status.text}</span>
-              }
               if (field.key === 'createdAt') {
                 const date = item.createdAt ? new Date(item.createdAt) : null
                 return date && !isNaN(date.getTime()) ? format(date, 'yyyy-MM-dd HH:mm') : '-'
@@ -600,9 +553,13 @@ const OrderManagement = () => {
                 // 只有买入订单显示止损止盈
                 return item.type === 'buy' ? (item[field.key] || '-') : '-'
               }
-              if (field.key === 'availablePercent') {
-                // 只有买入订单显示可用比例
-                return item.type === 'buy' ? (item[field.key] || '-') : '-'
+              if (field.key === 'psychologicalScore') {
+                // 显示心理测试分数（10分制）
+                return item.psychologicalScore !== undefined && item.psychologicalScore !== null ? item.psychologicalScore : '-'
+              }
+              if (field.key === 'strategyScore') {
+                // 显示策略评估分数（10分制）
+                return item.strategyScore !== undefined && item.strategyScore !== null ? item.strategyScore : '-'
               }
               return null
             }}
@@ -630,7 +587,7 @@ const OrderManagement = () => {
       <OrderModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title={orderType === 'buy' ? '买入预约单' : '卖出预约单'}
+        title={orderType === 'buy' ? '买入交易' : '卖出预约单'}
       >
             {/* 步骤指示器 */}
             <div className="flex items-center justify-center mb-6">
@@ -688,16 +645,17 @@ const OrderManagement = () => {
                     </span>
                   </div>
                 </div>
-                <div className="flex gap-3 justify-end">
+                <div className="flex gap-2 justify-end">
                   <button
                     onClick={() => setShowModal(false)}
-                    className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm"
                   >
                     取消
                   </button>
                   <button
                     onClick={() => hasTodayPsychologicalTest() ? handlePsychologicalEvaluation() : navigate('/psychological-test')}
-                    className="px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
+                    className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity text-sm"
+                    style={{ backgroundColor: '#0F1419' }}
                   >
                     {hasTodayPsychologicalTest() ? '下一步' : '去测试'}
                   </button>
@@ -741,22 +699,23 @@ const OrderManagement = () => {
                   )}
                 </div>
 
-                <div className="flex gap-3 justify-end">
+                <div className="flex gap-2 justify-end">
                   <button
                     onClick={() => setEvaluationStep(0)}
-                    className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm"
                   >
                     上一步
                   </button>
                   <button
                     onClick={() => setShowModal(false)}
-                    className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm"
                   >
                     取消
                   </button>
                   <button
                     onClick={handleStrategyEvaluation}
-                    className="px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
+                    className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity text-sm"
+                    style={{ backgroundColor: '#0F1419' }}
                   >
                     下一步
                   </button>
@@ -807,22 +766,23 @@ const OrderManagement = () => {
                   )
                 })()}
 
-                <div className="flex gap-3 justify-end" style={{ marginTop: '10px' }}>
+                <div className="flex gap-2 justify-end" style={{ marginTop: '8px' }}>
                   <button
                     onClick={() => setEvaluationStep(1)}
-                    className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm"
                   >
                     上一步
                   </button>
                   <button
                     onClick={() => setShowModal(false)}
-                    className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm"
                   >
                     取消
                   </button>
                   <button
                     onClick={handleRiskEvaluation}
-                    className="px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
+                    className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity text-sm"
+                    style={{ backgroundColor: '#0F1419' }}
                   >
                     下一步
                   </button>
@@ -832,11 +792,11 @@ const OrderManagement = () => {
 
             {evaluationStep === 3 && (
               <div>
-                <p className="text-gray-600 mb-2">填写订单信息</p>
+                <p className="text-gray-600 mb-2">填写买入信息</p>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 股票代码
                       </label>
                       <CustomInput
@@ -856,7 +816,7 @@ const OrderManagement = () => {
                       )}
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         股票名称
                       </label>
                       <CustomInput
@@ -868,25 +828,10 @@ const OrderManagement = () => {
                       />
                     </div>
 
-                    {/* 虚拟盘勾选 */}
-                    <div>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={orderForm.isVirtual || false}
-                          onChange={(e) => setOrderForm({ ...orderForm, isVirtual: e.target.checked })}
-                          className="w-4 h-4 text-[#0F1419] border-gray-300 rounded focus:ring-[#0F1419]"
-                        />
-                        <span className="text-sm font-medium text-gray-700">虚拟盘</span>
-                      </label>
-                      <p className="text-xs text-gray-500 mt-1">勾选后该订单将记录到虚拟账户</p>
-                    </div>
-
-
                   {orderType === 'buy' && (
                     <>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 可用比例(%)
                         </label>
                         <CustomInput
@@ -906,20 +851,19 @@ const OrderManagement = () => {
                         {riskErrors.availablePercent && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <ErrorMessage message="不能为空" />}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          可用额度(元)
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          可用额度
                         </label>
                         <CustomInput
-                          type="number"
-                          step="0.01"
-                          value={(accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100)).toFixed(2)}
+                          type="text"  // 改为text类型以显示千位分隔符
+                          value={formatAmount(accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100))}
                           disabled
                           placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动计算'}
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 预买入价(元)
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 买入价格
                         </label>
                         <CustomInput
                           type="number"
@@ -938,8 +882,8 @@ const OrderManagement = () => {
                         {riskErrors.price && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <ErrorMessage message="不能为空" />}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          可买数量(股)
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          买入数量
                         </label>
                         <CustomInput
                           type="number"
@@ -950,8 +894,8 @@ const OrderManagement = () => {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 止损价(元)
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 止损价
                         </label>
                         <CustomInput
                           type="number"
@@ -970,8 +914,8 @@ const OrderManagement = () => {
                         {riskErrors.stopLossPrice && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <ErrorMessage message="不能为空" />}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 止盈价(元)
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 止盈价
                         </label>
                         <CustomInput
                           type="number"
@@ -995,27 +939,28 @@ const OrderManagement = () => {
 
                 <form onSubmit={handleSubmitOrder}>
                   {/* 评估结果摘要 */}
-                  <div className="p-4 bg-white rounded-lg border border-gray-200" style={{ marginTop: '10px' }}>
-                    <h4 className="font-bold text-gray-900 mb-2">评估结果</h4>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <p className="text-gray-600">心理测试</p>
-                        <p className="font-bold text-gray-900">{evaluationResults.psychological?.score !== undefined ? Math.round(evaluationResults.psychological.score) : '-'}</p>
+                  <div className="bg-white rounded-lg border border-gray-200" style={{ marginTop: '10px', marginBottom: '10px', padding: '10px 0' }}>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div style={{ textAlign: 'center' }}>
+                        <p className="text-gray-600" style={{ fontSize: '14px', margin: '0 0 4px 0' }}>心理测试</p>
+                        <p className="font-bold text-gray-900" style={{ fontSize: '14px', margin: '0' }}>{evaluationResults.psychological?.score !== undefined ? Math.round(evaluationResults.psychological.score) : '-'}</p>
                       </div>
-                      <div>
-                        <p className="text-gray-600">策略评估</p>
-                        <p className="font-bold text-gray-900">{evaluationResults.strategy?.score !== undefined ? Math.round(evaluationResults.strategy.score) : '-'}</p>
+                      <div style={{ textAlign: 'center' }}>
+                        <p className="text-gray-600" style={{ fontSize: '14px', margin: '0 0 4px 0' }}>策略评估</p>
+                        <p className="font-bold text-gray-900" style={{ fontSize: '14px', margin: '0' }}>{evaluationResults.strategy?.score !== undefined ? Math.round(evaluationResults.strategy.score) : '-'}</p>
                       </div>
-                      <div>
-                        <p className="text-gray-600">风险控制</p>
-                        <p className="font-bold" style={(() => {
-                          const status = getRiskControlStatus()
-                          if (status === 'unknown') return { color: '#1f2937' }
-                          if (status === 'zero' || status === 'fail') {
-                            return { color: '#ef4444' }
-                          }
-                          return { color: '#22c55e' }
-                        })()}>
+                      <div style={{ textAlign: 'center' }}>
+                        <p className="text-gray-600" style={{ fontSize: '14px', margin: '0 0 4px 0' }}>风险控制</p>
+                        <p style={{
+                          fontSize: '14px',
+                          margin: '0',
+                          color: (() => {
+                            const status = getRiskControlStatus()
+                            if (status === 'unknown') return '#1f2937'
+                            if (status === 'zero' || status === 'fail') return '#ef4444'
+                            return '#22c55e'
+                          })()
+                        }}>
                           {(() => {
                             const status = getRiskControlStatus()
                             if (status === 'unknown') return '-'
@@ -1028,29 +973,46 @@ const OrderManagement = () => {
                     </div>
                   </div>
 
-                  <div className="flex gap-3 justify-end" style={{ marginTop: '10px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setEvaluationStep(2)}
-                      className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      上一步
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowModal(false)}
-                      className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      取消
-                    </button>
-                    {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && (
+                  <div className="flex items-center justify-between" style={{ marginTop: '8px' }}>
+                    {/* 虚拟盘勾选 */}
+                    <div>
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={orderForm.isVirtual || false}
+                          onChange={(e) => setOrderForm({ ...orderForm, isVirtual: e.target.checked })}
+                          className="w-4 h-4 text-[#0F1419] border-gray-300 rounded focus:ring-[#0F1419]"
+                        />
+                        <span className="text-xs font-medium text-gray-700">虚拟盘</span>
+                      </label>
+                      <p className="text-xs text-gray-500 mt-0.5">勾选后记录到虚拟账单</p>
+                    </div>
+                    
+                    <div className="flex gap-2">
                       <button
-                        type="submit"
-                        className="px-4 py-2 bg-[#0F1419] border border-[#0F1419] rounded text-white font-medium hover:opacity-90 transition-opacity"
+                        type="button"
+                        onClick={() => setEvaluationStep(2)}
+                        className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm"
                       >
-                        确认创建
+                        上一步
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => setShowModal(false)}
+                        className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm"
+                      >
+                        取消
+                      </button>
+                      {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && (
+                        <button
+                          type="submit"
+                          className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity text-sm"
+                          style={{ backgroundColor: '#0F1419' }}
+                        >
+                          创建
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </form>
               </div>

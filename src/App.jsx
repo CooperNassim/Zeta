@@ -16,43 +16,103 @@ import ScheduledOrderManagement from './pages/ScheduledOrderManagement'
 import useStore from './store/useStore'
 import { ToastProvider } from './contexts/ToastContext'
 
+// 清除localStorage缓存
+const CLEAR_CACHE_KEY = 'zeta_cache_cleared_v2'
+const CURRENT_CACHE_VERSION = '2026-03-12-v3'
+
+if (typeof window !== 'undefined') {
+  const lastCleared = localStorage.getItem(CLEAR_CACHE_KEY)
+  if (lastCleared !== CURRENT_CACHE_VERSION) {
+    console.log('[Cache] 清除localStorage缓存...')
+    localStorage.clear()
+    localStorage.setItem(CLEAR_CACHE_KEY, CURRENT_CACHE_VERSION)
+    console.log('[Cache] 缓存已清除')
+  }
+}
+
 // 使用相对路径，通过 Vite 代理到后端
 const API_BASE_URL = ''
 
 // 数据同步组件 - 只在首次加载和页面可见时同步
 function DataSync() {
   const syncedRef = useRef(false)
+  const isReadyRef = useRef(false)
   const store = useStore()
+
+  // 检查后端是否就绪
+  const checkBackendReady = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/health`, {
+        method: 'GET',
+        cache: 'no-store'
+      })
+      return response.ok
+    } catch {
+      return false
+    }
+  }
 
   const syncData = useCallback(async () => {
     // 防止重复同步
     if (syncedRef.current) return
+
+    // 等待后端就绪（最多等待5秒）
+    let backendReady = await checkBackendReady()
+    let readyAttempts = 0
+    while (!backendReady && readyAttempts < 5) {
+      readyAttempts++
+      console.log(`[DataSync] 等待后端就绪 (${readyAttempts}/5)...`)
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      backendReady = await checkBackendReady()
+    }
+
+    if (!backendReady) {
+      console.warn('[DataSync] 后端未就绪，跳过本次同步')
+      isReadyRef.current = false
+      // 2秒后重置，允许下次尝试
+      setTimeout(() => {
+        syncedRef.current = false
+      }, 2000)
+      return
+    }
+
+    isReadyRef.current = true
     syncedRef.current = true
 
     console.log('[DataSync] 从数据库同步数据...')
 
     let retryCount = 0
-    const maxRetries = 3
+    const maxRetries = 2
     const retryDelay = 1000
 
     const attemptSync = async () => {
       try {
+        console.log('[DataSync] 正在请求 /api/sync/all...')
         const response = await fetch(`${API_BASE_URL}/api/sync/all`, {
-          cache: 'no-store'
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
         })
-        const result = await response.json()
 
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+
+        const result = await response.json()
         console.log('[DataSync] 原始响应:', result)
 
         if (result.success && result.data) {
-          const { orders, transactions, trade_records, stock_pool, daily_work_data } = result.data
+          const { orders, transactions, trade_records, stock_pool, daily_work_data, psychological_test_results, psychological_indicators } = result.data
 
           console.log('[DataSync] 数据库返回数据:', {
             orders: orders?.length || 0,
             transactions: transactions?.length || 0,
             trade_records: trade_records?.length || 0,
             stock_pool: stock_pool?.length || 0,
-            daily_work_data: daily_work_data?.length || 0
+            daily_work_data: daily_work_data?.length || 0,
+            psychological_test_results: psychological_test_results?.length || 0,
+            psychological_indicators: psychological_indicators?.length || 0
           })
 
           // 总是导入数据，即使是空数组也会清空本地旧数据
@@ -61,30 +121,32 @@ function DataSync() {
           if (trade_records) store.importTradeRecords(trade_records)
           if (stock_pool) store.importStocks(stock_pool)
           if (daily_work_data !== undefined) store.importDailyWorkData(daily_work_data)
+          if (psychological_test_results !== undefined) store.importPsychologicalTestResults(psychological_test_results)
+          if (psychological_indicators !== undefined) store.importPsychologicalIndicators(psychological_indicators)
 
           console.log('[DataSync] 同步完成')
         } else {
-          console.error('[DataSync] 同步失败:', result.error)
+          throw new Error(result.error || '同步响应格式错误')
         }
       } catch (error) {
-        console.error('[DataSync] 数据同步失败:', error)
+        console.error('[DataSync] 数据同步失败:', error.message || error)
         retryCount++
         if (retryCount < maxRetries) {
           console.log(`[DataSync] ${retryDelay / 1000}秒后重试 (${retryCount}/${maxRetries})...`)
           await new Promise(resolve => setTimeout(resolve, retryDelay))
           return attemptSync()
         } else {
-          console.error('[DataSync] 达到最大重试次数，放弃同步')
+          console.warn('[DataSync] 同步失败，将使用本地数据或等待下次同步')
         }
       }
     }
 
     await attemptSync()
 
-    // 1秒后重置，允许下次同步
+    // 5秒后重置，允许下次同步（避免短时间内频繁触发）
     setTimeout(() => {
       syncedRef.current = false
-    }, 1000)
+    }, 5000)
   }, [store])
 
   useEffect(() => {
@@ -95,14 +157,25 @@ function DataSync() {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         console.log('[DataSync] 页面可见，重新同步...')
+        syncedRef.current = false // 重置同步锁，允许立即同步
         syncData()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
+    // 监听窗口获得焦点时同步
+    const handleFocus = () => {
+      console.log('[DataSync] 窗口获得焦点，重新同步...')
+      syncedRef.current = false // 重置同步锁，允许立即同步
+      syncData()
+    }
+
+    window.addEventListener('focus', handleFocus)
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
     }
   }, [syncData])
 
@@ -120,7 +193,7 @@ function Navigation() {
     { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
     { id: 'risk', icon: Shield, label: '风险模型', path: '/risk-model', customIcon: 'risk' },
     { id: 'stockpool', icon: Database, label: '股票池', path: '/stock-pool', customIcon: 'stockpool' },
-    { id: 'order', icon: Clock, label: '普通订单', path: '/order-management', customIcon: 'order' },
+    { id: 'order', icon: Clock, label: '股票交易', path: '/order-management', customIcon: 'order' },
     { id: 'scheduled', icon: Bell, label: '预约订单', path: '/scheduled-orders', customIcon: 'order' },
     { id: 'transaction', icon: Receipt, label: '账单明细', path: '/transaction-history', customIcon: 'transaction' },
     { id: 'record', icon: Activity, label: '交易记录', path: '/trade-records', customIcon: 'record' },

@@ -18,8 +18,9 @@ const DataForm = ({
         if ((field.notRequired && !field.readonly) || field.hideInForm) {
           return null
         }
+        const isFullWidth = field.fullWidth !== false && (field.fullWidth || field.type === 'textarea')
         return (
-        <div key={field.key}>
+        <div key={field.key} className={isFullWidth ? 'col-span-2 md:col-span-4' : ''}>
           <label className="block text-sm text-gray-600 mb-1.5">
             {!field.notRequired && <span className="text-red-500">*</span>} {field.label}
           </label>
@@ -61,17 +62,18 @@ const DataForm = ({
                 error={!!formErrors[field.key]}
               />
             ) : field.type === 'textarea' ? (
-              <textarea
+              <CustomInput
+                type="textarea"
                 value={formData[field.key] || ''}
-                onChange={(e) => {
-                  onChange({ ...formData, [field.key]: e.target.value })
-                  if (e.target.value && formErrors[field.key]) {
-                    onChange({ ...formData, [field.key]: e.target.value }, { [field.key]: false })
+                onChange={(value) => {
+                  onChange({ ...formData, [field.key]: value })
+                  if (value && formErrors[field.key]) {
+                    onChange({ ...formData, [field.key]: value }, { [field.key]: false })
                   }
                 }}
-                placeholder="请输入"
-                className={`w-full px-3 py-2 border ${formErrors[field.key] ? 'border-red-500' : 'border-gray-300'} rounded focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                rows={2}
+                placeholder={field.placeholder || '请输入'}
+                error={!!formErrors[field.key]}
+                rows={field.rows || 2}
               />
             ) : (
               <CustomInput

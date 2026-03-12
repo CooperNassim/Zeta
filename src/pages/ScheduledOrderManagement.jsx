@@ -387,7 +387,7 @@ const ScheduledOrderManagement = () => {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">订单类型 *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">交易类型 *</label>
                     <select
                       value={orderForm.type}
                       onChange={e => setOrderForm({ ...orderForm, type: e.target.value })}

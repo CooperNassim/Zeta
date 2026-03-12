@@ -170,7 +170,7 @@ const TechnicalIndicators = () => {
         />
 
         {/* 指标列表 */}
-        <div style={{ flex: 1, overflow: 'auto', marginTop: '10px' }}>
+        <div style={{ flex: 1, overflow: 'auto' }}>
           {filteredIndicators.length === 0 ? (
             <EmptyState message="暂无技术指标数据" />
           ) : (

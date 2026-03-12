@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Download, Edit3 } from 'lucide-react'
+import { Download } from 'lucide-react'
 import DataTable from '../components/DataTable'
 import Pagination from '../components/Pagination'
 import EmptyState from '../components/EmptyState'
@@ -9,10 +8,12 @@ import FilterSelect from '../components/FilterSelect'
 import SearchInput from '../components/SearchInput'
 import ExportModal from '../components/ExportModal'
 import FormModal from '../components/FormModal'
+import Toolbar from '../components/Toolbar'
 import ErrorMessage from '../components/ErrorMessage'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
 import ExcelJS from 'exceljs'
+import { useToast } from '../contexts/ToastContext'
 
 // 格式化日期
 const formatDate = (date) => {
@@ -27,12 +28,15 @@ const formatDate = (date) => {
 }
 
 const TradeRecords = () => {
+  const { showToast } = useToast()
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedFilter] = useState('all')
   const [filterSymbol, setFilterSymbol] = useState('')
   const [filterName, setFilterName] = useState('')
+  const [filterTradeType, setFilterTradeType] = useState('')
   const [filterScore, setFilterScore] = useState('')
-  const [filterDateRange, setFilterDateRange] = useState('')
+  const [filterOverallScore, setFilterOverallScore] = useState('')
+  const [filterTradeDateRange, setFilterTradeDateRange] = useState('')
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportFormat, setExportFormat] = useState('xlsx')
   const [selectedIds, setSelectedIds] = useState([])
@@ -72,29 +76,44 @@ const TradeRecords = () => {
       result = result.filter(r => r.name.toLowerCase().includes(filterName.toLowerCase()))
     }
 
-    // 操作评分筛选
+    // 交易类型筛选
+    if (filterTradeType) {
+      result = result.filter(r => r.tradeType === filterTradeType)
+    }
+
+    // 操作评级筛选
     if (filterScore) {
       result = result.filter(r => {
         const score = parseFloat(r.overallScore)
-        switch (filterScore) {
-          case 'high':
-            return score >= 70
-          case 'medium':
-            return score >= 40 && score < 70
-          case 'low':
-            return score < 40
-          default:
-            return true
-        }
+        let grade = ''
+        if (score >= 90) grade = 'A'
+        else if (score >= 80) grade = 'B'
+        else if (score >= 70) grade = 'C'
+        else if (score >= 0) grade = 'D'
+        return grade === filterScore
       })
     }
 
-    // 日期筛选（按买入记录时间）
-    if (filterDateRange) {
-      const [startDate, endDate] = filterDateRange.split('~')
+    // 交易评级筛选
+    if (filterOverallScore) {
+      result = result.filter(r => {
+        const score = parseFloat(r.overallScore)
+        let grade = ''
+        if (score >= 90) grade = 'A'
+        else if (score >= 80) grade = 'B'
+        else if (score >= 70) grade = 'C'
+        else if (score >= 0) grade = 'D'
+        return grade === filterOverallScore
+      })
+    }
+
+    // 交易时间筛选（按买入/卖出时间）
+    if (filterTradeDateRange) {
+      const [startDate, endDate] = filterTradeDateRange.split('~')
       if (startDate && endDate) {
         result = result.filter(r => {
-          const recordDate = formatDate(r.createdAt).split(' ')[0]
+          const tradeTime = r.tradeType === '买入' ? formatDate(r.buyTime) : formatDate(r.sellTime)
+          const recordDate = tradeTime ? tradeTime.split(' ')[0] : ''
           return recordDate >= startDate && recordDate <= endDate
         })
       }
@@ -154,31 +173,39 @@ const TradeRecords = () => {
   const handleSummaryFormSubmit = (e) => {
     e.preventDefault()
 
-    if (!summaryFormData.tradeSummary || summaryFormData.tradeSummary.trim() === '') {
-      setSummaryFormErrors({ tradeSummary: '不能为空' })
+    const errors = {}
+    SUMMARY_FIELDS.forEach(field => {
+      if (!summaryFormData[field.key] || summaryFormData[field.key].trim() === '') {
+        errors[field.key] = true
+      }
+    })
+
+    if (Object.keys(errors).length > 0) {
+      setSummaryFormErrors(errors)
       return
     }
 
     updateTradeRecord(editingTradeId, { tradeSummary: summaryFormData.tradeSummary.trim() })
+    showToast('保存成功')
     setShowSummaryModal(false)
     setEditingTradeId(null)
-    setSummaryFormData({})
     setSummaryFormErrors({})
+    setSummaryFormData({})
   }
 
-  const handleSummaryFormDataChange = (newFormData) => {
+  const handleSummaryFormDataChange = (newFormData, clearError = null) => {
     setSummaryFormData(newFormData)
-    if (newFormData.tradeSummary && newFormData.tradeSummary.trim() !== '') {
-      setSummaryFormErrors({})
+    if (clearError) {
+      setSummaryFormErrors(prev => ({ ...prev, ...clearError }))
     }
   }
 
-  const summaryFields = [
+  const SUMMARY_FIELDS = [
     {
       key: 'tradeSummary',
       label: '交易总结',
       type: 'textarea',
-      placeholder: '请输入交易总结...',
+      placeholder: '请输入',
       required: true,
       rows: 4
     }
@@ -262,7 +289,18 @@ const TradeRecords = () => {
         {/* 内容区域 */}
         <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
           {/* 筛选条件 */}
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px', marginBottom: '10px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px', flexShrink: 0 }}>
+            <div style={{ width: '180px' }}>
+              <FilterSelect
+                value={filterTradeType === '' ? '' : filterTradeType}
+                onChange={(value) => setFilterTradeType(value === '' ? '' : value)}
+                options={[
+                  { value: '买入', label: '买入' },
+                  { value: '卖出', label: '卖出' }
+                ]}
+                placeholder="交易类型"
+              />
+            </div>
             <SearchInput
               value={filterSymbol}
               onChange={setFilterSymbol}
@@ -275,63 +313,60 @@ const TradeRecords = () => {
               placeholder="股票名称"
               width="200px"
             />
+            <div style={{ position: 'relative', width: '240px' }}>
+              <DateRangePicker
+                value={filterTradeDateRange}
+                onChange={(value) => {
+                  setFilterTradeDateRange(value)
+                  setCurrentPage(1)
+                }}
+                placeholder="交易时间"
+                style={{ width: '180px' }}
+              />
+            </div>
             <div style={{ width: '180px' }}>
               <FilterSelect
                 value={filterScore === '' ? '' : filterScore}
                 onChange={(value) => setFilterScore(value === '' ? '' : value)}
                 options={[
-                  { value: 'high', label: '高评分 (70+)' },
-                  { value: 'medium', label: '中评分 (40-70)' },
-                  { value: 'low', label: '低评分 (<40)' }
+                  { value: 'A', label: 'A' },
+                  { value: 'B', label: 'B' },
+                  { value: 'C', label: 'C' },
+                  { value: 'D', label: 'D' }
                 ]}
-                placeholder="操作评分"
+                placeholder="操作评级"
               />
             </div>
-            <div style={{ position: 'relative', width: '240px' }}>
-              <DateRangePicker
-                value={filterDateRange}
-                onChange={(value) => {
-                  setFilterDateRange(value)
-                  setCurrentPage(1)
-                }}
-                placeholder="记录时间"
+            <div style={{ width: '180px' }}>
+              <FilterSelect
+                value={filterOverallScore === '' ? '' : filterOverallScore}
+                onChange={(value) => setFilterOverallScore(value === '' ? '' : value)}
+                options={[
+                  { value: 'A', label: 'A' },
+                  { value: 'B', label: 'B' },
+                  { value: 'C', label: 'C' },
+                  { value: 'D', label: 'D' }
+                ]}
+                placeholder="交易评级"
               />
             </div>
           </div>
 
           {/* 工具栏 */}
-          <div style={{ flexShrink: 0, marginBottom: '10px' }}>
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="flex gap-2">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleEditSummary}
-                  disabled={selectedIds.length !== 1}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Edit3 className="w-4 h-4" />
-                  交易总结
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleExport}
-                  disabled={filteredRecords.length === 0}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Download className="w-4 h-4" />
-                  导出
-                </motion.button>
-              </div>
-              <div className="text-sm text-gray-500">
-                共 {filteredRecords.length} 条记录
-              </div>
-            </div>
-          </div>
+          <Toolbar
+            onEdit={handleEditSummary}
+            onExport={handleExport}
+            canEdit={selectedIds.length === 1}
+            canExport={filteredRecords.length > 0}
+            totalCount={filteredRecords.length}
+            hideAdd={true}
+            hideImport={true}
+            hideDelete={true}
+            editLabel="交易总结"
+          />
 
           {/* 数据表格 */}
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', marginTop: '10px', paddingBottom: '50px', zIndex: '1', background: 'rgb(249, 250, 251)' }}>
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', paddingBottom: '50px', zIndex: '1', background: 'rgb(249, 250, 251)' }}>
             <div className="overflow-y-auto overflow-x-auto" style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: '1' }}>
               <DataTable
                 showCheckbox={true}
@@ -349,8 +384,7 @@ const TradeRecords = () => {
                   { key: 'otherFees', label: '其他费用', width: '120px' },
                   { key: 'tradeStrategy', label: '交易策略', width: '150px' },
                   { key: 'tradeTime', label: '交易时间', width: '180px' },
-                  { key: 'holdDuration', label: '持仓天数', width: '100px' },
-                  { key: 'grades', label: '操作评分', width: '150px' },
+                  { key: 'grades', label: '操作评级', width: '150px' },
                   { key: 'profitPercent', label: '盈亏比例', width: '120px' },
                   { key: 'profit', label: '盈亏金额', width: '120px' },
                   { key: 'fees', label: '手续费', width: '120px' },
@@ -358,7 +392,7 @@ const TradeRecords = () => {
                   { key: 'netProfit', label: '净盈亏额', width: '120px' },
                   { key: 'totalSlippage', label: '滑点', width: '120px' },
                   { key: 'slippageNetProfitRatio', label: '滑净盈比', width: '120px' },
-                  { key: 'overallScore', label: '整体评分', width: '120px' },
+                  { key: 'overallScore', label: '交易评级', width: '120px' },
                   { key: 'tradeSummary', label: '交易总结', width: '200px' }
                 ]}
                 data={paginatedData}
@@ -367,18 +401,7 @@ const TradeRecords = () => {
                 onSelectOne={handleSelectOne}
                 renderCell={(field, item) => {
                   if (field.key === 'tradeType') {
-                    return (
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        background: item.tradeType === '买入' ? '#dbeafe' : '#fee2e2',
-                        color: item.tradeType === '买入' ? '#2563eb' : '#dc2626'
-                      }}>
-                        {item.tradeType}
-                      </span>
-                    )
+                    return <span>{item.tradeType}</span>
                   }
                   if (field.key === 'tradePrice') {
                     if (item.tradeType === '买入') {
@@ -425,7 +448,7 @@ const TradeRecords = () => {
                       const quantity = item.buyQuantity
                       if (tradePrice !== null && tradePrice !== undefined && orderPrice !== null && orderPrice !== undefined && quantity) {
                         const slippage = (tradePrice - orderPrice) * quantity
-                        return <span style={{ color: slippage > 0 ? '#dc2626' : slippage < 0 ? '#16a34a' : '#6b7280' }}>{slippage.toFixed(2)}</span>
+                        return <span>{slippage.toFixed(2)}</span>
                       }
                       return <span>-</span>
                     } else {
@@ -434,7 +457,7 @@ const TradeRecords = () => {
                       const quantity = item.sellQuantity
                       if (tradePrice !== null && tradePrice !== undefined && orderPrice !== null && orderPrice !== undefined && quantity) {
                         const slippage = (tradePrice - orderPrice) * quantity
-                        return <span style={{ color: slippage > 0 ? '#16a34a' : slippage < 0 ? '#dc2626' : '#6b7280' }}>{slippage.toFixed(2)}</span>
+                        return <span>{slippage.toFixed(2)}</span>
                       }
                       return <span>-</span>
                     }
@@ -467,14 +490,7 @@ const TradeRecords = () => {
                   }
                   if (field.key === 'profit') {
                     const profit = parseFloat(item.profit)
-                    return (
-                      <span style={{
-                        color: profit >= 0 ? '#16a34a' : '#dc2626',
-                        fontWeight: 'bold'
-                      }}>
-                        {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
-                      </span>
-                    )
+                    return <span>{profit >= 0 ? '+' : ''}${profit.toFixed(2)}</span>
                   }
                   if (field.key === 'fees') {
                     return <span>-</span>
@@ -493,70 +509,22 @@ const TradeRecords = () => {
                   }
                   if (field.key === 'profitPercent') {
                     const percent = parseFloat(item.profitPercent)
-                    return (
-                      <span style={{
-                        color: percent >= 0 ? '#16a34a' : '#dc2626',
-                        fontWeight: 'bold'
-                      }}>
-                        {percent >= 0 ? '+' : ''}{percent.toFixed(2)}%
-                      </span>
-                    )
+                    return <span>{percent >= 0 ? '+' : ''}{percent.toFixed(2)}%</span>
                   }
                   if (field.key === 'grades') {
-                    return (
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <span style={{
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          fontWeight: 'bold',
-                          background: item.buyGrade === 'A' ? '#dcfce7' : item.buyGrade === 'B' ? '#fef9c3' : '#fee2e2'
-                        }}>
-                          买{item.buyGrade}
-                        </span>
-                        <span style={{
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          fontWeight: 'bold',
-                          background: item.sellGrade === 'A' ? '#dcfce7' : item.sellGrade === 'B' ? '#fef9c3' : '#fee2e2',
-                          opacity: item.sellGrade ? 1 : 0.3
-                        }}>
-                          卖{item.sellGrade || '-'}
-                        </span>
-                      </div>
-                    )
+                    return <span>{item.buyGrade || '-'}</span>
                   }
                   if (field.key === 'tradeSummary') {
-                    return (
-                      <span style={{
-                        display: 'block',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        maxWidth: '180px'
-                      }}>
-                        {item.tradeSummary || '-'}
-                      </span>
-                    )
+                    return <span>{item.tradeSummary || '-'}</span>
                   }
                   if (field.key === 'overallScore') {
-                    return (
-                      <div style={{
-                        display: 'inline-block',
-                        padding: '4px 12px',
-                        borderRadius: '12px',
-                        fontSize: '14px',
-                        fontWeight: 'bold',
-                        background: parseFloat(item.overallScore) >= 70 ? '#dcfce7' : parseFloat(item.overallScore) >= 40 ? '#fef9c3' : '#fee2e2',
-                        color: parseFloat(item.overallScore) >= 70 ? '#16a34a' : parseFloat(item.overallScore) >= 40 ? '#854d0e' : '#dc2626'
-                      }}>
-                        {parseFloat(item.overallScore).toFixed(1)}
-                      </div>
-                    )
-                  }
-                  if (field.key === 'holdDuration') {
-                    return `${item.holdDuration}天`
+                    const score = parseFloat(item.overallScore)
+                    let grade = '-'
+                    if (score >= 90) grade = 'A'
+                    else if (score >= 80) grade = 'B'
+                    else if (score >= 70) grade = 'C'
+                    else if (score >= 0) grade = 'D'
+                    return <span>{grade}</span>
                   }
                   return null
                 }}
@@ -597,41 +565,16 @@ const TradeRecords = () => {
         onClose={() => {
           setShowSummaryModal(false)
           setEditingTradeId(null)
-          setSummaryFormData({})
           setSummaryFormErrors({})
+          setSummaryFormData({})
         }}
         onSubmit={handleSummaryFormSubmit}
-        title="填写交易总结"
-        fields={summaryFields}
+        title="交易总结"
+        fields={SUMMARY_FIELDS}
         formData={summaryFormData}
         formErrors={summaryFormErrors}
         onFormDataChange={handleSummaryFormDataChange}
-        getFieldComponent={(field) => {
-          if (field.type === 'textarea') {
-            return (
-              <div key={field.key}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {field.label}
-                  {field.required && <span className="text-red-500 ml-1">*</span>}
-                </label>
-                <textarea
-                  name={field.key}
-                  value={summaryFormData[field.key] || ''}
-                  onChange={(e) => handleSummaryFormDataChange({ ...summaryFormData, [field.key]: e.target.value })}
-                  placeholder={field.placeholder}
-                  rows={field.rows}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    summaryFormErrors[field.key] ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                />
-                {summaryFormErrors[field.key] && (
-                  <ErrorMessage message={summaryFormErrors[field.key]} />
-                )}
-              </div>
-            )
-          }
-          return null
-        }}
+        width="max-w-md"
       />
     </div>
   )

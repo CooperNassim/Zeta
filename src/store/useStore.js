@@ -28,11 +28,11 @@ const apiCall = async (endpoint, method = 'GET', data = null) => {
 
 // 心理测试指标
 export const initialPsychologicalIndicators = [
-  { id: '1', name: '今天身体感觉怎么样？', description: '0=感觉生病了；1=感觉正常；2=感觉好极了；', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '2', name: '昨天交易如何？', description: '0=亏损；1=没有交易；2=盈利；', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '3', name: '早上做好计划了吗？', description: '0=没做；1=无仓位；2=准备得很好；', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '4', name: '早上情绪如何？', description: '0=低落；1=正常；2=棒极了；', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '5', name: '今天工作量如何？', description: '0=很忙；1=正常；2=很闲；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '1', dbId: null, name: '今天身体感觉怎么样？', description: '0=感觉生病了；1=感觉正常；2=感觉好极了；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '2', dbId: null, name: '昨天交易如何？', description: '0=亏损；1=没有交易；2=盈利；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '3', dbId: null, name: '早上做好计划了吗？', description: '0=没做；1=无仓位；2=准备得很好；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '4', dbId: null, name: '早上情绪如何？', description: '0=低落；1=正常；2=棒极了；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '5', dbId: null, name: '今天工作量如何？', description: '0=很忙；1=正常；2=很闲；', minScore: 0, maxScore: 2, weight: 0.2 },
 ]
 
 // 交易策略模板
@@ -701,16 +701,125 @@ const useStore = create(
       },
 
       // 添加心理测试
-      addPsychologicalTest: (test) => set((state) => ({
-        psychologicalTests: [...state.psychologicalTests, { ...test, id: Date.now(), deleted: false, deletedAt: null }]
-      })),
+      addPsychologicalTest: async (test) => {
+        console.log('[Store] 添加心理测试:', test)
+
+        // 构造数据库数据
+        const now = new Date()
+        // 使用本地时间而不是UTC时间来避免时区问题
+        const dateObj = new Date(test.date)
+        const year = dateObj.getFullYear()
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+        const day = String(dateObj.getDate()).padStart(2, '0')
+        const dateStr = `${year}-${month}-${day}`
+
+        console.log('[Store] 原始日期:', test.date)
+        console.log('[Store] 保存的日期字符串:', dateStr)
+
+        const dbData = {
+          test_date: dateStr,
+          scores: test.scores || {},
+          overall_score: parseFloat(test.overallScore) || 0,
+          notes: test.notes || '',
+          deleted: false,
+          deleted_at: null,
+          created_at: now.toISOString(),
+          updated_at: now.toISOString()
+        }
+
+        try {
+          // 先保存到本地状态
+          const localTest = { ...test, id: Date.now(), deleted: false, deletedAt: null }
+          set((state) => ({
+            psychologicalTests: [...state.psychologicalTests, localTest]
+          }))
+
+          // 然后同步到数据库
+          const res = await apiCall('/api/psychological_test_results', 'POST', dbData)
+          console.log('[Store] 心理测试保存到数据库结果:', res)
+
+          // 不立即重新同步数据，避免覆盖本地的 testScores
+          // 让前端组件在需要时手动同步
+
+          return { ...test, id: res.data?.id }
+        } catch (error) {
+          console.error('[Store] 保存心理测试到数据库失败:', error)
+          throw error
+        }
+      },
+
+      // 更新心理测试记录
+      updatePsychologicalTest: async (date, test) => {
+        console.log('[Store] 更新心理测试:', date, test)
+
+        // 构造数据库数据
+        const now = new Date()
+        // 使用本地时间而不是UTC时间来避免时区问题
+        const dateObj = new Date(date)
+        const year = dateObj.getFullYear()
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+        const day = String(dateObj.getDate()).padStart(2, '0')
+        const dateStr = `${year}-${month}-${day}`
+
+        console.log('[Store] 原始日期:', date)
+        console.log('[Store] 保存的日期字符串:', dateStr)
+
+        const dbData = {
+          test_date: dateStr,
+          scores: test.scores || {},
+          overall_score: parseFloat(test.overallScore) || 0,
+          notes: test.notes || '',
+          updated_at: now.toISOString()
+        }
+
+        try {
+          // 通过日期更新数据库
+          await apiCall(`/api/psychological_test_results/by-date/${dateStr}`, 'PUT', dbData)
+          console.log('[Store] 心理测试更新到数据库成功')
+
+          // 不立即重新同步数据，避免覆盖本地的 testScores
+          // 让前端组件在需要时手动同步
+        } catch (error) {
+          console.error('[Store] 更新心理测试到数据库失败:', error)
+          throw error
+        }
+      },
 
       // 更新心理测试指标
-      updatePsychologicalIndicator: (id, indicator) => set((state) => ({
-        psychologicalIndicators: state.psychologicalIndicators.map(i =>
-          i.id === id ? indicator : i
-        )
-      })),
+      updatePsychologicalIndicator: async (id, indicator) => {
+        try {
+          // 找到对应的数据库 id
+          const existingIndicator = get().psychologicalIndicators.find(i => i.id === id)
+          if (!existingIndicator || !existingIndicator.dbId) {
+            throw new Error('找不到对应的指标记录')
+          }
+
+          // 转换为数据库字段名 (camelCase -> snake_case)
+          const dbData = {
+            name: indicator.name,
+            description: indicator.description || '',
+            min_score: indicator.minScore || 0,
+            max_score: indicator.maxScore || 10,
+            weight: parseFloat(indicator.weight) || 0.2,
+            sort_order: indicator.sortOrder || 0,
+            updated_at: new Date().toISOString()
+          }
+
+          // 更新到数据库（使用数据库表的实际 id）
+          await apiCall(`/api/psychological_indicators/${existingIndicator.dbId}`, 'PUT', dbData)
+          console.log('[Store] 心理测试指标更新到数据库成功:', existingIndicator.dbId)
+
+          // 更新本地状态（不触发数据同步）
+          set((state) => ({
+            psychologicalIndicators: state.psychologicalIndicators.map(i =>
+              i.id === id ? { ...indicator, dbId: existingIndicator.dbId } : i
+            )
+          }))
+        } catch (error) {
+          console.error('[Store] 心理测试指标更新失败:', error)
+          throw error
+        }
+      },
 
       // 添加交易策略
       addStrategy: (type, strategy) => set((state) => ({
@@ -1087,13 +1196,11 @@ const useStore = create(
           createdAt: new Date().toISOString()
         }
 
-        // 更新预约单状态
-        const updatedOrders = state.orders.map(o =>
-          o.id === id ? { ...o, status: 'executed', executedAt: new Date().toISOString() } : o
-        )
+        // 不再更新订单状态，因为系统不再使用状态字段
+        // 订单创建后即为有效订单
 
         return {
-          orders: updatedOrders,
+          orders: state.orders,
           tradeRecords: order.type === 'buy'
             ? [...state.tradeRecords, ...newTradeRecords]
             : newTradeRecords,
@@ -1112,21 +1219,6 @@ const useStore = create(
                 : currentAccount.balance + order.price * order.quantity
             }
           }
-        }
-      }),
-
-      // 作废预约单
-      cancelOrder: (id) => set((state) => {
-        const order = state.orders.find(o => o.id === id)
-        if (!order) return state
-
-        // 更新预约单状态
-        const updatedOrders = state.orders.map(o =>
-          o.id === id ? { ...o, status: 'cancelled', cancelledAt: new Date().toISOString() } : o
-        )
-
-        return {
-          orders: updatedOrders
         }
       }),
 
@@ -1703,6 +1795,105 @@ const useStore = create(
         }
       }),
 
+      // 批量导入心理测试结果（从数据库同步）
+      importPsychologicalTestResults: (results) => set((state) => {
+        console.log('[Store] 从数据库导入的心理测试结果:', results)
+
+        if (results === null || results === undefined) {
+          console.log('[Store] 心理测试结果未提供，保持现有数据')
+          return {}
+        }
+
+        // 过滤已删除的数据
+        const activeResults = results.filter(r => r.deleted !== true)
+
+        // 如果数据库返回空数组，清空本地数据
+        if (activeResults.length === 0) {
+          console.log('[Store] 数据库返回空数组，清空本地心理测试结果')
+          return { psychologicalTests: [] }
+        }
+
+        // 转换数据库字段名 (snake_case -> camelCase)
+        const newResults = activeResults.map(r => ({
+          ...r,
+          id: r.id?.toString(),
+          date: r.test_date || r.date,
+          scores: r.scores || {},
+          overallScore: r.overall_score || 0,
+          notes: r.notes || '',
+          createdAt: r.created_at || r.createdAt || new Date().toISOString(),
+          updatedAt: r.updated_at || r.updatedAt || null,
+          deleted: r.deleted || false,
+          deletedAt: r.deleted_at || r.deletedAt || null
+        }))
+
+        // 按 date 去重并更新已有记录
+        const dateMap = new Map()
+
+        // 先添加本地的记录
+        state.psychologicalTests.forEach(t => {
+          const date = new Date(t.date)
+          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+          dateMap.set(dateStr, t)
+        })
+
+        // 用新记录覆盖相同日期的旧记录
+        newResults.forEach(r => {
+          const date = new Date(r.date)
+          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+          dateMap.set(dateStr, r)
+        })
+
+        // 转换回数组
+        const mergedResults = Array.from(dateMap.values())
+
+        // 按日期降序排序
+        mergedResults.sort((a, b) => new Date(b.date) - new Date(a.date))
+
+        console.log('[Store] 导入心理测试结果完成，总数:', mergedResults.length)
+        return { psychologicalTests: mergedResults }
+      }),
+
+      // 批量导入心理测试指标（从数据库同步）
+      importPsychologicalIndicators: (indicators) => set((state) => {
+        console.log('[Store] 从数据库导入的心理测试指标:', indicators)
+
+        if (indicators === null || indicators === undefined) {
+          console.log('[Store] 心理测试指标未提供，保持现有数据')
+          return {}
+        }
+
+        // 过滤已删除和不活跃的数据
+        const activeIndicators = indicators.filter(i => i.deleted !== true && i.is_active !== false)
+
+        // 如果数据库返回空数组，使用默认指标
+        if (activeIndicators.length === 0) {
+          console.log('[Store] 数据库返回空数组，使用默认指标')
+          return { psychologicalIndicators: [...initialPsychologicalIndicators] }
+        }
+
+        // 转换数据库字段名 (snake_case -> camelCase)
+        const newIndicators = activeIndicators.map(i => ({
+          ...i,
+          dbId: i.id, // 保存数据库表的 id 用于更新操作
+          id: i.indicator_id || i.id, // 前端使用的 id
+          name: i.name,
+          description: i.description,
+          minScore: i.min_score,
+          maxScore: i.max_score,
+          weight: parseFloat(i.weight) || 0.2,
+          sortOrder: i.sort_order || 0,
+          createdAt: i.created_at || new Date().toISOString(),
+          updatedAt: i.updated_at || null
+        }))
+
+        // 按 sortOrder 排序
+        newIndicators.sort((a, b) => a.sortOrder - b.sortOrder)
+
+        console.log('[Store] 导入心理测试指标完成，总数:', newIndicators.length)
+        return { psychologicalIndicators: newIndicators }
+      }),
+
       // 批量永久删除股票
       permanentDeleteMultipleStocks: (ids) => set((state) => {
         apiCall(`/api/stock_pool/bulk/permanent`, 'DELETE', { ids })
@@ -1815,11 +2006,11 @@ const useStore = create(
         if (!sellOrder.buyOrderId) return state
 
         const buyOrder = state.orders.find(o => o.id === sellOrder.buyOrderId)
-        if (!buyOrder || buyOrder.status !== 'executed') return state
+        if (!buyOrder) return state  // 只检查买入订单是否存在，不再检查状态
 
-        // 计算持仓天数
-        const buyTime = new Date(buyOrder.executedAt || buyOrder.createdAt)
-        const sellTime = new Date(sellOrder.executedAt || sellOrder.createdAt)
+        // 计算持仓天数 - 使用创建时间，因为不再有执行时间
+        const buyTime = new Date(buyOrder.createdAt)
+        const sellTime = new Date(sellOrder.createdAt)
         const holdDuration = Math.ceil((sellTime - buyTime) / (1000 * 60 * 60 * 24))
 
         // 获取K线数据用于计算评分
@@ -1829,14 +2020,14 @@ const useStore = create(
         // 获取买入当天的价格通道数据
         const buyDateKline = buyKline.find(k => {
           const kDate = new Date(k.timestamp)
-          const buyDate = new Date(buyOrder.executedAt || buyOrder.createdAt)
+          const buyDate = new Date(buyOrder.createdAt)
           return kDate.toDateString() === buyDate.toDateString()
         })
 
         // 获取卖出当天的价格通道数据
         const sellDateKline = sellKline.find(k => {
           const kDate = new Date(k.timestamp)
-          const sellDate = new Date(sellOrder.executedAt || sellOrder.createdAt)
+          const sellDate = new Date(sellOrder.createdAt)
           return kDate.toDateString() === sellDate.toDateString()
         })
 
@@ -1897,7 +2088,7 @@ const useStore = create(
           buyOrderId: buyOrder.id,
           buyPrice: buyOrder.price,
           buyQuantity: buyOrder.quantity,
-          buyTime: buyOrder.executedAt || buyOrder.createdAt,
+          buyTime: buyOrder.createdAt,
           buyPsychologicalScore: buyOrder.psychologicalScore,
           buyStrategyScore: buyOrder.strategyScore,
           buyStrategyId: buyOrder.strategyId,
@@ -1906,7 +2097,7 @@ const useStore = create(
           sellOrderId: sellOrder.id,
           sellPrice: sellOrder.price,
           sellQuantity: sellOrder.quantity,
-          sellTime: sellOrder.executedAt || sellOrder.createdAt,
+          sellTime: sellOrder.createdAt,
           sellPsychologicalScore: sellOrder.psychologicalScore,
           sellStrategyScore: sellOrder.strategyScore,
           sellStrategyId: sellOrder.strategyId,

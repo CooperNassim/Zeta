@@ -21,7 +21,6 @@ const Modal = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-      onClick={onClose}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
@@ -29,7 +28,6 @@ const Modal = ({
         exit={{ scale: 0.9, opacity: 0 }}
         className={`bg-white rounded-lg w-full ${width} p-6 shadow-lg flex flex-col`}
         style={{ maxHeight: 'calc(100vh - 80px)' }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* 标题栏 */}
         <div className="flex items-center justify-between mb-6 flex-shrink-0">
@@ -45,7 +43,7 @@ const Modal = ({
         </div>
 
         {/* 内容区域 */}
-        <div className="mb-6 overflow-auto flex-1" style={{ maxHeight }}>
+        <div className="mb-4 overflow-auto flex-1" style={{ maxHeight }}>
           {children}
         </div>
 

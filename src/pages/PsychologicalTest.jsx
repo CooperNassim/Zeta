@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Edit as EditIcon } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ChevronLeft, ChevronRight, Edit as EditIcon, RefreshCw, RotateCcw, Check } from 'lucide-react'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
 import Modal from '../components/Modal'
@@ -11,39 +11,65 @@ const PsychologicalTest = () => {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [testScores, setTestScores] = useState({})
   const [showEditModal, setShowEditModal] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
 
   const indicators = useStore(state => state.psychologicalIndicators)
   const psychologicalTests = useStore(state => state.psychologicalTests)
-  const addPsychologicalTest = useStore(state => state.addPsychologicalTest)
   const updatePsychologicalIndicator = useStore(state => state.updatePsychologicalIndicator)
+  const importPsychologicalTestResults = useStore(state => state.importPsychologicalTestResults)
+  const importPsychologicalIndicators = useStore(state => state.importPsychologicalIndicators)
+
+  // 获取选中日期的测试结果
+  const getTestResultForDate = (date) => {
+    const dateStr = format(date, 'yyyy-MM-dd')
+    return psychologicalTests.find(test => format(new Date(test.date), 'yyyy-MM-dd') === dateStr)
+  }
 
   // 初始化默认分数
   useEffect(() => {
     const today = new Date()
     const testResult = getTestResultForDate(today)
     if (testResult) {
+      console.log('[PsychologicalTest] 初始化: 设置今天的分数', testResult.scores)
       setTestScores(testResult.scores)
     } else {
       // 没有测试记录时，不设置任何默认值
+      console.log('[PsychologicalTest] 初始化: 没有今天的测试记录')
       setTestScores({})
     }
   }, [indicators])
 
+  // 监听 psychologicalTests 的变化，更新当前选中日期的 testScores
+  useEffect(() => {
+    if (psychologicalTests.length > 0) {
+      console.log('[PsychologicalTest] psychologicalTests 发生变化')
+      const currentTestResult = getTestResultForDate(selectedDate)
+      console.log('[PsychologicalTest] 当前选中日期的测试结果:', currentTestResult)
+      console.log('[PsychologicalTest] 更新前 testScores:', testScores)
+      // 自动同步选中日期的数据
+      if (currentTestResult) {
+        console.log('[PsychologicalTest] 同步数据:', currentTestResult.scores)
+        setTestScores(currentTestResult.scores)
+      } else {
+        console.log('[PsychologicalTest] 无数据，清空分数')
+        setTestScores({})
+      }
+    }
+  }, [psychologicalTests, selectedDate])
+
   const handleDateClick = (date) => {
+    console.log('[PsychologicalTest] 切换日期:', date)
     setSelectedDate(date)
     const testResult = getTestResultForDate(date)
     if (testResult) {
+      console.log('[PsychologicalTest] 切换日期: 找到测试记录', testResult.scores)
       setTestScores(testResult.scores)
     } else {
       // 没有测试记录时，不设置任何默认值
+      console.log('[PsychologicalTest] 切换日期: 没有测试记录')
       setTestScores({})
     }
-  }
-
-  // 获取选中日期的测试结果
-  const getTestResultForDate = (date) => {
-    const dateStr = format(date, 'yyyy-MM-dd')
-    return psychologicalTests.find(test => format(new Date(test.date), 'yyyy-MM-dd') === dateStr)
   }
 
   const getScoreColor = (score) => {
@@ -82,80 +108,102 @@ const PsychologicalTest = () => {
       return
     }
 
+    // 只更新本地状态,不自动保存
     const newScores = { ...testScores, [indicatorId]: parseInt(value) }
     setTestScores(newScores)
-    // 选中分数后自动保存测试结果
-    const overallScore = calculateOverallScore(newScores)
-    const dateStr = format(selectedDate, 'yyyy-MM-dd')
+  }
 
-    // 检查是否已有当天的测试记录
-    const existingIndex = psychologicalTests.findIndex(test => format(new Date(test.date), 'yyyy-MM-dd') === dateStr)
+  // 重置所有打分项
+  const handleReset = () => {
+    if (!isTodaySelected()) {
+      showToast('只能重置当天的测试', 'warning')
+      return
+    }
+    setTestScores({})
+  }
 
-    if (existingIndex !== -1) {
-      // 更新已有记录
-      const updatedTests = [...psychologicalTests]
-      updatedTests[existingIndex] = {
-        ...updatedTests[existingIndex],
-        scores: newScores,
-        overallScore: parseFloat(overallScore)
+  // 提交心理测试数据
+  const handleSubmit = async () => {
+    if (!isTodaySelected()) {
+      showToast('只能提交当天的测试', 'warning')
+      return
+    }
+
+    if (Object.keys(testScores).length === 0) {
+      showToast('请先完成所有打分项', 'warning')
+      return
+    }
+
+    setIsSaving(true)
+
+    // 保存当前分数，避免同步后丢失
+    const currentScores = { ...testScores }
+
+    try {
+      const overallScore = calculateOverallScore()
+      const dateStr = format(selectedDate, 'yyyy-MM-dd')
+      const store = useStore.getState()
+
+      console.log('[PsychologicalTest] 提交数据:')
+      console.log('[PsychologicalTest] 选中日期:', selectedDate.toISOString())
+      console.log('[PsychologicalTest] 日期字符串:', dateStr)
+      console.log('[PsychologicalTest] 心理测试记录数:', psychologicalTests.length)
+      console.log('[PsychologicalTest] 所有测试记录:', psychologicalTests.map(t => ({
+        id: t.id,
+        date: t.date,
+        formattedDate: format(new Date(t.date), 'yyyy-MM-dd')
+      })))
+
+      // 检查是否已有当天的测试记录
+      const existingTest = psychologicalTests.find(test => format(new Date(test.date), 'yyyy-MM-dd') === dateStr)
+
+      console.log('[PsychologicalTest] 找到已有记录:', existingTest ? '是' : '否')
+
+      if (existingTest) {
+        // 更新已有记录到数据库
+        console.log('[PsychologicalTest] 更新已有记录')
+        // 使用本地日期字符串，避免时区问题
+        await store.updatePsychologicalTest(dateStr, {
+          scores: currentScores,
+          overallScore: parseFloat(overallScore)
+        })
+        showToast('测试结果已更新', 'success')
+      } else {
+        // 添加新记录到数据库
+        console.log('[PsychologicalTest] 添加新记录')
+        await store.addPsychologicalTest({
+          scores: currentScores,
+          overallScore: parseFloat(overallScore),
+          date: dateStr
+        })
+        showToast('测试结果已保存', 'success')
       }
-      useStore.setState({ psychologicalTests: updatedTests })
-    } else {
-      // 添加新记录
-      addPsychologicalTest({
-        scores: newScores,
-        overallScore: parseFloat(overallScore),
-        date: selectedDate.toISOString()
-      })
+
+      // 更新成功后，保持当前分数不变
+      setTestScores(currentScores)
+    } catch (error) {
+      console.error('[PsychologicalTest] 保存失败:', error)
+      showToast('保存失败,请重试', 'error')
+    } finally {
+      setIsSaving(false)
     }
   }
 
-  const handleSubmitTest = () => {
-    const overallScore = calculateOverallScore()
-    const dateStr = format(selectedDate, 'yyyy-MM-dd')
-
-    // 检查是否已有当天的测试记录
-    const existingIndex = psychologicalTests.findIndex(test => format(new Date(test.date), 'yyyy-MM-dd') === dateStr)
-
-    if (existingIndex !== -1) {
-      // 更新已有记录
-      const updatedTests = [...psychologicalTests]
-      updatedTests[existingIndex] = {
-        ...updatedTests[existingIndex],
-        scores: { ...testScores },
-        overallScore: parseFloat(overallScore)
+  const handleSaveAllIndicators = async (newIndicators) => {
+    try {
+      // 逐个更新指标到数据库
+      for (let index = 0; index < newIndicators.length; index++) {
+        await updatePsychologicalIndicator(indicators[index].id, newIndicators[index])
       }
-      useStore.setState({ psychologicalTests: updatedTests })
-    } else {
-      // 添加新记录
-      addPsychologicalTest({
-        scores: { ...testScores },
-        overallScore: parseFloat(overallScore),
-        date: selectedDate.toISOString()
-      })
+      setShowEditModal(false)
+
+      // 显示成功提示
+      showToast('更新成功', 'success')
+    } catch (error) {
+      console.error('[PsychologicalTest] 更新指标失败:', error)
+      // 显示错误提示
+      showToast('更新失败', 'error')
     }
-  }
-
-  const handleSaveAllIndicators = (newIndicators) => {
-    newIndicators.forEach((newIndicator, index) => {
-      updatePsychologicalIndicator(indicators[index].id, newIndicator)
-    })
-    setShowEditModal(false)
-
-    // 显示成功提示
-    const toastContainer = document.createElement('div')
-    document.body.appendChild(toastContainer)
-    const root = createRoot(toastContainer)
-    root.render(
-      <Toast
-        message="更新成功"
-        type="success"
-        onClose={() => {
-          root.unmount()
-          document.body.removeChild(toastContainer)
-        }}
-      />
-    )
   }
 
   // 生成日历
@@ -193,6 +241,48 @@ const PsychologicalTest = () => {
   const overallScore = parseFloat(calculateOverallScore())
   const scoreColor = getScoreColor(overallScore)
 
+  // 手动刷新数据
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      const response = await fetch('/api/sync/all', {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      })
+      const result = await response.json()
+
+      if (result.success && result.data) {
+        const { psychological_test_results, psychological_indicators } = result.data
+
+        if (psychological_test_results !== undefined) {
+          importPsychologicalTestResults(psychological_test_results)
+        }
+        if (psychological_indicators !== undefined) {
+          importPsychologicalIndicators(psychological_indicators)
+        }
+
+        // 刷新当前选中日期的数据
+        const testResult = getTestResultForDate(selectedDate)
+        if (testResult) {
+          setTestScores(testResult.scores)
+        } else {
+          setTestScores({})
+        }
+
+        // 显示成功提示
+        showToast('数据已刷新', 'success')
+      }
+    } catch (error) {
+      console.error('刷新失败:', error)
+      // 显示失败提示
+      showToast('刷新失败', 'error')
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
   // 根据分数获取交易状态信息
   const getTradeStatus = (score) => {
     const finalScore = score > 10 ? score / 10 : score
@@ -213,6 +303,30 @@ const PsychologicalTest = () => {
     const selectedStr = format(selectedDate, 'yyyy-MM-dd')
     const todayStr = format(today, 'yyyy-MM-dd')
     return selectedStr === todayStr
+  }
+
+  // 显示Toast提示
+  const showToast = (message, type = 'info') => {
+    if (!document.body) {
+      console.warn('[Toast] document.body is not available')
+      return
+    }
+
+    const toastContainer = document.createElement('div')
+    document.body.appendChild(toastContainer)
+    const root = createRoot(toastContainer)
+    root.render(
+      <Toast
+        message={message}
+        type={type}
+        onClose={() => {
+          root.unmount()
+          if (document.body && document.body.contains(toastContainer)) {
+            document.body.removeChild(toastContainer)
+          }
+        }}
+      />
+    )
   }
 
   return (
@@ -340,6 +454,64 @@ const PsychologicalTest = () => {
                     </div>
                   )
                 })}
+              </div>
+
+              {/* 操作按钮区域 */}
+              <div style={{
+                marginTop: '20px',
+                paddingTop: '20px',
+                borderTop: '1px solid #e5e7eb',
+                display: 'flex',
+                gap: '12px',
+                justifyContent: 'flex-end'
+              }}>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleReset}
+                  disabled={!isTodaySelected() || isSaving}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 20px',
+                    background: '#ffffff',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    color: '#666',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: isTodaySelected() && !isSaving ? 'pointer' : 'not-allowed',
+                    opacity: isTodaySelected() && !isSaving ? 1 : 0.5,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  重置
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleSubmit}
+                  disabled={!isTodaySelected() || isSaving || Object.keys(testScores).length === 0}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 20px',
+                    background: isTodaySelected() && !isSaving && Object.keys(testScores).length > 0 ? '#0F1419' : '#d1d5db',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: isTodaySelected() && !isSaving && Object.keys(testScores).length > 0 ? 'pointer' : 'not-allowed',
+                    transition: 'all 0.2s',
+                    marginRight: '20px'
+                  }}
+                >
+                  {isSaving ? '保存中...' : '确定'}
+                </motion.button>
               </div>
             </div>
           </div>
@@ -559,36 +731,38 @@ const PsychologicalTest = () => {
         </div>
 
         {/* 编辑指标弹窗 */}
-        <Modal
-        isOpen={showEditModal}
-        onClose={() => setShowEditModal(false)}
-        title="指标设置"
-        width="max-w-3xl"
-        footer={
-          <>
-            <button
-              onClick={() => setShowEditModal(false)}
-              className="px-4 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              取消
-            </button>
-            <button
-              onClick={() => {
-                const newIndicators = indicators.map(indicator => ({
-                  ...indicator,
-                  name: document.getElementById(`indicator-name-${indicator.id}`).value,
-                  description: document.getElementById(`indicator-desc-${indicator.id}`).value
-                }))
-                handleSaveAllIndicators(newIndicators)
-              }}
-              className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: '#0F1419' }}
-            >
-              保存
-            </button>
-          </>
-        }
-      >
+        <AnimatePresence mode="wait">
+          <Modal
+            key="edit-modal"
+            isOpen={showEditModal}
+            onClose={() => setShowEditModal(false)}
+            title="指标设置"
+            width="max-w-3xl"
+            footer={
+              <>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => {
+                    const newIndicators = indicators.map(indicator => ({
+                      ...indicator,
+                      name: document.getElementById(`indicator-name-${indicator.id}`).value,
+                      description: document.getElementById(`indicator-desc-${indicator.id}`).value
+                    }))
+                    handleSaveAllIndicators(newIndicators)
+                  }}
+                  className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity"
+                  style={{ backgroundColor: '#0F1419' }}
+                >
+                  保存
+                </button>
+              </>
+            }
+          >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '60vh', overflow: 'auto' }}>
           {indicators.map((indicator, index) => (
             <div
@@ -634,6 +808,7 @@ const PsychologicalTest = () => {
           ))}
         </div>
       </Modal>
+    </AnimatePresence>
       </div>
     </div>
   )

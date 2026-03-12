@@ -17,6 +17,29 @@ import ExportModal from '../components/ExportModal'
 import ConfirmModal from '../components/ConfirmModal'
 import FormModal from '../components/FormModal'
 
+// API基础URL
+const API_BASE_URL = ''
+
+// API调用函数
+const apiCall = async (endpoint, method = 'GET', data = null) => {
+  try {
+    const options = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+    if (data) {
+      options.body = JSON.stringify(data)
+    }
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, options)
+    return await response.json()
+  } catch (error) {
+    console.error('API调用失败:', error)
+    return { success: false, error: error.message }
+  }
+}
+
 // 字段定义
 const FIELDS = [
   { key: 'date', label: '日期', type: 'date' },
@@ -223,7 +246,26 @@ const DailyWork = () => {
 
         const dataList = []
         const errorList = []
-        const existingDates = new Set(dailyWorkData.map(d => d.date))
+
+        // 获取数据库中所有现有的日期（包括软删除的）
+        let existingDates = new Set()
+        try {
+          const allDataResponse = await apiCall('/api/daily_work_data?includeDeleted=true')
+          if (allDataResponse && allDataResponse.data) {
+            existingDates = new Set(allDataResponse.data.map(d => {
+              // 统一处理日期格式
+              let dateStr = d.date
+              if (dateStr && typeof dateStr === 'string' && dateStr.includes('T')) {
+                dateStr = dateStr.split('T')[0]
+              }
+              return dateStr
+            }))
+          }
+        } catch (e) {
+          console.warn('[DailyWork] 获取现有日期失败:', e)
+        }
+
+        console.log('[DailyWork] 数据库中已存在的日期:', Array.from(existingDates))
 
         const formatToYYYYMMDD = (value) => {
           if (!value) return value
@@ -277,6 +319,7 @@ const DailyWork = () => {
           const values = jsonData[i]
           const data = {}
           const errors = []
+          const isUpdate = false
 
           headers.forEach((header, index) => {
             const field = FIELDS.find(f => f.label === header)
@@ -290,16 +333,17 @@ const DailyWork = () => {
 
               if (field.key === 'date' && value) {
                 const formattedDate = formatToYYYYMMDD(value)
-                
+
                 const isValidFormat = /^\d{4}-\d{2}-\d{2}$/.test(formattedDate)
-                
+
                 if (!isValidFormat) {
                   errors.push('[日期]格式错误；')
                 } else {
                   data[field.key] = formattedDate
 
+                  // 检查日期是否已存在，如果存在标记为更新（恢复已删除记录）
                   if (existingDates.has(data[field.key])) {
-                    errors.push('[日期]已存在；')
+                    data._isUpdate = true  // 标记为更新操作
                   }
                 }
               }
@@ -362,9 +406,163 @@ const DailyWork = () => {
         setErrorWorkbook(wb)
 
         if (dataList.length > 0) {
-          importDailyWorkData(dataList)
+          // 分离新增和更新（恢复已删除）的数据
+          const newDataList = dataList.filter(d => !d._isUpdate)
+          const updateDataList = dataList.filter(d => d._isUpdate)
+
+          console.log('[DailyWork] 新增数据:', newDataList.length, '条')
+          console.log('[DailyWork] 更新数据（恢复已删除）:', updateDataList.length, '条')
+
+          // 对新数据去重（Excel文件中可能有重复的日期）
+          const newDataMap = new Map()
+          newDataList.forEach(data => {
+            if (data.date) {
+              newDataMap.set(data.date, data)
+            }
+          })
+          const uniqueNewDataList = Array.from(newDataMap.values())
+
+          console.log('[DailyWork] 去重后的新数据:', uniqueNewDataList.length, '条')
+
+          let successCount = 0
+
+          // 1. 批量插入新数据
+          if (uniqueNewDataList.length > 0) {
+            // 打印所有要插入的日期，方便调试
+            console.log('[DailyWork] 准备插入的日期:', uniqueNewDataList.map(d => d.date).sort())
+
+            const dbDataList = uniqueNewDataList.map(data => ({
+              date: data.date || null,
+              nasdaq: data.nasdaq || null,
+              ftse: data.ftse || null,
+              dax: data.dax || null,
+              n225: data.n225 || null,
+              hsi: data.hsi || null,
+              bitcoin: data.bitcoin || null,
+              eurusd: data.eurusd || null,
+              usdjpy: data.usdjpy || null,
+              usdcny: data.usdcny || null,
+              oil: data.oil || null,
+              gold: data.gold || null,
+              bond: data.bond || null,
+              consecutive: data.consecutive || null,
+              a50: data.a50 || null,
+              sh_index: data.shIndex || null,
+              sh_2day_power: data.sh2dayPower || null,
+              sh_13day_power: data.sh13dayPower || null,
+              up_count: data.upCount || null,
+              limit_up: data.limitUp || null,
+              down_count: data.downCount || null,
+              limit_down: data.limitDown || null,
+              volume: data.volume || null,
+              sentiment: data.sentiment || null,
+              prediction: data.prediction || null,
+              trade_status: data.tradeStatus || null,
+              review_plan: data.reviewPlan || null,
+              review_execution: data.reviewExecution || null,
+              review_result: data.reviewResult || null,
+              deleted: false,
+              deleted_at: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }))
+
+            const bulkResult = await apiCall('/api/daily_work_data/bulk', 'POST', dbDataList)
+            console.log('[DailyWork] 批量插入结果:', bulkResult)
+
+            if (bulkResult && bulkResult.success) {
+              successCount += bulkResult.count || 0
+            }
+          }
+
+          // 2. 更新已删除的记录（恢复并更新数据）
+          if (updateDataList.length > 0) {
+            // 先获取所有记录以找到对应的ID
+            const allDataResponse = await apiCall('/api/daily_work_data?includeDeleted=true')
+            if (allDataResponse && allDataResponse.data) {
+              for (const data of updateDataList) {
+                // 找到对应日期的记录
+                const existingRecord = allDataResponse.data.find(d => {
+                  let dateStr = d.date
+                  if (dateStr && typeof dateStr === 'string' && dateStr.includes('T')) {
+                    dateStr = dateStr.split('T')[0]
+                  }
+                  return dateStr === data.date
+                })
+
+                if (existingRecord) {
+                  const dbData = {
+                    date: data.date || null,
+                    nasdaq: data.nasdaq || null,
+                    ftse: data.ftse || null,
+                    dax: data.dax || null,
+                    n225: data.n225 || null,
+                    hsi: data.hsi || null,
+                    bitcoin: data.bitcoin || null,
+                    eurusd: data.eurusd || null,
+                    usdjpy: data.usdjpy || null,
+                    usdcny: data.usdcny || null,
+                    oil: data.oil || null,
+                    gold: data.gold || null,
+                    bond: data.bond || null,
+                    consecutive: data.consecutive || null,
+                    a50: data.a50 || null,
+                    sh_index: data.shIndex || null,
+                    sh_2day_power: data.sh2dayPower || null,
+                    sh_13day_power: data.sh13dayPower || null,
+                    up_count: data.upCount || null,
+                    limit_up: data.limitUp || null,
+                    down_count: data.downCount || null,
+                    limit_down: data.limitDown || null,
+                    volume: data.volume || null,
+                    sentiment: data.sentiment || null,
+                    prediction: data.prediction || null,
+                    trade_status: data.tradeStatus || null,
+                    review_plan: data.reviewPlan || null,
+                    review_execution: data.reviewExecution || null,
+                    review_result: data.reviewResult || null,
+                    deleted: false,  // 恢复删除状态
+                    deleted_at: null,
+                    updated_at: new Date().toISOString()
+                  }
+
+                  const updateResult = await apiCall(`/api/daily_work_data/${existingRecord.id}`, 'PUT', dbData)
+                  console.log('[DailyWork] 更新记录结果:', updateResult)
+
+                  if (updateResult && updateResult.success) {
+                    successCount++
+                  }
+                }
+              }
+            }
+          }
+
+          console.log('[DailyWork] 总共导入/恢复:', successCount, '条')
+
           if (errorList.length === 0) {
-            showToast('导入成功')
+            // 导入成功后，从数据库重新同步数据（增加重试机制）
+            let syncResult = null
+            for (let i = 0; i < 3; i++) {
+              try {
+                syncResult = await apiCall('/api/sync/all')
+                console.log(`[DailyWork] 第${i+1}次同步结果:`, syncResult)
+                if (syncResult && syncResult.success) {
+                  break
+                }
+              } catch (e) {
+                console.warn(`[DailyWork] 第${i+1}次同步失败:`, e)
+                if (i < 2) await new Promise(resolve => setTimeout(resolve, 1000))
+              }
+            }
+
+            if (syncResult && syncResult.success && syncResult.data && syncResult.data.daily_work_data !== undefined) {
+              console.log('[DailyWork] 导入的daily_work_data数量:', syncResult.data.daily_work_data?.length || 0)
+              importDailyWorkData(syncResult.data.daily_work_data)
+              showToast(`导入成功！共 ${successCount} 条数据`)
+            } else {
+              console.error('[DailyWork] 同步失败，syncResult:', syncResult)
+              showToast('导入完成，但数据同步可能有问题，请刷新页面')
+            }
             setShowImportModal(false)
             setImportResult(null)
             setImportFile(null)
@@ -625,7 +823,7 @@ const DailyWork = () => {
         />
 
         {/* 数据表格 */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', marginTop: '10px', paddingBottom: '50px', zIndex: '1', background: 'rgb(249, 250, 251)' }}>
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', paddingBottom: '50px', zIndex: '1', background: 'rgb(249, 250, 251)' }}>
           <div className="overflow-y-auto overflow-x-auto" style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: '1' }}>
             <DataTable
               fields={FIELDS}

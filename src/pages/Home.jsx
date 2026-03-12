@@ -10,19 +10,20 @@ const Home = () => {
   const orders = useStore(state => state.orders)
   const tradeRecords = useStore(state => state.tradeRecords)
 
-  // 计算统计数据 - 基于已执行的订单
-  const executedOrders = orders.filter(o => o.status === 'executed')
-  const profitableTrades = executedOrders.filter(o => o.profit !== undefined && o.profit > 0)
+  // 计算统计数据 - 基于所有订单
+  // 由于不再使用状态，这里使用所有订单进行计算
+  const allOrders = orders.filter(o => !o.deleted)  // 排除已删除的订单
+  const profitableTrades = allOrders.filter(o => o.profit !== undefined && o.profit > 0)
 
-  // 胜率 = 盈利订单数 / 已执行订单总数
-  const winRate = executedOrders.length > 0
-    ? Math.round((profitableTrades.length / executedOrders.length) * 100)
+  // 胜率 = 盈利订单数 / 订单总数
+  const winRate = allOrders.length > 0
+    ? Math.round((profitableTrades.length / allOrders.length) * 100)
     : 0
 
   const stats = [
     { label: '我的账户', value: account.balance || 0, prefix: '¥' },
     { label: '我的胜率', value: winRate, suffix: '%' },
-    { label: '交易次数', value: executedOrders.length },
+    { label: '交易次数', value: allOrders.length },
   ]
 
   const features = [

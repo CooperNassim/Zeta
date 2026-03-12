@@ -75,9 +75,9 @@ const TransactionHistory = () => {
 
   // 从预约订单中获取股票信息
   const getStockInfoFromOrders = () => {
-    // 查找最近执行的买入或卖出订单
+    // 查找最近的买入或卖出订单
     const recentOrder = orders.find(order =>
-      order.status === 'completed' && (order.type === 'buy' || order.type === 'sell')
+      order.type === 'buy' || order.type === 'sell'
     )
     if (recentOrder) {
       return {

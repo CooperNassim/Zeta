@@ -1,4 +1,5 @@
 import React from 'react'
+import { motion } from 'framer-motion'
 import Modal from './Modal'
 import DataForm from './DataForm'
 
@@ -11,7 +12,8 @@ const FormModal = ({
   formData,
   formErrors,
   onFormDataChange,
-  getFieldComponent
+  getFieldComponent,
+  width
 }) => {
   const handleChange = (newFormData, clearError = null) => {
     onFormDataChange(newFormData, clearError)
@@ -22,23 +24,27 @@ const FormModal = ({
       isOpen={isOpen}
       onClose={onClose}
       title={title}
-      width="max-w-6xl"
+      width={width || "max-w-6xl"}
       footer={
         <>
-          <button
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
+            className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm"
           >
             取消
-          </button>
-          <button
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             type="submit"
             form="dataForm"
-            className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity"
+            className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity text-sm"
             style={{ backgroundColor: '#0F1419' }}
           >
             保存
-          </button>
+          </motion.button>
         </>
       }
     >

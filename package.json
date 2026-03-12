@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite --port 5173 --host localhost",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "db:update": "cd backend && npm run db:update",
+    "db:export": "cd backend && npm run db:export",
+    "db:import": "cd backend && npm run db:import",
+    "db:incremental": "cd backend && npm run db:incremental"
   },
   "dependencies": {
     "date-fns": "^2.30.0",

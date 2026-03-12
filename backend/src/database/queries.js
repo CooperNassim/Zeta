@@ -19,7 +19,7 @@ const buildQuery = (table, options = {}) => {
 
   // 自动过滤已删除的记录（除非明确指定 includeDeleted）
   // 只对包含 deleted 字段的表进行过滤
-  const tablesWithDeleted = ['orders', 'daily_work_data', 'psychological_tests', 'trade_records', 'stock_pool'];
+  const tablesWithDeleted = ['orders', 'daily_work_data', 'psychological_test_results', 'trade_records', 'stock_pool'];
   if (!options.includeDeleted && tablesWithDeleted.includes(table)) {
     conditions.push(`deleted = false`);
   }
@@ -50,7 +50,26 @@ const buildQuery = (table, options = {}) => {
 const findAll = async (table, options = {}) => {
   const { query, params } = buildQuery(table, options);
   const result = await pool.query(query, params);
+
+  // 对于心理测试表，转换日期格式以避免时区问题
+  if (table === 'psychological_test_results') {
+    return result.rows.map(row => ({
+      ...row,
+      test_date: formatToLocalDateString(row.test_date)
+    }));
+  }
+
   return result.rows;
+};
+
+// 格式化日期为本地时间字符串 YYYY-MM-DD
+const formatToLocalDateString = (date) => {
+  if (!date) return null;
+  const dateObj = new Date(date);
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 // 查询单条数据
@@ -63,7 +82,14 @@ const findOne = async (table, options = {}) => {
 // 根据ID查询
 const findById = async (table, id) => {
   const result = await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
-  return result.rows[0] || null;
+  const data = result.rows[0] || null;
+
+  // 对于心理测试表，转换日期格式以避免时区问题
+  if (data && table === 'psychological_test_results' && data.test_date) {
+    data.test_date = formatToLocalDateString(data.test_date);
+  }
+
+  return data;
 };
 
 // 插入数据（智能处理已删除数据）

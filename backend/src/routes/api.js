@@ -31,7 +31,7 @@ router.get('/sync/all', async (req, res) => {
       'account',
       'daily_work_data',
       'psychological_indicators',
-      'psychological_tests',
+      'psychological_test_results',
       'trading_strategies',
       'risk_models',
       'risk_config',
@@ -77,7 +77,7 @@ router.get('/export/all', async (req, res) => {
       'account',
       'daily_work_data',
       'psychological_indicators',
-      'psychological_tests',
+      'psychological_test_results',
       'trading_strategies',
       'risk_models',
       'risk_config',
@@ -214,6 +214,59 @@ router.get('/:table/:id', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// PUT /api/psychological_test_results/by-date/:date - 按日期更新心理测试结果
+// 注意：这个路由必须在 POST /:table 之前，否则会被错误匹配
+router.put('/psychological_test_results/by-date/:date', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const data = req.body;
+
+    const result = await pool.query(
+      `UPDATE psychological_test_results
+       SET scores = $1, overall_score = $2, notes = $3, updated_at = CURRENT_TIMESTAMP
+       WHERE test_date = $4 AND deleted = false
+       RETURNING *`,
+      [JSON.stringify(data.scores), data.overall_score, data.notes || '', date]
+    );
+
+    if (result.rows.length === 0) {
+      // 如果没有找到记录，创建新记录
+      const insertResult = await pool.query(
+        `INSERT INTO psychological_test_results (test_date, scores, overall_score, notes, deleted, deleted_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, false, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING *`,
+        [date, JSON.stringify(data.scores), data.overall_score, data.notes || '']
+      );
+      // 转换日期格式
+      const responseData = {
+        ...insertResult.rows[0],
+        test_date: formatToLocalDateString(insertResult.rows[0].test_date)
+      };
+      return res.json({ success: true, data: responseData });
+    }
+
+    // 转换日期格式
+    const responseData = {
+      ...result.rows[0],
+      test_date: formatToLocalDateString(result.rows[0].test_date)
+    };
+    res.json({ success: true, data: responseData });
+  } catch (error) {
+    console.error('PUT by-date error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 格式化日期为本地时间字符串 YYYY-MM-DD
+function formatToLocalDateString(date) {
+  if (!date) return null;
+  const dateObj = new Date(date);
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 // POST /api/:table - 创建
 router.post('/:table', async (req, res) => {

@@ -12,7 +12,8 @@
     "db:export": "node src/scripts/export_schema.js",
     "db:import": "node src/scripts/import_schema.js",
     "db:update": "node src/scripts/update_migration.js",
-    "db:incremental": "node src/scripts/export_schema_incremental.js"
+    "db:incremental": "node src/scripts/export_schema_incremental.js",
+    "db:migrate": "node src/scripts/run_migration.js"
   },
   "keywords": [
     "trading",

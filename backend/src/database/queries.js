@@ -51,11 +51,12 @@ const findAll = async (table, options = {}) => {
   const { query, params } = buildQuery(table, options);
   const result = await pool.query(query, params);
 
-  // 对于心理测试表，转换日期格式以避免时区问题
+  // 对于心理测试表，转换日期格式以避免时区问题，同时统一字段名
   if (table === 'psychological_test_results') {
     return result.rows.map(row => ({
       ...row,
-      test_date: formatToLocalDateString(row.test_date)
+      test_date: formatToLocalDateString(row.test_date),
+      scores: row.score  // 将 score 字段转换为 scores 以匹配前端
     }));
   }
 
@@ -84,9 +85,15 @@ const findById = async (table, id) => {
   const result = await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
   const data = result.rows[0] || null;
 
-  // 对于心理测试表，转换日期格式以避免时区问题
-  if (data && table === 'psychological_test_results' && data.test_date) {
-    data.test_date = formatToLocalDateString(data.test_date);
+  // 对于心理测试表，转换日期格式以避免时区问题，同时添加 scores 字段
+  if (data && table === 'psychological_test_results') {
+    if (data.test_date) {
+      data.test_date = formatToLocalDateString(data.test_date);
+    }
+    // 将 score 字段转换为 scores 以匹配前端
+    if (data.score !== undefined) {
+      data.scores = data.score;
+    }
   }
 
   return data;
@@ -166,6 +173,15 @@ const insert = async (table, data) => {
 
     columns = Object.keys(filteredData);
     values = Object.values(filteredData);
+    placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
+  }
+
+  // 对于 psychological_test_results 表，将 scores 字段转换为 score
+  if (table === 'psychological_test_results' && processedData.scores !== undefined) {
+    processedData.score = processedData.scores;
+    delete processedData.scores;
+    columns = Object.keys(processedData);
+    values = Object.values(processedData);
     placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
   }
 
@@ -309,7 +325,14 @@ const performUpdate = async (table, id, data) => {
     RETURNING *
   `;
 
-  const result = await pool.query(query, [id, ...Object.values(data)]);
+  // 对于 psychological_test_results 表，将 scores 字段转换为 score
+  let processedData = { ...data };
+  if (table === 'psychological_test_results' && processedData.scores !== undefined) {
+    processedData.score = processedData.scores;
+    delete processedData.scores;
+  }
+
+  const result = await pool.query(query, [id, ...Object.values(processedData)]);
   let rowData = result.rows[0] || null;
 
   // 对于 daily_work_data 表，转换返回的日期格式以避免时区问题
@@ -319,6 +342,11 @@ const performUpdate = async (table, id, data) => {
     const month = String(dateObj.getMonth() + 1).padStart(2, '0');
     const day = String(dateObj.getDate()).padStart(2, '0');
     rowData.date = `${year}-${month}-${day}`;
+  }
+
+  // 对于 psychological_test_results 表，将 score 字段转换为 scores 以匹配前端
+  if (table === 'psychological_test_results' && rowData && rowData.score !== undefined) {
+    rowData.scores = rowData.score;
   }
 
   return rowData;

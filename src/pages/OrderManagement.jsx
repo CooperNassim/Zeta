@@ -172,7 +172,8 @@ const OrderManagement = () => {
   // 判断当天是否有心理测试
   const hasTodayPsychologicalTest = () => {
     if (psychologicalTests.length === 0) return false
-    const latestTest = psychologicalTests[psychologicalTests.length - 1]
+    // psychologicalTests 是按日期降序排序的，最新的在第一个位置
+    const latestTest = psychologicalTests[0]
     if (!latestTest.date) return false
 
     const today = new Date()
@@ -183,7 +184,8 @@ const OrderManagement = () => {
   }
 
   const handlePsychologicalEvaluation = () => {
-    const latestTest = psychologicalTests[psychologicalTests.length - 1]
+    // psychologicalTests 是按日期降序排序的，最新的在第一个位置
+    const latestTest = psychologicalTests[0]
     if (!latestTest) {
       setToastType('error')
       setToastMessage('请先完成心理测试')
@@ -624,12 +626,12 @@ const OrderManagement = () => {
                   <p className="text-sm text-gray-600">测试结果</p>
                   <div className="flex items-center justify-between mt-2">
                     <span className="text-2xl font-bold text-gray-900">
-                      {psychologicalTests.length > 0 ? (psychologicalTests[psychologicalTests.length - 1].overallScore > 10 ? Math.round(psychologicalTests[psychologicalTests.length - 1].overallScore / 10) : Math.round(psychologicalTests[psychologicalTests.length - 1].overallScore)) : '未测试'}
+                      {psychologicalTests.length > 0 ? (psychologicalTests[0].overallScore > 10 ? Math.round(psychologicalTests[0].overallScore / 10) : Math.round(psychologicalTests[0].overallScore)) : '未测试'}
                     </span>
                     <span className={`px-3 py-1 rounded text-sm ${
                       (() => {
                         if (psychologicalTests.length === 0) return 'bg-gray-500/20 text-gray-600'
-                        const score = psychologicalTests[psychologicalTests.length - 1].overallScore > 10 ? psychologicalTests[psychologicalTests.length - 1].overallScore / 10 : psychologicalTests[psychologicalTests.length - 1].overallScore
+                        const score = psychologicalTests[0].overallScore > 10 ? psychologicalTests[0].overallScore / 10 : psychologicalTests[0].overallScore
                         if (score >= 7 && score <= 8) return 'bg-green-500/20 text-green-600'
                         if ((score >= 5 && score <= 6) || (score >= 9 && score <= 10)) return 'bg-yellow-500/20 text-yellow-600'
                         return 'bg-red-500/20 text-red-600'
@@ -637,7 +639,7 @@ const OrderManagement = () => {
                     }`}>
                       {(() => {
                         if (psychologicalTests.length === 0) return '未测试'
-                        const score = psychologicalTests[psychologicalTests.length - 1].overallScore > 10 ? psychologicalTests[psychologicalTests.length - 1].overallScore / 10 : psychologicalTests[psychologicalTests.length - 1].overallScore
+                        const score = psychologicalTests[0].overallScore > 10 ? psychologicalTests[0].overallScore / 10 : psychologicalTests[0].overallScore
                         if (score >= 7 && score <= 8) return '可以交易'
                         if ((score >= 5 && score <= 6) || (score >= 9 && score <= 10)) return '谨慎交易'
                         return '禁止交易'

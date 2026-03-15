@@ -193,7 +193,7 @@ const PsychologicalTest = () => {
     try {
       // 逐个更新指标到数据库
       for (let index = 0; index < newIndicators.length; index++) {
-        await updatePsychologicalIndicator(indicators[index].id, newIndicators[index])
+        await updatePsychologicalIndicator(newIndicators[index].id, newIndicators[index])
       }
       setShowEditModal(false)
 
@@ -238,7 +238,10 @@ const PsychologicalTest = () => {
   }
 
   const selectedTestResult = getTestResultForDate(selectedDate)
-  const overallScore = parseFloat(calculateOverallScore())
+  // 如果有存储的 overallScore，优先使用存储的值；否则重新计算
+  const overallScore = selectedTestResult?.overallScore !== undefined && selectedTestResult?.overallScore !== null
+    ? parseFloat(selectedTestResult.overallScore)
+    : parseFloat(calculateOverallScore())
   const scoreColor = getScoreColor(overallScore)
 
   // 手动刷新数据

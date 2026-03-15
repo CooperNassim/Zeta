@@ -56,7 +56,8 @@ const findAll = async (table, options = {}) => {
     return result.rows.map(row => ({
       ...row,
       test_date: formatToLocalDateString(row.test_date),
-      scores: row.score  // 将 score 字段转换为 scores 以匹配前端
+      overall_score: parseFloat(row.overall_score) || 0 // 转换为数字类型
+      // 数据库中字段名本身就是 scores，不需要转换
     }));
   }
 
@@ -85,15 +86,15 @@ const findById = async (table, id) => {
   const result = await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
   const data = result.rows[0] || null;
 
-  // 对于心理测试表，转换日期格式以避免时区问题，同时添加 scores 字段
+  // 对于心理测试表，转换日期格式以避免时区问题
   if (data && table === 'psychological_test_results') {
     if (data.test_date) {
       data.test_date = formatToLocalDateString(data.test_date);
     }
-    // 将 score 字段转换为 scores 以匹配前端
-    if (data.score !== undefined) {
-      data.scores = data.score;
+    if (data.overall_score !== undefined) {
+      data.overall_score = parseFloat(data.overall_score) || 0;
     }
+    // 数据库中字段名本身就是 scores，不需要转换
   }
 
   return data;
@@ -176,14 +177,8 @@ const insert = async (table, data) => {
     placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
   }
 
-  // 对于 psychological_test_results 表，将 scores 字段转换为 score
-  if (table === 'psychological_test_results' && processedData.scores !== undefined) {
-    processedData.score = processedData.scores;
-    delete processedData.scores;
-    columns = Object.keys(processedData);
-    values = Object.values(processedData);
-    placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-  }
+  // psychological_test_results 表不需要转换scores字段
+  // scores 字段直接使用，不需要转换为 score
 
   // 普通插入
   const query = `
@@ -325,12 +320,8 @@ const performUpdate = async (table, id, data) => {
     RETURNING *
   `;
 
-  // 对于 psychological_test_results 表，将 scores 字段转换为 score
+  // psychological_test_results 表不需要转换scores字段
   let processedData = { ...data };
-  if (table === 'psychological_test_results' && processedData.scores !== undefined) {
-    processedData.score = processedData.scores;
-    delete processedData.scores;
-  }
 
   const result = await pool.query(query, [id, ...Object.values(processedData)]);
   let rowData = result.rows[0] || null;
@@ -344,8 +335,8 @@ const performUpdate = async (table, id, data) => {
     rowData.date = `${year}-${month}-${day}`;
   }
 
-  // 对于 psychological_test_results 表，将 score 字段转换为 scores 以匹配前端
-  if (table === 'psychological_test_results' && rowData && rowData.score !== undefined) {
+  // psychological_test_results 表不需要转换，scores字段已经是正确的
+  if (table === 'psychological_test_results' && rowData && !rowData.scores && rowData.score !== undefined) {
     rowData.scores = rowData.score;
   }
 

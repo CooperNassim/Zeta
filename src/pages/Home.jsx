@@ -469,7 +469,7 @@ const Home = () => {
                       <div className="w-px h-8 bg-white/20" />
                       <div>
                         <div className="text-[10px] text-blue-200">交易次数</div>
-                        <div className="text-sm text-white font-bold">{executedOrders.length}</div>
+                        <div className="text-sm text-white font-bold">{allOrders.length}</div>
                       </div>
                     </div>
                   </div>

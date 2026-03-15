@@ -790,12 +790,13 @@ const useStore = create(
         try {
           // 找到对应的数据库 id
           const existingIndicator = get().psychologicalIndicators.find(i => i.id === id)
-          if (!existingIndicator || !existingIndicator.dbId) {
+          if (!existingIndicator) {
             throw new Error('找不到对应的指标记录')
           }
 
           // 转换为数据库字段名 (camelCase -> snake_case)
           const dbData = {
+            indicator_id: String(existingIndicator.id), // 使用前端 id 作为 indicator_id，确保是字符串类型
             name: indicator.name,
             description: indicator.description || '',
             min_score: indicator.minScore || 0,
@@ -805,14 +806,50 @@ const useStore = create(
             updated_at: new Date().toISOString()
           }
 
-          // 更新到数据库（使用数据库表的实际 id）
-          await apiCall(`/api/psychological_indicators/${existingIndicator.dbId}`, 'PUT', dbData)
-          console.log('[Store] 心理测试指标更新到数据库成功:', existingIndicator.dbId)
+          let newDbId = existingIndicator.dbId
+
+          // 如果没有 dbId，先查询数据库中是否已存在该 indicator_id
+          if (!existingIndicator.dbId) {
+            try {
+              // 尝试查找现有的记录
+              const findResult = await apiCall(`/api/psychological_indicators?where=${encodeURIComponent(JSON.stringify({ indicator_id: String(existingIndicator.id) }))}`, 'GET')
+              if (findResult.success && findResult.data && findResult.data.length > 0) {
+                // 找到现有记录，使用它
+                const existingRecord = findResult.data[0]
+                newDbId = existingRecord.id
+                console.log('[Store] 找到现有指标记录:', newDbId)
+                // 更新现有记录
+                await apiCall(`/api/psychological_indicators/${newDbId}`, 'PUT', dbData)
+                console.log('[Store] 心理测试指标更新到数据库成功:', newDbId)
+              } else {
+                // 没有找到，创建新记录
+                const createResult = await apiCall('/api/psychological_indicators', 'POST', dbData)
+                if (!createResult.success) {
+                  throw new Error(createResult.error || '创建指标失败')
+                }
+                console.log('[Store] 心理测试指标创建成功:', createResult.data.id)
+                newDbId = createResult.data.id
+              }
+            } catch (findError) {
+              console.warn('[Store] 查询现有指标失败，尝试创建新记录:', findError.message)
+              // 查询失败，尝试创建新记录
+              const createResult = await apiCall('/api/psychological_indicators', 'POST', dbData)
+              if (!createResult.success) {
+                throw new Error(createResult.error || '创建指标失败')
+              }
+              console.log('[Store] 心理测试指标创建成功:', createResult.data.id)
+              newDbId = createResult.data.id
+            }
+          } else {
+            // 更新到数据库（使用数据库表的实际 id）
+            await apiCall(`/api/psychological_indicators/${existingIndicator.dbId}`, 'PUT', dbData)
+            console.log('[Store] 心理测试指标更新到数据库成功:', existingIndicator.dbId)
+          }
 
           // 更新本地状态（不触发数据同步）
           set((state) => ({
             psychologicalIndicators: state.psychologicalIndicators.map(i =>
-              i.id === id ? { ...indicator, dbId: existingIndicator.dbId } : i
+              i.id === id ? { ...indicator, dbId: newDbId } : i
             )
           }))
         } catch (error) {
@@ -1815,11 +1852,10 @@ const useStore = create(
 
         // 转换数据库字段名 (snake_case -> camelCase)
         const newResults = activeResults.map(r => ({
-          ...r,
           id: r.id?.toString(),
           date: r.test_date || r.date,
           scores: r.scores || {},
-          overallScore: r.overall_score || 0,
+          overallScore: r.overall_score !== undefined && r.overall_score !== null ? r.overall_score : (r.overallScore || 0),
           notes: r.notes || '',
           createdAt: r.created_at || r.createdAt || new Date().toISOString(),
           updatedAt: r.updated_at || r.updatedAt || null,
@@ -1876,7 +1912,7 @@ const useStore = create(
         const newIndicators = activeIndicators.map(i => ({
           ...i,
           dbId: i.id, // 保存数据库表的 id 用于更新操作
-          id: i.indicator_id || i.id, // 前端使用的 id
+          id: String(i.indicator_id || i.id), // 前端使用的 id，确保是字符串类型
           name: i.name,
           description: i.description,
           minScore: i.min_score,

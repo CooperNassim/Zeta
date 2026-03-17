@@ -190,11 +190,11 @@ function Navigation() {
     { id: 'daily', icon: TrendingUp, label: '每日功课', path: '/daily-work', customIcon: 'daily' },
     { id: 'psych', icon: Brain, label: '心理测试', path: '/psychological-test', customIcon: 'psych' },
     { id: 'strategy', icon: Target, label: '交易策略', path: '/trading-strategy', customIcon: 'strategy' },
-    { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
     { id: 'risk', icon: Shield, label: '风险模型', path: '/risk-model', customIcon: 'risk' },
-    { id: 'stockpool', icon: Database, label: '股票池', path: '/stock-pool', customIcon: 'stockpool' },
     { id: 'order', icon: Clock, label: '股票交易', path: '/order-management', customIcon: 'order' },
     { id: 'scheduled', icon: Bell, label: '预约订单', path: '/scheduled-orders', customIcon: 'order' },
+    { id: 'stockpool', icon: Database, label: '股票池', path: '/stock-pool', customIcon: 'stockpool' },
+    { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
     { id: 'transaction', icon: Receipt, label: '账单明细', path: '/transaction-history', customIcon: 'transaction' },
     { id: 'record', icon: Activity, label: '交易记录', path: '/trade-records', customIcon: 'record' },
   ]

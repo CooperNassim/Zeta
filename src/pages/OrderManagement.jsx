@@ -406,15 +406,49 @@ const OrderManagement = () => {
 
   // 筛选逻辑
   const filteredOrders = (() => {
+    let baseOrders = []
     switch (selectedFilter) {
       case 'buy':
-        return orders.filter(o => !o.deleted && o.type === 'buy')  // 买入订单
+        baseOrders = orders.filter(o => !o.deleted && o.type === 'buy')  // 买入订单
+        break
       case 'sell':
-        return orders.filter(o => !o.deleted && o.type === 'sell')  // 卖出订单
+        baseOrders = orders.filter(o => !o.deleted && o.type === 'sell')  // 卖出订单
+        break
       case 'all':
       default:
-        return orders.filter(o => !o.deleted)  // 全部订单，排除已删除的
+        baseOrders = orders.filter(o => !o.deleted)  // 全部订单，排除已删除的
+        break
     }
+
+    // 按交易编号分组，然后按每组最大日期降序排序
+    // 1. 按交易编号分组
+    const groupedMap = new Map()
+    baseOrders.forEach(order => {
+      const tradeNumber = order.tradeNumber || order.id?.toString()
+      if (!groupedMap.has(tradeNumber)) {
+        groupedMap.set(tradeNumber, [])
+      }
+      groupedMap.get(tradeNumber).push(order)
+    })
+
+    // 2. 计算每组（交易编号）的最大日期
+    const groupWithMaxDate = Array.from(groupedMap.entries()).map(([tradeNumber, orderList]) => {
+      const maxDate = orderList.reduce((max, order) => {
+        const orderDate = new Date(order.createdAt || 0)
+        return orderDate > max ? orderDate : max
+      }, new Date(0))
+      return { tradeNumber, maxDate, orderList }
+    })
+
+    // 3. 按最大日期降序排序
+    groupWithMaxDate.sort((a, b) => b.maxDate - a.maxDate)
+
+    // 4. 展平数组，保持组内顺序（按创建时间降序）
+    const sortedOrders = groupWithMaxDate.flatMap(group => {
+      return group.orderList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    })
+
+    return sortedOrders
   })()
 
   const totalPages = Math.ceil(filteredOrders.length / pageSize)

@@ -1013,11 +1013,6 @@ const OrderManagement = () => {
                           error={riskErrors.quantity}
                         />
                         {riskErrors.quantity && <ErrorMessage message="不能为空" />}
-                        {orderForm.maxQuantity !== undefined && orderForm.maxQuantity > 0 && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            可卖出数量: {orderForm.maxQuantity}
-                          </p>
-                        )}
                       </div>
                     </>
                   )}

@@ -195,7 +195,7 @@ function Navigation() {
     { id: 'scheduled', icon: Bell, label: '预约订单', path: '/scheduled-orders', customIcon: 'order' },
     { id: 'record', icon: Activity, label: '交易记录', path: '/trade-records', customIcon: 'record' },
     { id: 'transaction', icon: Receipt, label: '账单明细', path: '/transaction-history', customIcon: 'transaction' },
-    { id: 'stockpool', icon: Database, label: '股票池', path: '/stock-pool', customIcon: 'stockpool' },
+    { id: 'stockpool', icon: Database, label: '股票行情', path: '/stock-pool', customIcon: 'stockpool' },
     { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
   ]
 

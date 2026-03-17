@@ -126,12 +126,25 @@ const OrderManagement = () => {
     if (type === 'sell' && selectedIds.length === 1) {
       const selectedOrder = orders.find(order => order.id === selectedIds[0] && !order.deleted && order.type === 'buy')
       if (selectedOrder) {
+        // 计算可卖出数量 = 买入数量 - 同一交易编号已卖出的数量
+        const buyQuantity = selectedOrder.quantity || 0
+        const soldQuantity = orders
+          .filter(o =>
+            !o.deleted &&
+            o.type === 'sell' &&
+            o.buyOrderId === selectedOrder.id
+          )
+          .reduce((sum, o) => sum + (o.quantity || 0), 0)
+
+        const availableQuantity = Math.max(0, buyQuantity - soldQuantity)
+
         initialForm = {
           ...initialForm,
           symbol: selectedOrder.symbol || '',
           name: selectedOrder.name || '',
-          quantity: selectedOrder.quantity?.toString() || '',
-          buyOrderId: selectedOrder.id  // 保存买入订单ID用于关联
+          quantity: availableQuantity.toString(),
+          buyOrderId: selectedOrder.id,
+          maxQuantity: availableQuantity  // 保存最大可卖出数量用于验证
         }
       }
     }
@@ -382,7 +395,7 @@ const OrderManagement = () => {
 
     setShowModal(false)
     setToastType('success')
-    setToastMessage('创建成功')
+    setToastMessage(orderType === 'sell' ? '卖出成功' : '创建成功')
     setShowToast(true)
   }
 
@@ -607,7 +620,7 @@ const OrderManagement = () => {
       <OrderModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title={orderType === 'buy' ? '买入交易' : '卖出预约单'}
+        title={orderType === 'buy' ? '买入交易' : '卖出交易'}
       >
             {/* 步骤指示器 */}
             <div className="flex items-center justify-center mb-6">
@@ -986,7 +999,12 @@ const OrderManagement = () => {
                           step="1"
                           value={orderForm.quantity || ''}
                           onChange={(value) => {
-                            setOrderForm({ ...orderForm, quantity: value })
+                            // 验证并限制数量不超过最大可卖出数量
+                            const newQuantity = parseInt(value) || 0
+                            const maxQuantity = orderForm.maxQuantity || 0
+                            const clampedQuantity = Math.min(Math.max(0, newQuantity), maxQuantity)
+
+                            setOrderForm({ ...orderForm, quantity: clampedQuantity.toString() })
                             if (riskErrors.quantity) {
                               setRiskErrors({ ...riskErrors, quantity: false })
                             }
@@ -995,6 +1013,11 @@ const OrderManagement = () => {
                           error={riskErrors.quantity}
                         />
                         {riskErrors.quantity && <ErrorMessage message="不能为空" />}
+                        {orderForm.maxQuantity !== undefined && orderForm.maxQuantity > 0 && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            可卖出数量: {orderForm.maxQuantity}
+                          </p>
+                        )}
                       </div>
                     </>
                   )}
@@ -1072,7 +1095,7 @@ const OrderManagement = () => {
                           className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity text-sm"
                           style={{ backgroundColor: '#0F1419' }}
                         >
-                          创建
+                          {orderType === 'sell' ? '卖出' : '创建'}
                         </button>
                       )}
                     </div>

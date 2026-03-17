@@ -395,7 +395,7 @@ const OrderManagement = () => {
 
     setShowModal(false)
     setToastType('success')
-    setToastMessage(orderType === 'sell' ? '卖出成功' : '创建成功')
+    setToastMessage(orderType === 'sell' ? '卖出成功' : '买入成功')
     setShowToast(true)
   }
 
@@ -1125,7 +1125,7 @@ const OrderManagement = () => {
                           style={{ backgroundColor: '#0F1419' }}
                           disabled={orderType === 'sell' && (!orderForm.quantity || parseInt(orderForm.quantity) <= 0)}
                         >
-                          {orderType === 'sell' ? '卖出' : '创建'}
+                          {orderType === 'sell' ? '卖出' : '买入'}
                         </button>
                       )}
                     </div>

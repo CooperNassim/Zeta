@@ -1090,7 +1090,15 @@ const useStore = create(
 
       // 添加预约单
       addOrder: (order) => set((state) => {
-        const tradeNumber = state.generateTradeNumber()
+        // 如果是卖出订单且有关联的买入订单，使用买入订单的交易编号
+        let tradeNumber
+        if (order.type === 'sell' && order.buyOrderId) {
+          const buyOrder = state.orders.find(o => o.id === order.buyOrderId)
+          tradeNumber = buyOrder?.tradeNumber || state.generateTradeNumber()
+        } else {
+          tradeNumber = state.generateTradeNumber()
+        }
+
         const newOrder = { ...order, id: Date.now(), tradeNumber, createdAt: new Date().toISOString(), deleted: false, deletedAt: null }
 
         // 同步到数据库

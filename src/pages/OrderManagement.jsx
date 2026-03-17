@@ -1087,8 +1087,9 @@ const OrderManagement = () => {
                       {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && (
                         <button
                           type="submit"
-                          className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity text-sm"
+                          className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                           style={{ backgroundColor: '#0F1419' }}
+                          disabled={orderType === 'sell' && (!orderForm.quantity || parseInt(orderForm.quantity) <= 0)}
                         >
                           {orderType === 'sell' ? '卖出' : '创建'}
                         </button>

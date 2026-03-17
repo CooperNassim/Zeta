@@ -193,10 +193,10 @@ function Navigation() {
     { id: 'risk', icon: Shield, label: '风险模型', path: '/risk-model', customIcon: 'risk' },
     { id: 'order', icon: Clock, label: '股票交易', path: '/order-management', customIcon: 'order' },
     { id: 'scheduled', icon: Bell, label: '预约订单', path: '/scheduled-orders', customIcon: 'order' },
+    { id: 'record', icon: Activity, label: '交易记录', path: '/trade-records', customIcon: 'record' },
+    { id: 'transaction', icon: Receipt, label: '账单明细', path: '/transaction-history', customIcon: 'transaction' },
     { id: 'stockpool', icon: Database, label: '股票池', path: '/stock-pool', customIcon: 'stockpool' },
     { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
-    { id: 'transaction', icon: Receipt, label: '账单明细', path: '/transaction-history', customIcon: 'transaction' },
-    { id: 'record', icon: Activity, label: '交易记录', path: '/trade-records', customIcon: 'record' },
   ]
 
   const isTradingPage = tradingMenuItems.some(item => item.path === location.pathname)

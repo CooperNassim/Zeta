@@ -106,7 +106,9 @@ const OrderManagement = () => {
     setEvaluationStep(0)
     setEvaluationResults({})
     setSymbolError(false)
-    setOrderForm({
+
+    // 如果是卖出订单,自动填充选中订单的信息
+    let initialForm = {
       symbol: '',
       name: '',
       type,
@@ -118,7 +120,23 @@ const OrderManagement = () => {
       riskModelId: '',
       psychologicalScores: {},
       isVirtual: false
-    })
+    }
+
+    // 卖出交易:从选中的买入订单获取信息
+    if (type === 'sell' && selectedIds.length === 1) {
+      const selectedOrder = orders.find(order => order.id === selectedIds[0] && !order.deleted && order.type === 'buy')
+      if (selectedOrder) {
+        initialForm = {
+          ...initialForm,
+          symbol: selectedOrder.symbol || '',
+          name: selectedOrder.name || '',
+          quantity: selectedOrder.quantity?.toString() || '',
+          buyOrderId: selectedOrder.id  // 保存买入订单ID用于关联
+        }
+      }
+    }
+
+    setOrderForm(initialForm)
     setShowModal(true)
   }
 
@@ -799,7 +817,7 @@ const OrderManagement = () => {
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 股票代码
+                        {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' || orderType === 'sell') && <span className="text-red-500">*</span>} 股票代码
                       </label>
                       <CustomInput
                         type="text"
@@ -809,11 +827,11 @@ const OrderManagement = () => {
                           setSymbolError(false)
                           // TODO: 根据股票代码查询股票名称
                         }}
-                        placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入'}
-                        error={symbolError && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail')}
-                        disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
+                        placeholder={orderType === 'sell' ? '' : (getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入')}
+                        error={symbolError && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' || orderType === 'sell')}
+                        disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' || orderType === 'sell'}
                       />
-                      {symbolError && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && (
+                      {symbolError && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' || orderType === 'sell') && (
                         <ErrorMessage message="不能为空" showIcon={true} />
                       )}
                     </div>
@@ -825,7 +843,7 @@ const OrderManagement = () => {
                         type="text"
                         value={orderForm.name || ''}
                         onChange={(value) => setOrderForm({ ...orderForm, name: value })}
-                        placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动获取'}
+                        placeholder={orderType === 'sell' ? '' : (getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动获取')}
                         disabled
                       />
                     </div>
@@ -934,6 +952,49 @@ const OrderManagement = () => {
                           disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
                         />
                         {riskErrors.takeProfitPrice && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <ErrorMessage message="不能为空" />}
+                      </div>
+                    </>
+                  )}
+
+                  {orderType === 'sell' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <span className="text-red-500">*</span> 卖出价格
+                        </label>
+                        <CustomInput
+                          type="number"
+                          step="0.01"
+                          value={orderForm.price || ''}
+                          onChange={(value) => {
+                            setOrderForm({ ...orderForm, price: value })
+                            if (riskErrors.price) {
+                              setRiskErrors({ ...riskErrors, price: false })
+                            }
+                          }}
+                          placeholder="请输入"
+                          error={riskErrors.price}
+                        />
+                        {riskErrors.price && <ErrorMessage message="不能为空" />}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <span className="text-red-500">*</span> 卖出数量
+                        </label>
+                        <CustomInput
+                          type="number"
+                          step="1"
+                          value={orderForm.quantity || ''}
+                          onChange={(value) => {
+                            setOrderForm({ ...orderForm, quantity: value })
+                            if (riskErrors.quantity) {
+                              setRiskErrors({ ...riskErrors, quantity: false })
+                            }
+                          }}
+                          placeholder="请输入"
+                          error={riskErrors.quantity}
+                        />
+                        {riskErrors.quantity && <ErrorMessage message="不能为空" />}
                       </div>
                     </>
                   )}

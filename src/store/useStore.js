@@ -1091,6 +1091,7 @@ const useStore = create(
       // 添加预约单
       addOrder: (order) => set((state) => {
         // 如果是卖出订单且有关联的买入订单，使用买入订单的交易编号
+        // 这样买卖订单会有相同的交易编号，便于识别同一笔交易
         let tradeNumber
         if (order.type === 'sell' && order.buyOrderId) {
           const buyOrder = state.orders.find(o => o.id === order.buyOrderId)
@@ -1705,17 +1706,17 @@ const useStore = create(
         if (state.orders.length === 0) {
           return { orders: newOrders }
         }
-        // 合并去重：使用 tradeNumber 作为唯一标识
+        // 合并去重：使用 id 作为唯一标识（允许同一交易编号的多个订单存在）
         // 优先使用数据库数据（更新），同时清理本地重复数据
         const orderMap = new Map()
         // 先添加本地订单（如果本地有重复，后面的会覆盖前面的，只保留一条）
         state.orders.forEach(o => {
-          const key = o.tradeNumber || o.id?.toString()
+          const key = o.id?.toString()
           if (key) orderMap.set(key, o)
         })
         // 再添加数据库订单（覆盖本地旧数据，确保最新）
         newOrders.forEach(o => {
-          const key = o.tradeNumber || o.id?.toString()
+          const key = o.id?.toString()
           if (key) {
             orderMap.set(key, o)
           }

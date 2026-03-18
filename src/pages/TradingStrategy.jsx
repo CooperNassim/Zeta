@@ -568,7 +568,7 @@ const TradingStrategy = () => {
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
         {/* 筛选条件 */}
         <div style={{ flexShrink: 0, marginTop: '10px' }}>
-          <div className="flex gap-4 items-center">
+          <div className="flex gap-2 items-center" style={{ gap: '10px' }}>
             <div style={{ position: 'relative', width: '240px' }}>
               <FilterSelect
                 options={[

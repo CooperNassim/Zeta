@@ -1,6 +1,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
-import { ArrowRight, TrendingUp, Shield, Target, Brain, LineChart, BarChart3, PieChart, Activity, DollarSign, TrendingDown, Cpu, Zap, Network, Database, ClipboardCheck, AlertTriangle, Clock, Star, Code } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ArrowRight, ChevronRight, TrendingUp, Shield, Target, Brain, LineChart, BarChart3, PieChart, Activity, DollarSign, TrendingDown, Cpu, Zap, Network, Database, ClipboardCheck, AlertTriangle, Clock, Star, Code } from 'lucide-react'
 import Counter from '../components/Counter'
 import ScrollAnimation from '../components/ScrollAnimation'
 import useStore from '../store/useStore'
@@ -9,6 +10,47 @@ const Home = () => {
   const account = useStore(state => state.account)
   const orders = useStore(state => state.orders)
   const tradeRecords = useStore(state => state.tradeRecords)
+
+  // 快速滚动效果状态
+  const [phase, setPhase] = React.useState('pause') // 'pause' 或 'scroll'
+  const [displayChars, setDisplayChars] = React.useState(['技', '术', '分', '析'])
+  const wordIndexRef = React.useRef(0)
+  const words = ['技术分析', '交易纪律', '制定策略', '风险控制', '交易复盘']
+
+  React.useEffect(() => {
+    if (phase === 'pause') {
+      // 停留阶段：显示目标词1秒
+      const targetWord = words[wordIndexRef.current]
+      setDisplayChars(targetWord.split(''))
+      const pauseTimer = setTimeout(() => {
+        setPhase('scroll')
+      }, 1000)
+      return () => clearTimeout(pauseTimer)
+    }
+
+    if (phase === 'scroll') {
+      // 快速滚动阶段：每个位置随机显示字符
+      let scrollCount = 0
+      const scrollInterval = setInterval(() => {
+        scrollCount++
+        // 为每个字符位置生成随机字符
+        const randomChars = displayChars.map(() => {
+          const allChars = words.join('') // 所有可能出现的字符
+          return allChars[Math.floor(Math.random() * allChars.length)]
+        })
+        setDisplayChars(randomChars)
+
+        // 快速滚动一段时间后，切换到下一个目标词
+        if (scrollCount >= 8) {
+          clearInterval(scrollInterval)
+          wordIndexRef.current = (wordIndexRef.current + 1) % words.length
+          setPhase('pause')
+        }
+      }, 60)
+
+      return () => clearInterval(scrollInterval)
+    }
+  }, [phase])
 
   // 计算统计数据 - 基于所有订单
   // 由于不再使用状态，这里使用所有订单进行计算
@@ -54,9 +96,10 @@ const Home = () => {
   ]
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-white" style={{ margin: '0', padding: '0', paddingTop: '72px', paddingLeft: '20px' }}>
+    <div style={{ margin: '0', padding: '0', overflowY: 'auto', height: '100vh' }}>
+      <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-white" style={{ margin: '0', padding: '0', paddingTop: '72px', paddingLeft: '20px', minHeight: '100vh', maxWidth: '1920px', marginLeft: 'auto', marginRight: 'auto' }}>
       {/* Hero Section */}
-      <section className="relative overflow-hidden" style={{ margin: '0', padding: '0', width: '100%' }}>
+      <section className="relative overflow-hidden" style={{ margin: '0', padding: '0', width: '100%', minHeight: '100vh', maxHeight: 'calc(100vh - 72px)' }}>
         {/* 装饰性背景元素 */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {/* 渐变光晕 */}
@@ -96,57 +139,65 @@ const Home = () => {
               initial={{ opacity: 0, x: -50 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 1, ease: [0.4, 0, 0.2, 1] }}
-              style={{ padding: '40px 0 0 0', margin: '0', marginLeft: '80px' }}
+              style={{ padding: '0', margin: '0', marginLeft: '80px', marginTop: '-60px' }}
             >
-              <motion.h2
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.2 }}
-                className="text-lg font-semibold text-primary-600 mb-4 tracking-wide"
-              >
-                AI驱动的智能交易系统
-              </motion.h2>
               <motion.h1
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 1, delay: 0.4, ease: [0.4, 0, 0.2, 1] }}
-                className="text-5xl md:text-6xl font-bold mb-6 leading-tight"
-                style={{ height: '120px', fontSize: '48px', lineHeight: '60px', letterSpacing: 'normal', color: '#111827' }}
+                className="text-5xl md:text-6xl font-bold mb-2 leading-tight"
+                style={{ fontSize: '64px', lineHeight: '78px', letterSpacing: 'normal', color: '#111827' }}
               >
-                Where Trading
-                <br />
-                Meets Intelligence
+                建立自己交易系统
               </motion.h1>
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, delay: 0.6 }}
-                className="text-xl text-gray-600 mb-8 leading-relaxed"
-                style={{ width: '80%' }}
+                className="text-5xl md:text-6xl font-bold leading-tight"
+                style={{ fontSize: '64px', lineHeight: '78px', letterSpacing: 'normal', color: '#111827' }}
               >
-                通过心理测试、交易策略和风险模型的智能评估，帮助您做出更理性的交易决策
+                学习 <span style={{ color: '#3B82F6', fontWeight: '700' }}>{displayChars.map((char, index) => (
+                  <span key={index}>{char}</span>
+                ))}</span>
               </motion.p>
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, delay: 0.6 }}
+                className="text-gray-600 mb-8 leading-relaxed"
+                style={{ width: '80%', marginTop: '30px', fontSize: '18px' }}
+              >
+                告别非理性交易，严格遵守系统规则，做好每一步，将交易变成可重复的标准化
+              </motion.p>
+
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, delay: 0.8 }}
                 className="flex flex-wrap gap-4"
               >
-                <motion.button
-                  whileHover={{ scale: 1.05, boxShadow: "0 20px 40px rgba(0, 122, 204, 0.3)" }}
-                  whileTap={{ scale: 0.98 }}
-                  className="px-8 py-4 bg-gradient-to-r from-primary-500 to-blue-600 rounded-xl text-white font-bold text-lg transition-all duration-300 inline-flex items-center"
-                >
-                  立即开始交易
-                  <ArrowRight className="w-5 h-5 ml-2" />
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="px-8 py-4 border-2 border-gray-300 rounded-xl text-gray-700 font-bold text-lg hover:border-primary-500 transition-all duration-300"
-                >
-                  了解更多
-                </motion.button>
+                <Link to="/daily-work">
+                  <button
+                    className="px-6 py-2 text-white inline-flex items-center group"
+                    style={{ backgroundColor: '#0F1419', borderRadius: '0', fontSize: '16px' }}
+                  >
+                    立即开始
+                    <div className="inline-flex items-center ml-2 transition-transform duration-150 group-hover:translate-x-1" style={{ willChange: 'transform' }}>
+                      <ArrowRight className="w-5 h-5" style={{ position: 'relative', zIndex: 1 }} />
+                      <ChevronRight style={{ marginLeft: '-8px', fontSize: '24px', fontWeight: 'bold', position: 'relative', zIndex: 2 }} />
+                    </div>
+                  </button>
+                </Link>
+                <Link to="/psychological-test">
+                  <motion.button
+                    className="px-6 py-2 transition-all duration-150"
+                    style={{ backgroundColor: '#E5E7EB', borderRadius: '0', fontSize: '16px', color: '#0F1419' }}
+                    whileHover={{ backgroundColor: '#D1D5DB' }}
+                  >
+                    心理测试
+                  </motion.button>
+                </Link>
               </motion.div>
 
               {/* 统计数据 */}
@@ -402,7 +453,7 @@ const Home = () => {
                     <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-green-300" />
                   </motion.div>
                   <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-xs rounded-full whitespace-nowrap border border-green-400/30 backdrop-blur-sm">
-                    预约订单
+                    交易记录
                   </div>
                 </motion.div>
 
@@ -437,7 +488,7 @@ const Home = () => {
                     <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-orange-300" />
                   </motion.div>
                   <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gradient-to-r from-amber-600 to-orange-600 text-white text-xs rounded-full whitespace-nowrap border border-orange-400/30 backdrop-blur-sm">
-                    交易评分
+                    操作评级
                   </div>
                 </motion.div>
 
@@ -480,77 +531,328 @@ const Home = () => {
         </div>
       </section>
 
-      {/* 核心功能 */}
-      <section className="py-20 bg-white" style={{ margin: '0', padding: '0', width: '100%' }}>
-        <div className="container mx-auto px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-100px" }}
-            transition={{ duration: 0.8 }}
-            className="text-center mb-12"
-          >
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">核心功能</h2>
-            <p className="text-xl text-gray-600">智能化交易，全方位保障</p>
-          </motion.div>
+      {/* 业务模块概览 */}
+      <section style={{ padding: '60px 20px', background: '#ffffff' }}>
+        <ScrollAnimation className="mb-12">
+          <h2 style={{ fontSize: '32px', fontWeight: '700', color: '#111827', marginBottom: '16px', textAlign: 'center' }}>
+            业务模块
+          </h2>
+          <p style={{ fontSize: '18px', color: '#6B7280', textAlign: 'center', marginBottom: '60px' }}>
+            全面覆盖交易全流程，助力决策与执行
+          </p>
+        </ScrollAnimation>
 
-          <ScrollAnimation className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {features.map((feature, index) => (
-              <motion.div
-                key={feature.title}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-50px" }}
-                transition={{ duration: 0.6, delay: index * 0.2 }}
-                className="group"
-              >
-                <motion.div
-                  className="glass rounded-2xl p-8 border border-gray-200 hover:border-primary-300 transition-all duration-300 hover-float cursor-pointer h-full"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <motion.div
-                    className={`w-16 h-16 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-6 shadow-lg`}
-                    whileHover={{ rotate: 10, scale: 1.1 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <feature.icon className="w-8 h-8 text-gray-900" />
-                  </motion.div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-3">{feature.title}</h3>
-                  <p className="text-gray-600 leading-relaxed">{feature.description}</p>
-                </motion.div>
-              </motion.div>
-            ))}
-          </ScrollAnimation>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="py-20 bg-gradient-to-br from-primary-500 to-blue-600" style={{ margin: '0', padding: '0', width: '100%' }}>
-        <div className="container mx-auto px-4 text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.8 }}
-          >
-            <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
-              开启您的智能交易之旅
-            </h2>
-            <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
-              立即加入，体验AI驱动的智能交易系统，让每一次交易都更加理性
+        {/* 每日功课模块 */}
+        <ScrollAnimation>
+          <div style={{
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            borderRadius: '24px',
+            padding: '48px',
+            marginBottom: '40px',
+            color: '#ffffff',
+            boxShadow: '0 20px 60px rgba(102, 126, 234, 0.3)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+              <TrendingUp style={{ width: '48px', height: '48px', color: '#ffffff' }} />
+              <h3 style={{ fontSize: '28px', fontWeight: '700', margin: '0' }}>每日功课</h3>
+            </div>
+            <p style={{ fontSize: '18px', lineHeight: '1.6', marginBottom: '32px', opacity: 0.95 }}>
+              记录每日市场数据，追踪全球指数、大宗商品及汇率走势，通过情绪评估和预测模型辅助交易决策
             </p>
-            <motion.button
-              whileHover={{ scale: 1.1, boxShadow: "0 20px 40px rgba(0, 0, 0, 0.3)" }}
-              whileTap={{ scale: 0.98 }}
-              className="px-10 py-4 bg-white text-primary-600 rounded-xl font-bold text-lg transition-all duration-300 inline-flex items-center hover:shadow-2xl"
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+              <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '20px', borderRadius: '12px', backdropFilter: 'blur(10px)' }}>
+                <div style={{ fontSize: '14px', marginBottom: '8px', opacity: 0.9 }}>市场指数</div>
+                <div style={{ fontSize: '24px', fontWeight: '700' }}>9+</div>
+              </div>
+              <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '20px', borderRadius: '12px', backdropFilter: 'blur(10px)' }}>
+                <div style={{ fontSize: '14px', marginBottom: '8px', opacity: 0.9 }}>情绪评估</div>
+                <div style={{ fontSize: '24px', fontWeight: '700' }}>冰点~沸点</div>
+              </div>
+              <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '20px', borderRadius: '12px', backdropFilter: 'blur(10px)' }}>
+                <div style={{ fontSize: '14px', marginBottom: '8px', opacity: 0.9 }}>数据维度</div>
+                <div style={{ fontSize: '24px', fontWeight: '700' }}>20+</div>
+              </div>
+            </div>
+          </div>
+        </ScrollAnimation>
+
+        {/* 四大核心功能 */}
+        <ScrollAnimation>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '40px' }}>
+            {/* 心理测试 */}
+            <motion.div
+              whileHover={{ scale: 1.02, y: -5 }}
+              style={{
+                background: '#ffffff',
+                borderRadius: '20px',
+                padding: '40px',
+                boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
+                border: '1px solid #E5E7EB',
+                transition: 'all 0.3s ease'
+              }}
             >
-              立即开始
-              <ArrowRight className="w-5 h-5 ml-2" />
-            </motion.button>
-          </motion.div>
-        </div>
+              <div style={{
+                width: '64px',
+                height: '64px',
+                background: 'linear-gradient(135deg, #F472B6 0%, #DB2777 100%)',
+                borderRadius: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '24px'
+              }}>
+                <Brain style={{ width: '32px', height: '32px', color: '#ffffff' }} />
+              </div>
+              <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', marginBottom: '12px' }}>心理测试</h3>
+              <p style={{ fontSize: '16px', lineHeight: '1.6', color: '#6B7280', marginBottom: '24px' }}>
+                通过标准心理量表评估交易情绪，生成心理指标报告，帮助识别决策中的情绪偏差
+              </p>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ padding: '6px 14px', background: '#FCE7F3', borderRadius: '20px', fontSize: '14px', color: '#DB2777' }}>情绪稳定性</span>
+                <span style={{ padding: '6px 14px', background: '#FCE7F3', borderRadius: '20px', fontSize: '14px', color: '#DB2777' }}>决策质量</span>
+                <span style={{ padding: '6px 14px', background: '#FCE7F3', borderRadius: '20px', fontSize: '14px', color: '#DB2777' }}>风险偏好</span>
+              </div>
+            </motion.div>
+
+            {/* 交易策略 */}
+            <motion.div
+              whileHover={{ scale: 1.02, y: -5 }}
+              style={{
+                background: '#ffffff',
+                borderRadius: '20px',
+                padding: '40px',
+                boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
+                border: '1px solid #E5E7EB',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              <div style={{
+                width: '64px',
+                height: '64px',
+                background: 'linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%)',
+                borderRadius: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '24px'
+              }}>
+                <Target style={{ width: '32px', height: '32px', color: '#ffffff' }} />
+              </div>
+              <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', marginBottom: '12px' }}>交易策略</h3>
+              <p style={{ fontSize: '16px', lineHeight: '1.6', color: '#6B7280', marginBottom: '24px' }}>
+                自定义买入卖出策略，多维度评估标准配置，支持策略启用/停用，智能匹配交易机会
+              </p>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ padding: '6px 14px', background: '#DBEAFE', borderRadius: '20px', fontSize: '14px', color: '#3B82F6' }}>策略配置</span>
+                <span style={{ padding: '6px 14px', background: '#DBEAFE', borderRadius: '20px', fontSize: '14px', color: '#3B82F6' }}>评估标准</span>
+                <span style={{ padding: '6px 14px', background: '#DBEAFE', borderRadius: '20px', fontSize: '14px', color: '#3B82F6' }}>启用/停用</span>
+              </div>
+            </motion.div>
+
+            {/* 技术指标 */}
+            <motion.div
+              whileHover={{ scale: 1.02, y: -5 }}
+              style={{
+                background: '#ffffff',
+                borderRadius: '20px',
+                padding: '40px',
+                boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
+                border: '1px solid #E5E7EB',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              <div style={{
+                width: '64px',
+                height: '64px',
+                background: 'linear-gradient(135deg, #34D399 0%, #10B981 100%)',
+                borderRadius: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '24px'
+              }}>
+                <LineChart style={{ width: '32px', height: '32px', color: '#ffffff' }} />
+              </div>
+              <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', marginBottom: '12px' }}>技术指标</h3>
+              <p style={{ fontSize: '16px', lineHeight: '1.6', color: '#6B7280', marginBottom: '24px' }}>
+                股票K线数据管理与多维度技术指标计算，支持趋势、均线、震荡等多种分析工具
+              </p>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ padding: '6px 14px', background: '#D1FAE5', borderRadius: '20px', fontSize: '14px', color: '#10B981' }}>K线数据</span>
+                <span style={{ padding: '6px 14px', background: '#D1FAE5', borderRadius: '20px', fontSize: '14px', color: '#10B981' }}>技术分析</span>
+                <span style={{ padding: '6px 14px', background: '#D1FAE5', borderRadius: '20px', fontSize: '14px', color: '#10B981' }}>指标计算</span>
+              </div>
+            </motion.div>
+
+            {/* 风险模型 */}
+            <motion.div
+              whileHover={{ scale: 1.02, y: -5 }}
+              style={{
+                background: '#ffffff',
+                borderRadius: '20px',
+                padding: '40px',
+                boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
+                border: '1px solid #E5E7EB',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              <div style={{
+                width: '64px',
+                height: '64px',
+                background: 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 100%)',
+                borderRadius: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '24px'
+              }}>
+                <Shield style={{ width: '32px', height: '32px', color: '#ffffff' }} />
+              </div>
+              <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', marginBottom: '12px' }}>风险模型</h3>
+              <p style={{ fontSize: '16px', lineHeight: '1.6', color: '#6B7280', marginBottom: '24px' }}>
+                动态账户风险计算，最大亏损额度控制，支持多风险模型配置与启用，量化风险管理
+              </p>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ padding: '6px 14px', background: '#FEF3C7', borderRadius: '20px', fontSize: '14px', color: '#D97706' }}>风险计算</span>
+                <span style={{ padding: '6px 14px', background: '#FEF3C7', borderRadius: '20px', fontSize: '14px', color: '#D97706' }}>亏损控制</span>
+                <span style={{ padding: '6px 14px', background: '#FEF3C7', borderRadius: '20px', fontSize: '14px', color: '#D97706' }}>模型配置</span>
+              </div>
+            </motion.div>
+          </div>
+        </ScrollAnimation>
+
+        {/* 交易管理 */}
+        <ScrollAnimation>
+          <div style={{
+            background: 'linear-gradient(135deg, #0F1419 0%, #1F2937 100%)',
+            borderRadius: '24px',
+            padding: '48px',
+            marginTop: '60px',
+            color: '#ffffff'
+          }}>
+            <h3 style={{ fontSize: '28px', fontWeight: '700', marginBottom: '24px', textAlign: 'center' }}>交易管理</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '30px' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  borderRadius: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px'
+                }}>
+                  <Activity style={{ width: '28px', height: '28px', color: '#ffffff' }} />
+                </div>
+                <h4 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>股票交易</h4>
+                <p style={{ fontSize: '14px', color: '#9CA3AF', lineHeight: '1.6' }}>
+                  买入/卖出交易，智能关联订单，操作评级与交易评分
+                </p>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  borderRadius: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px'
+                }}>
+                  <Clock style={{ width: '28px', height: '28px', color: '#ffffff' }} />
+                </div>
+                <h4 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>预约订单</h4>
+                <p style={{ fontSize: '14px', color: '#9CA3AF', lineHeight: '1.6' }}>
+                  预设交易条件，自动触发执行，支持买入卖出策略
+                </p>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  borderRadius: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px'
+                }}>
+                  <ClipboardCheck style={{ width: '28px', height: '28px', color: '#ffffff' }} />
+                </div>
+                <h4 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>交易记录</h4>
+                <p style={{ fontSize: '14px', color: '#9CA3AF', lineHeight: '1.6' }}>
+                  完整交易历史，支持筛选与统计，多维度数据导出
+                </p>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  borderRadius: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px'
+                }}>
+                  <DollarSign style={{ width: '28px', height: '28px', color: '#ffffff' }} />
+                </div>
+                <h4 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>账单明细</h4>
+                <p style={{ fontSize: '14px', color: '#9CA3AF', lineHeight: '1.6' }}>
+                  资金流水记录，分类统计汇总，支持多格式导出
+                </p>
+              </div>
+            </div>
+          </div>
+        </ScrollAnimation>
+
+        {/* 股票行情 */}
+        <ScrollAnimation>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '24px',
+            padding: '48px',
+            marginTop: '60px',
+            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #E5E7EB'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                background: 'linear-gradient(135deg, #EC4899 0%, #BE185D 100%)',
+                borderRadius: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <TrendingUp style={{ width: '28px', height: '28px', color: '#ffffff' }} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', marginBottom: '4px' }}>股票行情</h3>
+                <p style={{ fontSize: '14px', color: '#6B7280', margin: '0' }}>实时监控自选股票，快速查看行情数据</p>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+              <div style={{ padding: '24px', background: '#F9FAFB', borderRadius: '16px', textAlign: 'center' }}>
+                <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>股票代码</div>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>快速查询</div>
+              </div>
+              <div style={{ padding: '24px', background: '#F9FAFB', borderRadius: '16px', textAlign: 'center' }}>
+                <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>价格数据</div>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>实时更新</div>
+              </div>
+              <div style={{ padding: '24px', background: '#F9FAFB', borderRadius: '16px', textAlign: 'center' }}>
+                <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>自选管理</div>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>灵活配置</div>
+              </div>
+            </div>
+          </div>
+        </ScrollAnimation>
       </section>
+      </div>
     </div>
   )
 }

@@ -28,11 +28,11 @@ const apiCall = async (endpoint, method = 'GET', data = null) => {
 
 // 心理测试指标
 export const initialPsychologicalIndicators = [
-  { id: '1', dbId: null, name: '今天身体感觉怎么样？', description: '0=感觉生病了；1=感觉正常；2=感觉好极了；', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '2', dbId: null, name: '昨天交易如何？', description: '0=亏损；1=没有交易；2=盈利；', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '3', dbId: null, name: '早上做好计划了吗？', description: '0=没做；1=无仓位；2=准备得很好；', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '4', dbId: null, name: '早上情绪如何？', description: '0=低落；1=正常；2=棒极了；', minScore: 0, maxScore: 2, weight: 0.2 },
-  { id: '5', dbId: null, name: '今天工作量如何？', description: '0=很忙；1=正常；2=很闲；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '1', name: '今天身体感觉怎么样？', description: '0=感觉生病了；1=感觉正常；2=感觉好极了；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '2', name: '昨天交易如何？', description: '0=亏损；1=没有交易；2=盈利；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '3', name: '早上做好计划了吗？', description: '0=没做；1=无仓位；2=准备得很好；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '4', name: '早上情绪如何？', description: '0=低落；1=正常；2=棒极了；', minScore: 0, maxScore: 2, weight: 0.2 },
+  { id: '5', name: '今天工作量如何？', description: '0=很忙；1=正常；2=很闲；', minScore: 0, maxScore: 2, weight: 0.2 },
 ]
 
 // 交易策略模板
@@ -701,160 +701,154 @@ const useStore = create(
       },
 
       // 添加心理测试
+      // 添加心理测试结果（保存到数据库）
       addPsychologicalTest: async (test) => {
-        console.log('[Store] 添加心理测试:', test)
-
-        // 构造数据库数据
-        const now = new Date()
-        // 使用本地时间而不是UTC时间来避免时区问题
-        const dateObj = new Date(test.date)
-        const year = dateObj.getFullYear()
-        const month = String(dateObj.getMonth() + 1).padStart(2, '0')
-        const day = String(dateObj.getDate()).padStart(2, '0')
-        const dateStr = `${year}-${month}-${day}`
-
-        console.log('[Store] 原始日期:', test.date)
-        console.log('[Store] 保存的日期字符串:', dateStr)
-
-        const dbData = {
-          test_date: dateStr,
-          scores: test.scores || {},
-          overall_score: parseFloat(test.overallScore) || 0,
-          notes: test.notes || '',
-          deleted: false,
-          deleted_at: null,
-          created_at: now.toISOString(),
-          updated_at: now.toISOString()
-        }
-
         try {
-          // 先保存到本地状态
-          const localTest = { ...test, id: Date.now(), deleted: false, deletedAt: null }
-          set((state) => ({
-            psychologicalTests: [...state.psychologicalTests, localTest]
-          }))
+          // 将前端字段 date 映射为数据库字段 test_date
+          const dbData = {
+            test_date: test.date,
+            scores: test.scores,
+            overall_score: test.overallScore
+          }
 
-          // 然后同步到数据库
-          const res = await apiCall('/api/psychological_test_results', 'POST', dbData)
-          console.log('[Store] 心理测试保存到数据库结果:', res)
+          const response = await fetch(`${API_BASE_URL}/api/psychological_test_results`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dbData)
+          }).then(res => res.json())
 
-          // 不立即重新同步数据，避免覆盖本地的 testScores
-          // 让前端组件在需要时手动同步
-
-          return { ...test, id: res.data?.id }
+          if (response.success) {
+            // 保存成功后，从数据库重新同步数据
+            await apiCall('/api/sync/all').then(syncResponse => {
+              if (syncResponse.success && syncResponse.data) {
+                set((state) => {
+                  const mappedData = (syncResponse.data.psychological_test_results || []).map(item => ({
+                    ...item,
+                    date: item.test_date,
+                    overallScore: item.overall_score
+                  }))
+                  return { psychologicalTests: mappedData }
+                })
+              }
+            })
+          }
+          return response
         } catch (error) {
-          console.error('[Store] 保存心理测试到数据库失败:', error)
-          throw error
+          console.error('[Store] 添加心理测试失败:', error)
+          return { success: false, error: error.message }
         }
       },
 
-      // 更新心理测试记录
-      updatePsychologicalTest: async (date, test) => {
-        console.log('[Store] 更新心理测试:', date, test)
-
-        // 构造数据库数据
-        const now = new Date()
-        // 使用本地时间而不是UTC时间来避免时区问题
-        const dateObj = new Date(date)
-        const year = dateObj.getFullYear()
-        const month = String(dateObj.getMonth() + 1).padStart(2, '0')
-        const day = String(dateObj.getDate()).padStart(2, '0')
-        const dateStr = `${year}-${month}-${day}`
-
-        console.log('[Store] 原始日期:', date)
-        console.log('[Store] 保存的日期字符串:', dateStr)
-
-        const dbData = {
-          test_date: dateStr,
-          scores: test.scores || {},
-          overall_score: parseFloat(test.overallScore) || 0,
-          notes: test.notes || '',
-          updated_at: now.toISOString()
-        }
-
+      // 更新心理测试结果（保存到数据库）
+      updatePsychologicalTest: async (dateStr, testData) => {
         try {
-          // 通过日期更新数据库
-          await apiCall(`/api/psychological_test_results/by-date/${dateStr}`, 'PUT', dbData)
-          console.log('[Store] 心理测试更新到数据库成功')
+          // 使用test_date作为查询条件，直接使用SQL更新
+          const dbData = {
+            scores: testData.scores,
+            overall_score: testData.overallScore
+          }
 
-          // 不立即重新同步数据，避免覆盖本地的 testScores
-          // 让前端组件在需要时手动同步
+          const response = await fetch(`${API_BASE_URL}/api/psychological_test_results/by-date/${dateStr}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dbData)
+          }).then(res => res.json())
+
+          if (response.success) {
+            // 更新成功后，从数据库重新同步数据
+            await apiCall('/api/sync/all').then(syncResponse => {
+              if (syncResponse.success && syncResponse.data) {
+                set((state) => {
+                  const mappedData = (syncResponse.data.psychological_test_results || []).map(item => ({
+                    ...item,
+                    date: item.test_date,
+                    overallScore: item.overall_score
+                  }))
+                  return { psychologicalTests: mappedData }
+                })
+              }
+            })
+          }
+          return response
         } catch (error) {
-          console.error('[Store] 更新心理测试到数据库失败:', error)
-          throw error
+          console.error('[Store] 更新心理测试失败:', error)
+          return { success: false, error: error.message }
         }
       },
 
-      // 更新心理测试指标
+      // 批量导入心理测试结果
+      importPsychologicalTestResults: (dataList) => set((state) => {
+        if (!dataList || dataList === undefined) {
+          console.log('[Store] 心理测试结果数据未提供，保持现有数据')
+          return {}
+        }
+        // 将数据库字段映射为前端字段
+        const mappedData = dataList.map(item => ({
+          ...item,
+          date: item.test_date, // 映射 test_date -> date
+          overallScore: item.overall_score // 映射 overall_score -> overallScore
+        }))
+        console.log('[Store] 映射后的心理测试数据:', mappedData.slice(0, 3))
+        return { psychologicalTests: mappedData }
+      }),
+
+      // 批量导入心理测试指标
+      importPsychologicalIndicators: (dataList) => set((state) => {
+        if (!dataList || dataList === undefined) {
+          console.log('[Store] 心理测试指标数据未提供，保持现有数据')
+          return {}
+        }
+        // 确保数值字段是正确的类型
+        const mappedData = dataList.map(item => ({
+          ...item,
+          minScore: parseInt(item.min_score),
+          maxScore: parseInt(item.max_score),
+          weight: parseFloat(item.weight)
+        }))
+        console.log('[Store] 映射后的心理测试指标数据:', mappedData)
+        return { psychologicalIndicators: mappedData }
+      }),
+
+      // 更新心理测试指标（保存到数据库）
       updatePsychologicalIndicator: async (id, indicator) => {
         try {
-          // 找到对应的数据库 id
-          const existingIndicator = get().psychologicalIndicators.find(i => i.id === id)
-          if (!existingIndicator) {
-            throw new Error('找不到对应的指标记录')
-          }
-
-          // 转换为数据库字段名 (camelCase -> snake_case)
+          // 将前端字段映射为数据库字段
           const dbData = {
-            indicator_id: String(existingIndicator.id), // 使用前端 id 作为 indicator_id，确保是字符串类型
+            indicator_id: indicator.indicatorId || indicator.id,
             name: indicator.name,
-            description: indicator.description || '',
-            min_score: indicator.minScore || 0,
-            max_score: indicator.maxScore || 10,
-            weight: parseFloat(indicator.weight) || 0.2,
-            sort_order: indicator.sortOrder || 0,
-            updated_at: new Date().toISOString()
+            description: indicator.description,
+            min_score: indicator.minScore || indicator.min_score,
+            max_score: indicator.maxScore || indicator.max_score,
+            weight: indicator.weight
           }
 
-          let newDbId = existingIndicator.dbId
+          // 使用通用PUT API更新（使用id）
+          const response = await fetch(`${API_BASE_URL}/api/psychological_indicators/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dbData)
+          }).then(res => res.json())
 
-          // 如果没有 dbId，先查询数据库中是否已存在该 indicator_id
-          if (!existingIndicator.dbId) {
-            try {
-              // 尝试查找现有的记录
-              const findResult = await apiCall(`/api/psychological_indicators?where=${encodeURIComponent(JSON.stringify({ indicator_id: String(existingIndicator.id) }))}`, 'GET')
-              if (findResult.success && findResult.data && findResult.data.length > 0) {
-                // 找到现有记录，使用它
-                const existingRecord = findResult.data[0]
-                newDbId = existingRecord.id
-                console.log('[Store] 找到现有指标记录:', newDbId)
-                // 更新现有记录
-                await apiCall(`/api/psychological_indicators/${newDbId}`, 'PUT', dbData)
-                console.log('[Store] 心理测试指标更新到数据库成功:', newDbId)
-              } else {
-                // 没有找到，创建新记录
-                const createResult = await apiCall('/api/psychological_indicators', 'POST', dbData)
-                if (!createResult.success) {
-                  throw new Error(createResult.error || '创建指标失败')
-                }
-                console.log('[Store] 心理测试指标创建成功:', createResult.data.id)
-                newDbId = createResult.data.id
+          if (response.success) {
+            // 更新成功后，从数据库重新同步数据
+            await apiCall('/api/sync/all').then(syncResponse => {
+              if (syncResponse.success && syncResponse.data) {
+                set((state) => {
+                  const mappedData = (syncResponse.data.psychological_indicators || []).map(item => ({
+                    ...item,
+                    minScore: parseInt(item.min_score),
+                    maxScore: parseInt(item.max_score),
+                    weight: parseFloat(item.weight)
+                  }))
+                  return { psychologicalIndicators: mappedData }
+                })
               }
-            } catch (findError) {
-              console.warn('[Store] 查询现有指标失败，尝试创建新记录:', findError.message)
-              // 查询失败，尝试创建新记录
-              const createResult = await apiCall('/api/psychological_indicators', 'POST', dbData)
-              if (!createResult.success) {
-                throw new Error(createResult.error || '创建指标失败')
-              }
-              console.log('[Store] 心理测试指标创建成功:', createResult.data.id)
-              newDbId = createResult.data.id
-            }
-          } else {
-            // 更新到数据库（使用数据库表的实际 id）
-            await apiCall(`/api/psychological_indicators/${existingIndicator.dbId}`, 'PUT', dbData)
-            console.log('[Store] 心理测试指标更新到数据库成功:', existingIndicator.dbId)
+            })
           }
-
-          // 更新本地状态（不触发数据同步）
-          set((state) => ({
-            psychologicalIndicators: state.psychologicalIndicators.map(i =>
-              i.id === id ? { ...indicator, dbId: newDbId } : i
-            )
-          }))
+          return response
         } catch (error) {
-          console.error('[Store] 心理测试指标更新失败:', error)
-          throw error
+          console.error('[Store] 更新心理测试指标失败:', error)
+          return { success: false, error: error.message }
         }
       },
 
@@ -987,44 +981,98 @@ const useStore = create(
       }),
 
       // 添加交易策略记录
-      addStrategyRecord: (record) => set((state) => {
+      addStrategyRecord: async (record) => {
+        console.log('[Store] 添加交易策略记录:', record)
+
         const now = new Date().toISOString()
-        const nowDate = new Date()
 
-
-        return {
-          strategyRecords: [
-            ...state.strategyRecords,
-            {
-              ...record,
-              createdAt: now,
-              updatedAt: now,
-              deleted: false,
-              deletedAt: null
-            }
-          ]
+        // 构造数据库数据 (snake_case)
+        const dbData = {
+          strategy_type: record.strategyType,
+          name: record.name,
+          eval_standard_1: record.evalStandard1,
+          eval_standard_2: record.evalStandard2,
+          eval_standard_3: record.evalStandard3,
+          eval_standard_4: record.evalStandard4,
+          eval_standard_5: record.evalStandard5,
+          status: record.status || '启用',
+          created_at: now,
+          updated_at: now
         }
-      }),
+
+        // 只有当 revisionVersion 有值时才包含在数据中
+        if (record.revisionVersion && record.revisionVersion.trim() !== '') {
+          dbData.revision_version = record.revisionVersion
+        }
+
+        try {
+          // 保存到数据库
+          const res = await apiCall('/api/trading_strategies', 'POST', dbData)
+          console.log('[Store] 交易策略保存到数据库结果:', res)
+
+          if (res.success && res.data && res.data.id) {
+            // 保存成功后,从数据库重新同步数据,确保数据一致性
+            const syncResponse = await apiCall('/api/sync/all')
+            if (syncResponse.success && syncResponse.data && syncResponse.data.trading_strategies !== undefined) {
+              const { trading_strategies } = syncResponse.data
+              set((state) => {
+                // 使用 importTradingStrategies 来更新数据
+                state.importTradingStrategies(trading_strategies)
+                return {}
+              })
+            }
+            return { ...record, id: res.data.id }
+          } else {
+            console.warn('[Store] 数据库返回数据不完整')
+            return record
+          }
+        } catch (error) {
+          console.error('[Store] 保存交易策略到数据库失败:', error)
+          throw error
+        }
+      },
 
       // 删除交易策略记录
-      deleteStrategyRecord: (id) => set((state) => {
-        apiCall(`/api/strategy_records/${id}`, 'DELETE')
-        return {
-          strategyRecords: state.strategyRecords.map(r =>
-            r.id === id ? { ...r, deleted: true, deletedAt: new Date().toISOString() } : r
-          )
+      deleteStrategyRecord: async (id) => {
+        console.log('[Store] 删除交易策略记录, id:', id)
+        try {
+          await apiCall(`/api/trading_strategies/${id}`, 'DELETE')
+          // 从数据库重新同步数据
+          const syncResponse = await apiCall('/api/sync/all')
+          if (syncResponse.success && syncResponse.data && syncResponse.data.trading_strategies !== undefined) {
+            const { trading_strategies } = syncResponse.data
+            set((state) => {
+              state.importTradingStrategies(trading_strategies)
+              return {}
+            })
+          }
+          return { success: true }
+        } catch (err) {
+          console.error('[Store] 删除失败:', err)
+          return { success: false, error: err }
         }
-      }),
+      },
 
       // 批量删除交易策略记录
-      deleteMultipleStrategyRecords: (ids) => set((state) => {
-        apiCall(`/api/strategy_records/bulk`, 'DELETE', { ids })
-        return {
-          strategyRecords: state.strategyRecords.map(r =>
-            ids.includes(r.id) ? { ...r, deleted: true, deletedAt: new Date().toISOString() } : r
-          )
+      deleteMultipleStrategyRecords: async (ids) => {
+        console.log('[Store] 批量删除交易策略记录, ids:', ids)
+        try {
+          await apiCall(`/api/trading_strategies/bulk/delete`, 'POST', { ids })
+          // 从数据库重新同步数据
+          const syncResponse = await apiCall('/api/sync/all')
+          if (syncResponse.success && syncResponse.data && syncResponse.data.trading_strategies !== undefined) {
+            const { trading_strategies } = syncResponse.data
+            set((state) => {
+              state.importTradingStrategies(trading_strategies)
+              return {}
+            })
+          }
+          return { success: true }
+        } catch (err) {
+          console.error('[Store] 批量删除失败:', err)
+          return { success: false, error: err }
         }
-      }),
+      },
 
       // 恢复交易策略记录
       restoreStrategyRecord: (id) => set((state) => {
@@ -1060,46 +1108,136 @@ const useStore = create(
       })),
 
       // 更新交易策略记录
-      updateStrategyRecord: (id, record) => set((state) => ({
-        strategyRecords: state.strategyRecords.map(r =>
-          r.id === id ? { ...record, updatedAt: new Date().toISOString() } : r
-        )
-      })),
+      updateStrategyRecord: async (id, record) => {
+        console.log('[Store] 更新交易策略记录:', id, record)
+
+        // 构造数据库更新数据 (snake_case)
+        const dbData = {
+          strategy_type: record.strategyType,
+          name: record.name,
+          eval_standard_1: record.evalStandard1,
+          eval_standard_2: record.evalStandard2,
+          eval_standard_3: record.evalStandard3,
+          eval_standard_4: record.evalStandard4,
+          eval_standard_5: record.evalStandard5,
+          status: record.status,
+          updated_at: new Date().toISOString()
+        }
+
+        // 只有当 revisionVersion 有值时才包含在更新数据中
+        if (record.revisionVersion && record.revisionVersion.trim() !== '') {
+          dbData.revision_version = record.revisionVersion
+        }
+
+        try {
+          // 更新数据库
+          const res = await apiCall(`/api/trading_strategies/${id}`, 'PUT', dbData)
+          console.log('[Store] 更新数据库结果:', res)
+
+          // 更新后从数据库重新同步数据,确保数据一致性
+          const syncResponse = await apiCall('/api/sync/all')
+          if (syncResponse.success && syncResponse.data && syncResponse.data.trading_strategies !== undefined) {
+            const { trading_strategies } = syncResponse.data
+            set((state) => {
+              state.importTradingStrategies(trading_strategies)
+              return {}
+            })
+          }
+        } catch (error) {
+          console.error('[Store] 更新数据库失败:', error)
+          throw error
+        }
+      },
 
       // 导入交易策略记录
-      importStrategyRecords: (dataList) => set((state) => {
-        const now = new Date().toISOString()
-        const currentMaxId = state.strategyRecords.reduce((max, r) => {
-          const id = parseInt(r.id) || 0
-          return Math.max(max, id)
-        }, 0)
+      importStrategyRecords: async (dataList) => {
+        console.log('[Store] 导入交易策略记录, 数量:', dataList.length)
 
-        return {
-          strategyRecords: [
-            ...dataList.map((d, index) => ({
-              ...d,
-              id: (currentMaxId + index + 1).toString(),
-              createdAt: d.createdAt || now,
-              updatedAt: now,
-              deleted: false,
-              deletedAt: null
-            }))
-          ]
+        try {
+          const now = new Date().toISOString()
+
+          // 构造数据库数据数组 (snake_case)
+          const dbDataArray = dataList.map(record => {
+            const dbData = {
+              strategy_type: record.strategyType,
+              name: record.name,
+              eval_standard_1: record.evalStandard1,
+              eval_standard_2: record.evalStandard2,
+              eval_standard_3: record.evalStandard3,
+              eval_standard_4: record.evalStandard4,
+              eval_standard_5: record.evalStandard5,
+              status: record.status || '启用',
+              created_at: now,
+              updated_at: now
+            }
+
+            // 只有当 revisionVersion 有值时才包含在数据中
+            if (record.revisionVersion && record.revisionVersion.trim() !== '') {
+              dbData.revision_version = record.revisionVersion
+            }
+
+            return dbData
+          })
+
+          console.log('[Store] 准备批量保存, 数据:', dbDataArray.length)
+
+          // 使用批量API保存到数据库
+          const res = await apiCall('/api/trading_strategies/bulk', 'POST', dbDataArray)
+          console.log('[Store] 批量保存结果:', res)
+
+          // 保存成功后,从数据库重新同步数据
+          const syncResponse = await apiCall('/api/sync/all')
+          if (syncResponse.success && syncResponse.data && syncResponse.data.trading_strategies !== undefined) {
+            const { trading_strategies } = syncResponse.data
+            set((state) => {
+              state.importTradingStrategies(trading_strategies)
+              return {}
+            })
+          }
+
+          return { success: true, count: dbDataArray.length }
+        } catch (error) {
+          console.error('[Store] 导入失败:', error)
+          throw error
         }
+      },
+
+      // 导入交易策略 (从数据库同步)
+      importTradingStrategies: (dataList) => set((state) => {
+        if (!dataList || dataList === undefined) {
+          console.log('[Store] 交易策略数据未提供,保持现有数据')
+          return {}
+        }
+
+        // 过滤已删除的数据
+        const activeData = dataList.filter(d => d.deleted !== true)
+        console.log('[Store] 过滤已删除后的交易策略数据:', activeData.length)
+
+        // 转换数据库字段名 (snake_case -> camelCase)
+        const newData = activeData.map(d => ({
+          id: d.id,
+          revisionVersion: d.revision_version || '', // 修订版本
+          strategyType: d.strategy_type,
+          name: d.name,
+          evalStandard1: d.eval_standard_1,
+          evalStandard2: d.eval_standard_2,
+          evalStandard3: d.eval_standard_3,
+          evalStandard4: d.eval_standard_4,
+          evalStandard5: d.eval_standard_5,
+          status: d.status,
+          createdAt: d.created_at || new Date().toISOString(),
+          updatedAt: d.updated_at || new Date().toISOString(),
+          deleted: d.deleted || false,
+          deletedAt: d.deleted_at || null
+        }))
+
+        console.log('[Store] 导入的交易策略数据:', newData.map(d => ({ id: d.id, name: d.name })))
+        return { strategyRecords: newData }
       }),
 
       // 添加预约单
       addOrder: (order) => set((state) => {
-        // 如果是卖出订单且有关联的买入订单，使用买入订单的交易编号
-        // 这样买卖订单会有相同的交易编号，便于识别同一笔交易
-        let tradeNumber
-        if (order.type === 'sell' && order.buyOrderId) {
-          const buyOrder = state.orders.find(o => o.id === order.buyOrderId)
-          tradeNumber = buyOrder?.tradeNumber || state.generateTradeNumber()
-        } else {
-          tradeNumber = state.generateTradeNumber()
-        }
-
+        const tradeNumber = state.generateTradeNumber()
         const newOrder = { ...order, id: Date.now(), tradeNumber, createdAt: new Date().toISOString(), deleted: false, deletedAt: null }
 
         // 同步到数据库
@@ -1242,11 +1380,13 @@ const useStore = create(
           createdAt: new Date().toISOString()
         }
 
-        // 不再更新订单状态，因为系统不再使用状态字段
-        // 订单创建后即为有效订单
+        // 更新预约单状态
+        const updatedOrders = state.orders.map(o =>
+          o.id === id ? { ...o, status: 'executed', executedAt: new Date().toISOString() } : o
+        )
 
         return {
-          orders: state.orders,
+          orders: updatedOrders,
           tradeRecords: order.type === 'buy'
             ? [...state.tradeRecords, ...newTradeRecords]
             : newTradeRecords,
@@ -1265,6 +1405,21 @@ const useStore = create(
                 : currentAccount.balance + order.price * order.quantity
             }
           }
+        }
+      }),
+
+      // 作废预约单
+      cancelOrder: (id) => set((state) => {
+        const order = state.orders.find(o => o.id === id)
+        if (!order) return state
+
+        // 更新预约单状态
+        const updatedOrders = state.orders.map(o =>
+          o.id === id ? { ...o, status: 'cancelled', cancelledAt: new Date().toISOString() } : o
+        )
+
+        return {
+          orders: updatedOrders
         }
       }),
 
@@ -1706,17 +1861,17 @@ const useStore = create(
         if (state.orders.length === 0) {
           return { orders: newOrders }
         }
-        // 合并去重：使用 id 作为唯一标识（允许同一交易编号的多个订单存在）
+        // 合并去重：使用 tradeNumber 作为唯一标识
         // 优先使用数据库数据（更新），同时清理本地重复数据
         const orderMap = new Map()
         // 先添加本地订单（如果本地有重复，后面的会覆盖前面的，只保留一条）
         state.orders.forEach(o => {
-          const key = o.id?.toString()
+          const key = o.tradeNumber || o.id?.toString()
           if (key) orderMap.set(key, o)
         })
         // 再添加数据库订单（覆盖本地旧数据，确保最新）
         newOrders.forEach(o => {
-          const key = o.id?.toString()
+          const key = o.tradeNumber || o.id?.toString()
           if (key) {
             orderMap.set(key, o)
           }
@@ -1841,104 +1996,6 @@ const useStore = create(
         }
       }),
 
-      // 批量导入心理测试结果（从数据库同步）
-      importPsychologicalTestResults: (results) => set((state) => {
-        console.log('[Store] 从数据库导入的心理测试结果:', results)
-
-        if (results === null || results === undefined) {
-          console.log('[Store] 心理测试结果未提供，保持现有数据')
-          return {}
-        }
-
-        // 过滤已删除的数据
-        const activeResults = results.filter(r => r.deleted !== true)
-
-        // 如果数据库返回空数组，清空本地数据
-        if (activeResults.length === 0) {
-          console.log('[Store] 数据库返回空数组，清空本地心理测试结果')
-          return { psychologicalTests: [] }
-        }
-
-        // 转换数据库字段名 (snake_case -> camelCase)
-        const newResults = activeResults.map(r => ({
-          id: r.id?.toString(),
-          date: r.test_date || r.date,
-          scores: r.scores || {},
-          overallScore: r.overall_score !== undefined && r.overall_score !== null ? r.overall_score : (r.overallScore || 0),
-          notes: r.notes || '',
-          createdAt: r.created_at || r.createdAt || new Date().toISOString(),
-          updatedAt: r.updated_at || r.updatedAt || null,
-          deleted: r.deleted || false,
-          deletedAt: r.deleted_at || r.deletedAt || null
-        }))
-
-        // 按 date 去重并更新已有记录
-        const dateMap = new Map()
-
-        // 先添加本地的记录
-        state.psychologicalTests.forEach(t => {
-          const date = new Date(t.date)
-          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-          dateMap.set(dateStr, t)
-        })
-
-        // 用新记录覆盖相同日期的旧记录
-        newResults.forEach(r => {
-          const date = new Date(r.date)
-          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-          dateMap.set(dateStr, r)
-        })
-
-        // 转换回数组
-        const mergedResults = Array.from(dateMap.values())
-
-        // 按日期降序排序
-        mergedResults.sort((a, b) => new Date(b.date) - new Date(a.date))
-
-        console.log('[Store] 导入心理测试结果完成，总数:', mergedResults.length)
-        return { psychologicalTests: mergedResults }
-      }),
-
-      // 批量导入心理测试指标（从数据库同步）
-      importPsychologicalIndicators: (indicators) => set((state) => {
-        console.log('[Store] 从数据库导入的心理测试指标:', indicators)
-
-        if (indicators === null || indicators === undefined) {
-          console.log('[Store] 心理测试指标未提供，保持现有数据')
-          return {}
-        }
-
-        // 过滤已删除和不活跃的数据
-        const activeIndicators = indicators.filter(i => i.deleted !== true && i.is_active !== false)
-
-        // 如果数据库返回空数组，使用默认指标
-        if (activeIndicators.length === 0) {
-          console.log('[Store] 数据库返回空数组，使用默认指标')
-          return { psychologicalIndicators: [...initialPsychologicalIndicators] }
-        }
-
-        // 转换数据库字段名 (snake_case -> camelCase)
-        const newIndicators = activeIndicators.map(i => ({
-          ...i,
-          dbId: i.id, // 保存数据库表的 id 用于更新操作
-          id: String(i.indicator_id || i.id), // 前端使用的 id，确保是字符串类型
-          name: i.name,
-          description: i.description,
-          minScore: i.min_score,
-          maxScore: i.max_score,
-          weight: parseFloat(i.weight) || 0.2,
-          sortOrder: i.sort_order || 0,
-          createdAt: i.created_at || new Date().toISOString(),
-          updatedAt: i.updated_at || null
-        }))
-
-        // 按 sortOrder 排序
-        newIndicators.sort((a, b) => a.sortOrder - b.sortOrder)
-
-        console.log('[Store] 导入心理测试指标完成，总数:', newIndicators.length)
-        return { psychologicalIndicators: newIndicators }
-      }),
-
       // 批量永久删除股票
       permanentDeleteMultipleStocks: (ids) => set((state) => {
         apiCall(`/api/stock_pool/bulk/permanent`, 'DELETE', { ids })
@@ -2051,11 +2108,11 @@ const useStore = create(
         if (!sellOrder.buyOrderId) return state
 
         const buyOrder = state.orders.find(o => o.id === sellOrder.buyOrderId)
-        if (!buyOrder) return state  // 只检查买入订单是否存在，不再检查状态
+        if (!buyOrder || buyOrder.status !== 'executed') return state
 
-        // 计算持仓天数 - 使用创建时间，因为不再有执行时间
-        const buyTime = new Date(buyOrder.createdAt)
-        const sellTime = new Date(sellOrder.createdAt)
+        // 计算持仓天数
+        const buyTime = new Date(buyOrder.executedAt || buyOrder.createdAt)
+        const sellTime = new Date(sellOrder.executedAt || sellOrder.createdAt)
         const holdDuration = Math.ceil((sellTime - buyTime) / (1000 * 60 * 60 * 24))
 
         // 获取K线数据用于计算评分
@@ -2065,14 +2122,14 @@ const useStore = create(
         // 获取买入当天的价格通道数据
         const buyDateKline = buyKline.find(k => {
           const kDate = new Date(k.timestamp)
-          const buyDate = new Date(buyOrder.createdAt)
+          const buyDate = new Date(buyOrder.executedAt || buyOrder.createdAt)
           return kDate.toDateString() === buyDate.toDateString()
         })
 
         // 获取卖出当天的价格通道数据
         const sellDateKline = sellKline.find(k => {
           const kDate = new Date(k.timestamp)
-          const sellDate = new Date(sellOrder.createdAt)
+          const sellDate = new Date(sellOrder.executedAt || sellOrder.createdAt)
           return kDate.toDateString() === sellDate.toDateString()
         })
 
@@ -2133,7 +2190,7 @@ const useStore = create(
           buyOrderId: buyOrder.id,
           buyPrice: buyOrder.price,
           buyQuantity: buyOrder.quantity,
-          buyTime: buyOrder.createdAt,
+          buyTime: buyOrder.executedAt || buyOrder.createdAt,
           buyPsychologicalScore: buyOrder.psychologicalScore,
           buyStrategyScore: buyOrder.strategyScore,
           buyStrategyId: buyOrder.strategyId,
@@ -2142,7 +2199,7 @@ const useStore = create(
           sellOrderId: sellOrder.id,
           sellPrice: sellOrder.price,
           sellQuantity: sellOrder.quantity,
-          sellTime: sellOrder.createdAt,
+          sellTime: sellOrder.executedAt || sellOrder.createdAt,
           sellPsychologicalScore: sellOrder.psychologicalScore,
           sellStrategyScore: sellOrder.strategyScore,
           sellStrategyId: sellOrder.strategyId,

@@ -30,8 +30,8 @@ router.get('/sync/all', async (req, res) => {
     const tables = [
       'account',
       'daily_work_data',
-      'psychological_test_results',
       'psychological_indicators',
+      'psychological_test_results',
       'trading_strategies',
       'risk_models',
       'risk_config',
@@ -52,7 +52,6 @@ router.get('/sync/all', async (req, res) => {
       try {
         const data = await findAll(table);
         syncData[table] = data;
-        console.log(`[Sync] ${table}: ${data.length} records`);
       } catch (err) {
         console.error(`Sync error for table ${table}:`, err.message);
         syncData[table] = [];
@@ -77,8 +76,8 @@ router.get('/export/all', async (req, res) => {
     const tables = [
       'account',
       'daily_work_data',
+      'psychological_indicators',
       'psychological_test_results',
-      'psychological_test_indicators',
       'trading_strategies',
       'risk_models',
       'risk_config',
@@ -173,7 +172,9 @@ router.get('/:table', async (req, res) => {
     // 对于 daily_work_data 表，转换日期格式以避免时区问题
     if (table === 'daily_work_data') {
       data = data.map(row => {
-        if (row.date) {
+        if (row.date && typeof row.date === 'string' && row.date.includes('T')) {
+          // ISO格式字符串，如 "2026-03-01T16:00:00.000Z"
+          // 转换为本地日期字符串 "2026-03-01"
           const dateObj = new Date(row.date);
           const year = dateObj.getFullYear();
           const month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -201,7 +202,7 @@ router.get('/:table/:id', async (req, res) => {
     }
 
     // 对于 daily_work_data 表，转换日期格式以避免时区问题
-    if (table === 'daily_work_data' && data.date) {
+    if (table === 'daily_work_data' && data.date && typeof data.date === 'string' && data.date.includes('T')) {
       const dateObj = new Date(data.date);
       const year = dateObj.getFullYear();
       const month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -215,131 +216,6 @@ router.get('/:table/:id', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-
-// GET /api/psychological_test_results - 获取心理测试结果列表
-router.get('/psychological_test_results', async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT id, test_date, scores, overall_score, notes, created_at, updated_at FROM psychological_test_results WHERE deleted = false ORDER BY test_date DESC'
-    );
-
-    // 转换日期格式
-    const results = result.rows.map(row => ({
-      id: row.id,
-      date: formatToLocalDateString(row.test_date),
-      scores: row.scores,  // 数据库中字段名是 scores
-      overall_score: row.overall_score,
-      notes: row.notes,
-      created_at: row.created_at,
-      updated_at: row.updated_at
-    }));
-
-    res.json({ success: true, data: results });
-  } catch (error) {
-    console.error('GET psychological_test_results error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// GET /api/psychological_test_indicators - 获取0-2分心理测试指标配置
-router.get('/psychological_test_indicators', async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT id, name, description, min_score, max_score, weight, sort_order FROM psychological_test_indicators WHERE deleted = false AND is_active = true ORDER BY sort_order'
-    );
-    const indicators = result.rows.map(row => ({
-      id: String(row.id),
-      dbId: row.id,
-      name: row.name,
-      description: row.description,
-      minScore: parseFloat(row.min_score),
-      maxScore: parseFloat(row.max_score),
-      weight: parseFloat(row.weight)
-    }));
-    res.json({ success: true, data: indicators });
-  } catch (error) {
-    console.error('GET psychological_test_indicators error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// PUT /api/psychological_test_indicators/:id - 更新心理测试指标
-router.put('/psychological_test_indicators/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const data = req.body;
-
-    const result = await pool.query(
-      `UPDATE psychological_indicators
-       SET name = $1, description = $2, min_score = $3, max_score = $4, weight = $5, sort_order = $6, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $7 AND deleted = false
-       RETURNING *`,
-      [data.name, data.description || '', data.minScore || 0, data.maxScore || 2, data.weight || 0.2, data.sortOrder || 0, id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: '指标不存在' });
-    }
-
-    res.json({ success: true, data: result.rows[0] });
-  } catch (error) {
-    console.error('PUT psychological_test_indicators error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// PUT /api/psychological_test_results/by-date/:date - 按日期更新心理测试结果
-// 注意：这个路由必须在 POST /:table 之前，否则会被错误匹配
-router.put('/psychological_test_results/by-date/:date', async (req, res) => {
-  try {
-    const { date } = req.params;
-    const data = req.body;
-
-    const result = await pool.query(
-      `UPDATE psychological_test_results
-       SET scores = $1, overall_score = $2, notes = $3, updated_at = CURRENT_TIMESTAMP
-       WHERE test_date = $4 AND deleted = false
-       RETURNING *`,
-      [JSON.stringify(data.scores), data.overall_score, data.notes || '', date]
-    );
-
-    if (result.rows.length === 0) {
-      // 如果没有找到记录，创建新记录
-      const insertResult = await pool.query(
-        `INSERT INTO psychological_test_results (test_date, scores, overall_score, notes, deleted, deleted_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, false, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-         RETURNING *`,
-        [date, JSON.stringify(data.scores), data.overall_score, data.notes || '']
-      );
-      // 转换日期格式
-      const responseData = {
-        ...insertResult.rows[0],
-        test_date: formatToLocalDateString(insertResult.rows[0].test_date)
-      };
-      return res.json({ success: true, data: responseData });
-    }
-
-    // 转换日期格式
-    const responseData = {
-      ...result.rows[0],
-      test_date: formatToLocalDateString(result.rows[0].test_date)
-    };
-    res.json({ success: true, data: responseData });
-  } catch (error) {
-    console.error('PUT by-date error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// 格式化日期为本地时间字符串 YYYY-MM-DD
-function formatToLocalDateString(date) {
-  if (!date) return null;
-  const dateObj = new Date(date);
-  const year = dateObj.getFullYear();
-  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-  const day = String(dateObj.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
 
 // POST /api/:table - 创建
 router.post('/:table', async (req, res) => {
@@ -448,6 +324,7 @@ router.delete('/:table/:id', async (req, res, next) => {
 
   try {
     const { table, id } = req.params;
+
     const result = await remove(table, id);
     if (!result) {
       return res.status(404).json({ success: false, error: 'Not found' });
@@ -521,6 +398,68 @@ router.delete('/:table/bulk/permanent', async (req, res) => {
     res.json({ success: true, data: results, count: results.length });
   } catch (error) {
     console.error('BULK PERMANENT DELETE error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 心理测试结果专用路由 - 使用 test_date 作为唯一键
+router.get('/psychological_test_results/by-date/:date', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const result = await pool.query(
+      'SELECT * FROM psychological_test_results WHERE test_date = $1 AND deleted = false',
+      [date]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('GET psychological_test_results by date error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/psychological_test_results', async (req, res) => {
+  try {
+    const { test_date, scores, overall_score } = req.body;
+
+    const result = await pool.query(
+      `INSERT INTO psychological_test_results (test_date, scores, overall_score)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (test_date) DO UPDATE
+       SET scores = EXCLUDED.scores, overall_score = EXCLUDED.overall_score, updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [test_date, JSON.stringify(scores), overall_score]
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('POST psychological_test_results error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.put('/psychological_test_results/by-date/:date', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const { scores, overall_score } = req.body;
+
+    const result = await pool.query(
+      `UPDATE psychological_test_results
+       SET scores = $1, overall_score = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE test_date = $3
+       RETURNING *`,
+      [JSON.stringify(scores), overall_score, date]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('PUT psychological_test_results by date error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

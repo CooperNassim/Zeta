@@ -23,7 +23,15 @@ const PsychologicalTest = () => {
   // 获取选中日期的测试结果
   const getTestResultForDate = (date) => {
     const dateStr = format(date, 'yyyy-MM-dd')
-    return psychologicalTests.find(test => format(new Date(test.date), 'yyyy-MM-dd') === dateStr)
+    return psychologicalTests.find(test => {
+      if (!test.date) return false
+      try {
+        return format(new Date(test.date), 'yyyy-MM-dd') === dateStr
+      } catch (error) {
+        console.error('[PsychologicalTest] 日期格式错误:', test.date, error)
+        return false
+      }
+    })
   }
 
   // 初始化默认分数
@@ -93,13 +101,30 @@ const PsychologicalTest = () => {
 
     indicators.forEach(indicator => {
       const score = scores[indicator.id] || indicator.minScore
+      const weight = parseFloat(indicator.weight) // 确保weight是数字
       const normalizedScore = ((score - indicator.minScore) / (indicator.maxScore - indicator.minScore)) * 100
-      totalScore += normalizedScore * indicator.weight
-      totalWeight += indicator.weight
+      totalScore += normalizedScore * weight
+      totalWeight += weight
+      console.log('[calculateOverallScore] 指标计算:', {
+        id: indicator.id,
+        name: indicator.name,
+        score: score,
+        normalizedScore: normalizedScore,
+        weight: indicator.weight,
+        parsedWeight: weight,
+        contribution: normalizedScore * weight
+      })
+    })
+
+    const result = totalWeight > 0 ? (totalScore / totalWeight).toFixed(2) / 10 : 0
+    console.log('[calculateOverallScore] 最终计算:', {
+      totalScore,
+      totalWeight,
+      finalScore: result
     })
 
     // 返回 0-10 范围的分数
-    return totalWeight > 0 ? (totalScore / totalWeight).toFixed(2) / 10 : 0
+    return result
   }
 
   const handleScoreChange = (indicatorId, value) => {
@@ -151,11 +176,26 @@ const PsychologicalTest = () => {
       console.log('[PsychologicalTest] 所有测试记录:', psychologicalTests.map(t => ({
         id: t.id,
         date: t.date,
-        formattedDate: format(new Date(t.date), 'yyyy-MM-dd')
+        formattedDate: t.date ? (() => {
+          try {
+            return format(new Date(t.date), 'yyyy-MM-dd')
+          } catch (error) {
+            console.error('[PsychologicalTest] 日期格式错误:', t.date, error)
+            return '无效日期'
+          }
+        })() : '无日期'
       })))
 
       // 检查是否已有当天的测试记录
-      const existingTest = psychologicalTests.find(test => format(new Date(test.date), 'yyyy-MM-dd') === dateStr)
+      const existingTest = psychologicalTests.find(test => {
+        if (!test.date) return false
+        try {
+          return format(new Date(test.date), 'yyyy-MM-dd') === dateStr
+        } catch (error) {
+          console.error('[PsychologicalTest] 日期格式错误:', test.date, error)
+          return false
+        }
+      })
 
       console.log('[PsychologicalTest] 找到已有记录:', existingTest ? '是' : '否')
 
@@ -193,7 +233,10 @@ const PsychologicalTest = () => {
     try {
       // 逐个更新指标到数据库
       for (let index = 0; index < newIndicators.length; index++) {
-        await updatePsychologicalIndicator(newIndicators[index].id, newIndicators[index])
+        const result = await updatePsychologicalIndicator(newIndicators[index].id, newIndicators[index])
+        if (!result.success) {
+          throw new Error(`更新指标 ${newIndicators[index].name} 失败: ${result.error}`)
+        }
       }
       setShowEditModal(false)
 
@@ -243,6 +286,14 @@ const PsychologicalTest = () => {
     ? parseFloat(selectedTestResult.overallScore)
     : parseFloat(calculateOverallScore())
   const scoreColor = getScoreColor(overallScore)
+
+  console.log('[PsychologicalTest] 总分计算:', {
+    selectedDate: format(selectedDate, 'yyyy-MM-dd'),
+    hasStoredResult: !!selectedTestResult,
+    storedScore: selectedTestResult?.overallScore,
+    calculatedScore: calculateOverallScore(),
+    finalScore: overallScore
+  })
 
   // 手动刷新数据
   const handleRefresh = async () => {
@@ -434,7 +485,7 @@ const PsychologicalTest = () => {
                         opacity: isTodaySelected() ? 1 : 0.5
                       }}>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'flex-start' }}>
-                          {[indicator.minScore, indicator.minScore + 1, indicator.maxScore].map(value => (
+                          {[0, 1, 2].map(value => (
                             <button
                               key={value}
                               onClick={() => handleScoreChange(indicator.id, value)}

@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef, Children, cloneElement } from 'react'
-import { motion } from 'framer-motion'
+import React, { useState, useEffect, useRef } from 'react'
 
 const ScrollAnimation = ({
   children,
@@ -14,6 +13,8 @@ const ScrollAnimation = ({
   const hasAnimated = useRef(false)
 
   useEffect(() => {
+    if (!ref.current) return
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && !hasAnimated.current) {
@@ -25,9 +26,7 @@ const ScrollAnimation = ({
     )
 
     const currentRef = ref.current
-    if (currentRef) {
-      observer.observe(currentRef)
-    }
+    observer.observe(currentRef)
 
     return () => {
       if (currentRef) {
@@ -39,44 +38,42 @@ const ScrollAnimation = ({
 
   const animations = {
     fadeInUp: {
-      initial: { opacity: 0, y: 30 },
-      animate: { opacity: 1, y: 0 },
-      exit: { opacity: 0, y: -30 }
+      initial: { opacity: 0, transform: 'translateY(30px)' },
+      animate: { opacity: 1, transform: 'translateY(0)' },
+      exit: { opacity: 0, transform: 'translateY(-30px)' }
     },
     fadeInLeft: {
-      initial: { opacity: 0, x: -30 },
-      animate: { opacity: 1, x: 0 },
-      exit: { opacity: 0, x: 30 }
+      initial: { opacity: 0, transform: 'translateX(-30px)' },
+      animate: { opacity: 1, transform: 'translateX(0)' },
+      exit: { opacity: 0, transform: 'translateX(30px)' }
     },
     fadeInRight: {
-      initial: { opacity: 0, x: 30 },
-      animate: { opacity: 1, x: 0 },
-      exit: { opacity: 0, x: -30 }
+      initial: { opacity: 0, transform: 'translateX(30px)' },
+      animate: { opacity: 1, transform: 'translateX(0)' },
+      exit: { opacity: 0, transform: 'translateX(-30px)' }
     },
     scaleIn: {
-      initial: { opacity: 0, scale: 0.9 },
-      animate: { opacity: 1, scale: 1 },
-      exit: { opacity: 0, scale: 0.9 }
+      initial: { opacity: 0, transform: 'scale(0.9)' },
+      animate: { opacity: 1, transform: 'scale(1)' },
+      exit: { opacity: 0, transform: 'scale(0.9)' }
     }
   }
 
   const selectedAnimation = animations[animation] || animations.fadeInUp
 
+  const currentStyle = {
+    transition: `opacity ${duration}s ease, transform ${duration}s ease ${delay}s`,
+    ...(isVisible ? selectedAnimation.animate : selectedAnimation.initial)
+  }
+
   return (
-    <motion.div
+    <div
       ref={ref}
-      initial={selectedAnimation.initial}
-      animate={isVisible ? selectedAnimation.animate : selectedAnimation.initial}
-      exit={selectedAnimation.exit}
-      transition={{
-        duration,
-        delay,
-        ease: [0.4, 0, 0.2, 1]
-      }}
+      style={currentStyle}
       className={className}
     >
       {children}
-    </motion.div>
+    </div>
   )
 }
 

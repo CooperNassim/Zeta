@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { BrowserRouter, Routes, Route, Link, useLocation, NavLink } from 'react-router-dom'
 import { TrendingUp, Brain, Target, Shield, Clock, Receipt, Activity, Home as HomeIcon, ChevronDown, Wallet2, Database, Bell } from 'lucide-react'
 import Home from './pages/Home'
 import DailyWork from './pages/DailyWork'
@@ -103,7 +102,7 @@ function DataSync() {
         console.log('[DataSync] 原始响应:', result)
 
         if (result.success && result.data) {
-          const { orders, transactions, trade_records, stock_pool, daily_work_data, psychological_test_results, psychological_indicators } = result.data
+          const { orders, transactions, trade_records, stock_pool, daily_work_data, psychological_test_results, psychological_indicators, trading_strategies } = result.data
 
           console.log('[DataSync] 数据库返回数据:', {
             orders: orders?.length || 0,
@@ -112,7 +111,8 @@ function DataSync() {
             stock_pool: stock_pool?.length || 0,
             daily_work_data: daily_work_data?.length || 0,
             psychological_test_results: psychological_test_results?.length || 0,
-            psychological_indicators: psychological_indicators?.length || 0
+            psychological_indicators: psychological_indicators?.length || 0,
+            trading_strategies: trading_strategies?.length || 0
           })
 
           // 总是导入数据，即使是空数组也会清空本地旧数据
@@ -123,6 +123,7 @@ function DataSync() {
           if (daily_work_data !== undefined) store.importDailyWorkData(daily_work_data)
           if (psychological_test_results !== undefined) store.importPsychologicalTestResults(psychological_test_results)
           if (psychological_indicators !== undefined) store.importPsychologicalIndicators(psychological_indicators)
+          if (trading_strategies !== undefined) store.importTradingStrategies(trading_strategies)
 
           console.log('[DataSync] 同步完成')
         } else {
@@ -204,10 +205,7 @@ function Navigation() {
   return (
     <>
       {/* 顶部导航栏 */}
-      <motion.nav
-        initial={{ y: -100 }}
-        animate={{ y: 0 }}
-        transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
+      <nav
         className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-b border-gray-200 z-50"
       >
         <div className="w-full px-5">
@@ -215,42 +213,75 @@ function Navigation() {
             {/* Logo */}
             <div className="flex items-center">
               <Link to="/" className="flex items-center">
-                <img src="/Zeta.png" alt="Zeta Logo" style={{ height: '24px', width: 'auto' }} />
+                <img src="/Zeta.png" alt="Zeta Logo" style={{ height: '26.4px', width: 'auto', marginLeft: '20px' }} />
               </Link>
             </div>
 
             {/* 导航菜单 */}
             <div className="flex items-center flex-1 justify-start space-x-8 pl-8">
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Link
+              <div>
+                <NavLink
                   to="/"
-                  className="flex items-center px-3 py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900"
-                  style={{ fontSize: '16px' }}
+                  className={({ isActive }) =>
+                    `flex items-center py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900 relative ${isActive ? 'text-gray-900' : ''}`
+                  }
+                  style={{ fontSize: '16px', paddingLeft: '18px', paddingRight: '18px' }}
                 >
-                  首页
-                </Link>
-              </motion.div>
+                  {({ isActive }) => (
+                    <>
+                      首页
+                      {isActive && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: '-4px',
+                            left: '18px',
+                            right: '18px',
+                            height: '2px',
+                            backgroundColor: '#0F1419',
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                </NavLink>
+              </div>
 
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Link
+              <div>
+                <NavLink
                   to="/daily-work"
-                  className="flex items-center px-3 py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900"
-                  style={{ fontSize: '16px' }}
+                  className={({ isActive }) =>
+                    `flex items-center py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900 relative ${isActive ? 'text-gray-900' : ''}`
+                  }
+                  style={{ fontSize: '16px', paddingLeft: '12px', paddingRight: '12px' }}
                 >
-                  交易
-                </Link>
-              </motion.div>
+                  {({ isActive }) => (
+                    <>
+                      交易
+                      {isActive && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: '-4px',
+                            left: '12px',
+                            right: '12px',
+                            height: '2px',
+                            backgroundColor: '#0F1419',
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                </NavLink>
+              </div>
             </div>
           </div>
         </div>
-      </motion.nav>
+      </nav>
 
       {/* 左侧边栏 - 仅在交易页面显示 */}
       {isTradingPage && (
-        <motion.aside
-          initial={{ x: -200 }}
-          animate={{ x: 0 }}
-          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+        <aside
           className="fixed left-0 top-[52px] bottom-0 w-[166px] bg-white border-r border-gray-200 overflow-y-auto z-40 pt-0"
         >
           <div className="px-0 space-y-1">
@@ -374,7 +405,7 @@ function Navigation() {
               )
             })}
           </div>
-        </motion.aside>
+        </aside>
       )}
     </>
   )

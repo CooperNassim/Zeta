@@ -11,6 +11,9 @@ const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
+  // 确保每个连接都使用 READ COMMITTED 隔离级别,避免脏读
+  // 这样A浏览器提交后,B浏览器立即能看到最新数据
+  statement_timeout: 60000,
 });
 
 pool.on('error', (err) => {

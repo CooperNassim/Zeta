@@ -11,6 +11,7 @@ const FormModal = ({
   fields,
   formData,
   formErrors,
+  formErrorMessage,
   onFormDataChange,
   getFieldComponent,
   width
@@ -53,6 +54,7 @@ const FormModal = ({
           fields={fields}
           formData={formData}
           formErrors={formErrors}
+          formErrorMessage={formErrorMessage}
           onChange={handleChange}
           getFieldComponent={getFieldComponent}
         />

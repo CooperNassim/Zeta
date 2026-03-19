@@ -19,7 +19,7 @@ const buildQuery = (table, options = {}) => {
 
   // 自动过滤已删除的记录（除非明确指定 includeDeleted）
   // 只对包含 deleted 字段的表进行过滤
-  const tablesWithDeleted = ['orders', 'daily_work_data', 'psychological_test_results', 'trade_records', 'stock_pool'];
+  const tablesWithDeleted = ['orders', 'daily_work_data', 'psychological_test_results', 'trade_records', 'stock_pool', 'trading_strategies', 'strategy_records'];
   if (!options.includeDeleted && tablesWithDeleted.includes(table)) {
     conditions.push(`deleted = false`);
   }
@@ -50,28 +50,7 @@ const buildQuery = (table, options = {}) => {
 const findAll = async (table, options = {}) => {
   const { query, params } = buildQuery(table, options);
   const result = await pool.query(query, params);
-
-  // 对于心理测试表，转换日期格式以避免时区问题，同时统一字段名
-  if (table === 'psychological_test_results') {
-    return result.rows.map(row => ({
-      ...row,
-      test_date: formatToLocalDateString(row.test_date),
-      overall_score: parseFloat(row.overall_score) || 0 // 转换为数字类型
-      // 数据库中字段名本身就是 scores，不需要转换
-    }));
-  }
-
   return result.rows;
-};
-
-// 格式化日期为本地时间字符串 YYYY-MM-DD
-const formatToLocalDateString = (date) => {
-  if (!date) return null;
-  const dateObj = new Date(date);
-  const year = dateObj.getFullYear();
-  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-  const day = String(dateObj.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 };
 
 // 查询单条数据
@@ -84,57 +63,28 @@ const findOne = async (table, options = {}) => {
 // 根据ID查询
 const findById = async (table, id) => {
   const result = await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
-  const data = result.rows[0] || null;
-
-  // 对于心理测试表，转换日期格式以避免时区问题
-  if (data && table === 'psychological_test_results') {
-    if (data.test_date) {
-      data.test_date = formatToLocalDateString(data.test_date);
-    }
-    if (data.overall_score !== undefined) {
-      data.overall_score = parseFloat(data.overall_score) || 0;
-    }
-    // 数据库中字段名本身就是 scores，不需要转换
-  }
-
-  return data;
+  return result.rows[0] || null;
 };
 
 // 插入数据（智能处理已删除数据）
 const insert = async (table, data) => {
-  let columns = Object.keys(data);
-  let values = Object.values(data);
-  let placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
+  const columns = Object.keys(data);
+  const values = Object.values(data);
+  const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
 
-  // 对于 daily_work_data 表，处理日期字段避免时区问题
-  let processedData = { ...data };
+  // 对于 daily_work_data 表，检查是否有相同日期的已删除数据
   if (table === 'daily_work_data' && data.date) {
-    // 将日期转换为字符串格式 YYYY-MM-DD，避免时区问题
-    let dateStr = data.date;
-    if (data.date instanceof Date) {
-      const year = data.date.getFullYear();
-      const month = String(data.date.getMonth() + 1).padStart(2, '0');
-      const day = String(data.date.getDate()).padStart(2, '0');
-      dateStr = `${year}-${month}-${day}`;
-    }
-    processedData.date = dateStr;
-
-    // 检查是否有相同日期的已删除数据
     try {
-      console.log(`[Database] 检查已删除数据，日期: ${dateStr}`);
       const checkResult = await pool.query(
-        `SELECT * FROM ${table} WHERE date::text = $1 AND deleted = true`,
-        [dateStr]
+        `SELECT * FROM ${table} WHERE date = $1 AND deleted = true`,
+        [data.date]
       );
-      console.log(`[Database] 检查结果: 找到 ${checkResult.rows.length} 条已删除记录`);
 
       if (checkResult.rows.length > 0) {
         // 找到已删除的数据，恢复它
         const deletedRecord = checkResult.rows[0];
-        const updateColumns = Object.keys(processedData).filter(key =>
-          key !== 'deleted' && key !== 'deleted_at' && key !== 'created_at' && key !== 'updated_at'
-        );
-        const updateValues = updateColumns.map(key => processedData[key]);
+        const updateColumns = Object.keys(data).filter(key => key !== 'deleted' && key !== 'deleted_at' && key !== 'created_at');
+        const updateValues = updateColumns.map(key => data[key]);
         const updatePlaceholders = updateColumns.map((_, i) => `$${i + 2}`).join(', ');
 
         const updateQuery = `
@@ -148,37 +98,13 @@ const insert = async (table, data) => {
         `;
 
         const updateResult = await pool.query(updateQuery, [deletedRecord.id, ...updateValues]);
-        console.log(`[Database] 恢复已删除数据: date=${dateStr}, id=${deletedRecord.id}`);
+        console.log(`[Database] 恢复已删除数据: date=${data.date}, id=${deletedRecord.id}`);
         return updateResult.rows[0];
       }
     } catch (error) {
       console.error('[Database] 检查已删除数据失败:', error);
     }
   }
-
-  // 使用处理后的数据
-  columns = Object.keys(processedData);
-  values = Object.values(processedData);
-  placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-
-  // 对于 daily_work_data 表，过滤掉自动生成的字段
-  if (table === 'daily_work_data') {
-    const autoFields = ['id', 'created_at', 'updated_at', 'deleted_at'];
-    const filteredData = {};
-
-    for (const key of columns) {
-      if (!autoFields.includes(key)) {
-        filteredData[key] = processedData[key];
-      }
-    }
-
-    columns = Object.keys(filteredData);
-    values = Object.values(filteredData);
-    placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-  }
-
-  // psychological_test_results 表不需要转换scores字段
-  // scores 字段直接使用，不需要转换为 score
 
   // 普通插入
   const query = `
@@ -214,101 +140,6 @@ const bulkInsert = async (table, dataArray) => {
 
 // 更新数据
 const update = async (table, id, data) => {
-  // 对于 daily_work_data 表，处理日期变更
-  if (table === 'daily_work_data' && data.date) {
-    // 格式化日期
-    let dateStr = data.date;
-    if (data.date instanceof Date) {
-      const year = data.date.getFullYear();
-      const month = String(data.date.getMonth() + 1).padStart(2, '0');
-      const day = String(data.date.getDate()).padStart(2, '0');
-      dateStr = `${year}-${month}-${day}`;
-    }
-    
-    // 获取当前记录的日期
-    const currentRecord = await pool.query(
-      `SELECT id, date FROM ${table} WHERE id = $1`,
-      [id]
-    );
-    
-    if (currentRecord.rows.length === 0) {
-      return null;
-    }
-    
-    const currentRecordData = currentRecord.rows[0];
-    // 使用本地时区获取日期
-    const currentDateObj = new Date(currentRecordData.date);
-    const currentDateStr = `${currentDateObj.getFullYear()}-${String(currentDateObj.getMonth() + 1).padStart(2, '0')}-${String(currentDateObj.getDate()).padStart(2, '0')}`;
-    
-    // 如果日期没有变化，正常更新
-    if (currentDateStr === dateStr) {
-      return await performUpdate(table, id, data);
-    }
-    
-    // 日期有变化，检查新日期是否存在
-    const existingRecord = await pool.query(
-      `SELECT id, deleted FROM ${table} WHERE date::text = $1`,
-      [dateStr]
-    );
-    
-    if (existingRecord.rows.length > 0) {
-      const existing = existingRecord.rows[0];
-      
-      if (!existing.deleted) {
-        // 新日期已存在且未删除，报错
-        throw new Error(`日期 ${dateStr} 已存在`);
-      } else {
-        // 新日期已删除，软删除当前记录并恢复已删除的新日期记录
-        console.log(`[Update] 软删除当前记录 id=${id}, date=${currentDateStr}`);
-        await pool.query(
-          `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = $1`,
-          [id]
-        );
-        
-        // 恢复已删除的新日期记录
-        console.log(`[Update] 恢复已删除记录 id=${existing.id}, date=${dateStr}`);
-        const updateColumns = Object.keys(data).filter(key =>
-          key !== 'deleted' && key !== 'deleted_at' && key !== 'created_at' && key !== 'updated_at' && key !== 'id'
-        );
-        const updateValues = updateColumns.map(key => key === 'date' ? dateStr : data[key]);
-        const updatePlaceholders = updateColumns.map((_, i) => `$${i + 2}`).join(', ');
-        
-        const updateQuery = `
-          UPDATE ${table}
-          SET ${updateColumns.map((col, i) => `${col} = $${i + 2}`).join(', ')},
-              deleted = false,
-              deleted_at = null,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $1
-          RETURNING *
-        `;
-        
-        const updateResult = await pool.query(updateQuery, [existing.id, ...updateValues]);
-        let rowData = updateResult.rows[0];
-        
-        // 转换返回的日期格式
-        if (rowData && rowData.date) {
-          const dateObj = new Date(rowData.date);
-          const year = dateObj.getFullYear();
-          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-          const day = String(dateObj.getDate()).padStart(2, '0');
-          rowData.date = `${year}-${month}-${day}`;
-        }
-        
-        return rowData;
-      }
-    }
-    
-    // 新日期不存在，正常更新
-    return await performUpdate(table, id, { ...data, date: dateStr });
-  }
-  
-  // 非daily_work_data表或无日期字段，正常更新
-  return await performUpdate(table, id, data);
-};
-
-// 执行普通更新的辅助函数
-const performUpdate = async (table, id, data) => {
   const updates = Object.entries(data)
     .map(([key, value], index) => `${key} = $${index + 2}`)
     .join(', ');
@@ -320,27 +151,8 @@ const performUpdate = async (table, id, data) => {
     RETURNING *
   `;
 
-  // psychological_test_results 表不需要转换scores字段
-  let processedData = { ...data };
-
-  const result = await pool.query(query, [id, ...Object.values(processedData)]);
-  let rowData = result.rows[0] || null;
-
-  // 对于 daily_work_data 表，转换返回的日期格式以避免时区问题
-  if (table === 'daily_work_data' && rowData && rowData.date) {
-    const dateObj = new Date(rowData.date);
-    const year = dateObj.getFullYear();
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    rowData.date = `${year}-${month}-${day}`;
-  }
-
-  // psychological_test_results 表不需要转换，scores字段已经是正确的
-  if (table === 'psychological_test_results' && rowData && !rowData.scores && rowData.score !== undefined) {
-    rowData.scores = rowData.score;
-  }
-
-  return rowData;
+  const result = await pool.query(query, [id, ...Object.values(data)]);
+  return result.rows[0] || null;
 };
 
 // 删除数据（软删除，如果没有deleted字段则硬删除）

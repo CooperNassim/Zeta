@@ -1,59 +1,77 @@
-// 测试所有可用的路由
 const http = require('http');
 
-const routes = [
-  { method: 'GET', path: '/api/test' },
-  { method: 'GET', path: '/api/psychological_test_results' },
-  { method: 'POST', path: '/api/psychological_test_results', body: { test_date: '2026-03-12', scores: {}, overall_score: 0, notes: '' } },
-  { method: 'PUT', path: '/api/psychological_test_results/by-date/2026-03-12', body: { scores: {}, overall_score: 0, notes: '' } }
-];
-
-async function testRoute(route) {
+const sendRequest = (options, postData = null) => {
   return new Promise((resolve, reject) => {
-    const body = route.body ? JSON.stringify(route.body) : null;
-
-    const options = {
-      hostname: 'localhost',
-      port: 3001,
-      path: route.path,
-      method: route.method,
-      headers: {}
-    };
-
-    if (body) {
-      options.headers['Content-Type'] = 'application/json';
-      options.headers['Content-Length'] = Buffer.byteLength(body);
-    }
-
-    const req = http.request(options, res => {
+    const req = http.request(options, (res) => {
       let data = '';
-      res.on('data', chunk => { data += chunk; });
+      res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
-        resolve({ path: route.path, method: route.method, status: res.statusCode, body: data });
+        try {
+          resolve({
+            statusCode: res.statusCode,
+            data: data ? JSON.parse(data) : null
+          });
+        } catch (e) {
+          resolve({ statusCode: res.statusCode, data: data });
+        }
       });
     });
-
-    req.on('error', err => {
-      resolve({ path: route.path, method: route.method, error: err.message });
-    });
-
-    if (body) req.write(body);
+    req.on('error', reject);
+    if (postData) {
+      req.write(JSON.stringify(postData));
+    }
     req.end();
   });
-}
+};
 
-async function main() {
-  console.log('Testing routes...\n');
+async function testRoutes() {
+  console.log('=== 测试路由匹配 ===\n');
 
-  for (const route of routes) {
-    const result = await testRoute(route);
-    if (result.error) {
-      console.log(`❌ ${result.method} ${result.path}: ${result.error}`);
-    } else {
-      const status = result.status === 200 || result.status === 201 ? '✅' : '❌';
-      console.log(`${status} ${result.method} ${result.path}: ${result.status}`);
+  try {
+    // 测试不同的路由
+    const tests = [
+      {
+        name: '按ID删除',
+        path: '/api/daily_work_data/2',
+        method: 'DELETE',
+        body: null
+      },
+      {
+        name: '按日期删除(bulk)',
+        path: '/api/daily_work_data/bulk',
+        method: 'DELETE',
+        body: { dates: ['2026-03-10'] }
+      },
+      {
+        name: '按ID数组删除(bulk)',
+        path: '/api/daily_work_data/bulk',
+        method: 'DELETE',
+        body: { ids: [2] }
+      }
+    ];
+
+    for (const test of tests) {
+      console.log(`\n测试: ${test.name}`);
+      console.log(`路径: ${test.path}`);
+      console.log(`方法: ${test.method}`);
+      console.log(`请求体: ${JSON.stringify(test.body)}`);
+
+      const options = {
+        hostname: 'localhost',
+        port: 3001,
+        path: test.path,
+        method: test.method,
+        headers: test.body ? { 'Content-Type': 'application/json' } : {}
+      };
+
+      const result = await sendRequest(options, test.body);
+      console.log(`状态码: ${result.statusCode}`);
+      console.log(`响应: ${JSON.stringify(result.data)}`);
     }
+
+  } catch (err) {
+    console.error('测试失败:', err.message);
   }
 }
 
-main().then(() => process.exit(0));
+testRoutes();

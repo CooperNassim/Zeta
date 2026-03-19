@@ -1,0 +1,59 @@
+// 测试心理测试提交功能
+async function testPsychologicalTest() {
+  console.log('开始测试心理测试提交功能...\n')
+
+  const testData = {
+    scores: {
+      1: 2,
+      2: 1,
+      3: 2,
+      4: 1,
+      5: 2
+    },
+    overall_score: 8,
+    test_date: '2026-03-13'
+  }
+
+  try {
+    // 第一次提交：创建新记录
+    console.log('1. 第一次提交（创建新记录）:')
+    const response1 = await fetch('http://localhost:3000/api/psychological_test_results', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(testData)
+    })
+    const result1 = await response1.json()
+    console.log('   响应:', JSON.stringify(result1, null, 2))
+
+    // 第二次提交：更新已有记录
+    console.log('\n2. 第二次提交（更新已有记录）:')
+    testData.scores = {
+      1: 1,
+      2: 0,
+      3: 1,
+      4: 2,
+      5: 0
+    }
+    testData.overall_score = 4
+    const response2 = await fetch('http://localhost:3000/api/psychological_test_results', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(testData)
+    })
+    const result2 = await response2.json()
+    console.log('   响应:', JSON.stringify(result2, null, 2))
+
+    // 查询验证
+    console.log('\n3. 查询验证:')
+    const response3 = await fetch('http://localhost:3000/api/psychological_test_results')
+    const result3 = await response3.json()
+    console.log('   所有记录:', JSON.stringify(result3.data, null, 2))
+
+    console.log('\n✅ 测试完成！')
+  } catch (error) {
+    console.error('❌ 测试失败:', error)
+  }
+}
+
+// 运行测试
+testPsychologicalTest()

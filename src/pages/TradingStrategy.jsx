@@ -17,7 +17,7 @@ import FormModal from '../components/FormModal'
 
 // 字段定义
 const FIELDS = [
-  { key: '_id', label: '修订版本', type: 'text', width: '80px' }, // 显示用的修订版本字段
+  { key: 'revisionVersion', label: '修订版本', type: 'text', width: '100px' },
   { key: 'id', label: 'ID', type: 'text', hideInForm: true, hideInTable: true }, // 隐藏的唯一ID字段
 
   {
@@ -63,6 +63,7 @@ const TradingStrategy = () => {
   const [editingId, setEditingId] = useState(null)
   const [formData, setFormData] = useState({})
   const [formErrors, setFormErrors] = useState({})
+  const [formErrorMessage, setFormErrorMessage] = useState({})
   const [selectedIds, setSelectedIds] = useState([])
   const [currentPage, setCurrentPage] = useState(1)
   const [importResult, setImportResult] = useState(null)
@@ -91,10 +92,11 @@ const TradingStrategy = () => {
     setFormData(initialData)
   }, [])
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
 
     const errors = {}
+    const errorMessages = {}
     FIELDS.forEach(field => {
       // 跳过创建人字段、只读字段、隐藏字段和id字段
       if (field.readonly || field.key === 'creator' || field.hideInForm || field.key === 'id') {
@@ -105,8 +107,18 @@ const TradingStrategy = () => {
       }
     })
 
+    // 检查重复名称
+    const existingRecord = strategyRecords.find(
+      record => record.name === formData.name && (!isEditMode || record.id !== editingId)
+    )
+    if (existingRecord) {
+      errors.name = true
+      errorMessages.name = '已存在'
+    }
+
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors)
+      setFormErrorMessage(errorMessages)
       return
     }
 
@@ -119,10 +131,10 @@ const TradingStrategy = () => {
     }
 
     if (isEditMode && editingId) {
-      updateStrategyRecord(editingId, submitData)
+      await updateStrategyRecord(editingId, submitData)
       showToast('更新成功')
     } else {
-      addStrategyRecord(submitData)
+      await addStrategyRecord(submitData)
       showToast('保存成功')
     }
 
@@ -131,6 +143,7 @@ const TradingStrategy = () => {
 
   const handleEdit = () => {
     if (selectedIds.length !== 1) return
+
 
     const editingData = strategyRecords.find(d => d.id === selectedIds[0])
     if (!editingData) return
@@ -141,6 +154,7 @@ const TradingStrategy = () => {
     })
     setFormData(initialData)
     setFormErrors({})
+    setFormErrorMessage({})
     setIsEditMode(true)
     setEditingId(selectedIds[0])
     setShowModal(true)
@@ -151,6 +165,7 @@ const TradingStrategy = () => {
     setIsEditMode(false)
     setEditingId(null)
     setFormErrors({})
+    setFormErrorMessage({})
     // 重置表单数据
     const initialData = {}
     FIELDS.forEach(field => {
@@ -274,16 +289,32 @@ const TradingStrategy = () => {
             }
           })
 
+          // 检查策略名称是否重复
+          if (data.name) {
+            const existingName = strategyRecords.find(r => r.name === data.name)
+            const importedDuplicate = dataList.find(d => d.name === data.name)
+            if (existingName || importedDuplicate) {
+              errors.push('[策略名称]已存在；')
+            }
+          }
+
           if (errors.length > 0) {
             errorList.push({
               rowIndex: i + 1,
               errors: errors.join(' ')
             })
           } else {
-            // 导入时默认设置状态为"启用"
-            data.status = '启用'
+            // 如果没有设置状态,默认为"启用"
+            if (!data.status) {
+              data.status = '启用'
+            }
             dataList.push(data)
           }
+        }
+
+        console.log('[Import] 解析完成, 成功数据:', dataList.length, '错误数据:', errorList.length)
+        if (dataList.length > 0) {
+          console.log('[Import] 第一条数据示例:', dataList[0])
         }
 
         let wb = null
@@ -319,8 +350,9 @@ const TradingStrategy = () => {
         })
         setErrorWorkbook(wb)
 
+
         if (dataList.length > 0) {
-          importStrategyRecords(dataList)
+          await importStrategyRecords(dataList)
           if (errorList.length === 0) {
             showToast('导入成功')
             setShowImportModal(false)
@@ -508,8 +540,8 @@ const TradingStrategy = () => {
     setShowDeleteModal(true)
   }
 
-  const confirmDelete = () => {
-    deleteMultipleStrategyRecords(selectedIds)
+  const confirmDelete = async () => {
+    await deleteMultipleStrategyRecords(selectedIds)
     setSelectedIds([])
     setShowDeleteModal(false)
     showToast(`删除成功`)
@@ -633,22 +665,23 @@ const TradingStrategy = () => {
         {/* 工具栏 */}
         <Toolbar
           onAdd={() => {
-            setIsEditMode(false)
-            // 初始化表单数据，修订版本默认为V1.0.0，状态默认为启用
-            const initialData = {}
-            FIELDS.forEach(field => {
-              initialData[field.key] = ''
-            })
-            // 设置默认修订版本
-            initialData._id = 'V1.0.0'
-            // 生成唯一ID（当前数据量+1）
-            const nextId = strategyRecords.length + 1
-            initialData.id = nextId.toString()
-            initialData.status = '启用'
-            setFormData(initialData)
-            setFormErrors({})
-            setShowModal(true)
-          }}
+          setIsEditMode(false)
+          // 初始化表单数据，状态默认为启用
+          const initialData = {}
+          FIELDS.forEach(field => {
+            initialData[field.key] = ''
+          })
+          // 设置默认修订版本
+          initialData.revisionVersion = 'V1.0.0'
+          // 生成唯一ID（当前数据量+1）
+          const nextId = strategyRecords.length + 1
+          initialData.id = nextId.toString()
+          initialData.status = '启用'
+          setFormData(initialData)
+          setFormErrors({})
+          setFormErrorMessage({})
+          setShowModal(true)
+        }}
           onEdit={handleEdit}
           onEnable={handleEnable}
           onDisable={handleDisable}
@@ -768,6 +801,7 @@ const TradingStrategy = () => {
         fields={FIELDS}
         formData={formData}
         formErrors={formErrors}
+        formErrorMessage={formErrorMessage}
         onFormDataChange={(newFormData, clearError) => {
           setFormData(newFormData)
           if (clearError) {

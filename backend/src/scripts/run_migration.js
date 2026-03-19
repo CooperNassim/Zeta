@@ -1,66 +1,44 @@
-const fs = require('fs');
-const path = require('path');
-const { Pool } = require('pg');
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import { pool } from '../config/database.js';
 
-// 加载环境变量
-require('dotenv').config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-// 创建数据库连接池
-const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '960717',
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'zeta_trading'
-});
-
-async function runMigration() {
-  console.log('🚀 开始数据库迁移...');
-
+(async () => {
   try {
-    // 测试连接
-    await pool.query('SELECT NOW()');
-    console.log('✅ 数据库连接成功');
+    // 读取迁移脚本
+    const migrationPath = `${__dirname}/../../migrations/migration_psychological_test_refactor.sql`;
+    const migrationSQL = fs.readFileSync(migrationPath, 'utf-8');
 
-    // 读取迁移SQL文件
-    const sqlPath = path.join(__dirname, '../../migrations/migration_complete_v3.sql');
-    const sql = fs.readFileSync(sqlPath, 'utf8');
+    console.log('开始执行心理测试模块数据库重构...');
+    console.log('----------------------------------------');
 
-    console.log('📄 读取迁移SQL文件成功');
+    // 执行迁移
+    await pool.query(migrationSQL);
 
-    // 执行SQL
-    await pool.query(sql);
+    console.log('----------------------------------------');
+    console.log('✓ 心理测试模块数据库重构完成！');
 
-    console.log('✅ 数据库迁移完成！');
-    console.log('\n📊 已创建/更新的表:');
-    console.log('  - account');
-    console.log('  - account_risk_data');
-    console.log('  - daily_work_data');
-    console.log('  - orders');
-    console.log('  - psychological_indicators (旧的1-100分指标，已弃用)');
-    console.log('  - psychological_test_indicators (新的0-2分测试问题配置)');
-    console.log('  - psychological_test_results');
-    console.log('  - risk_config');
-    console.log('  - risk_models');
-    console.log('  - scheduled_orders');
-    console.log('  - stock_kline_data');
-    console.log('  - stock_pool');
-    console.log('  - strategy_records');
-    console.log('  - technical_indicators');
-    console.log('  - trade_records');
-    console.log('  - trading_strategies');
-    console.log('  - transactions');
+    // 验证新表
+    const tables = await pool.query(`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+      AND table_name LIKE 'psychological_%'
+      ORDER BY table_name;
+    `);
 
-  } catch (error) {
-    console.error('❌ 迁移失败:', error.message);
-    if (error.detail) {
-      console.error('详细错误:', error.detail);
-    }
-    process.exit(1);
-  } finally {
+    console.log('\n创建的表:');
+    tables.rows.forEach(row => {
+      console.log(`  - ${row.table_name}`);
+    });
+
     await pool.end();
-    console.log('\n👋 数据库连接已关闭');
+  } catch (error) {
+    console.error('迁移失败:', error);
+    await pool.end();
+    process.exit(1);
   }
-}
-
-runMigration();
+})();

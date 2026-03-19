@@ -8,6 +8,7 @@ const DataForm = ({
   fields,
   formData,
   formErrors,
+  formErrorMessage,
   onChange,
   getFieldComponent
 }) => {
@@ -91,7 +92,7 @@ const DataForm = ({
             )
           )}
           {!field.notRequired && !field.readonly && formErrors[field.key] && (
-            <ErrorMessage message={typeof formErrors[field.key] === 'string' ? formErrors[field.key] : '不能为空'} />
+            <ErrorMessage message={formErrorMessage?.[field.key] || '不能为空'} />
           )}
         </div>
         )

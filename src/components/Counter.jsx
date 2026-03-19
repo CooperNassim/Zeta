@@ -7,6 +7,8 @@ const Counter = ({ end, duration = 2, decimals = 0, prefix = '', suffix = '' }) 
   const hasAnimated = useRef(false)
 
   useEffect(() => {
+    if (!ref.current) return
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && !hasAnimated.current) {
@@ -17,11 +19,14 @@ const Counter = ({ end, duration = 2, decimals = 0, prefix = '', suffix = '' }) 
       { threshold: 0.1 }
     )
 
-    if (ref.current) {
-      observer.observe(ref.current)
-    }
+    observer.observe(ref.current)
 
-    return () => observer.disconnect()
+    return () => {
+      if (ref.current) {
+        observer.unobserve(ref.current)
+      }
+      observer.disconnect()
+    }
   }, [])
 
   useEffect(() => {

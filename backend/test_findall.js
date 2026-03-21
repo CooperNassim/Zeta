@@ -1,15 +1,23 @@
-const { findAll } = require('./src/database/queries');
+const { pool } = require('./src/config/database');
 
-(async () => {
+async function testFindAll() {
   try {
-    const results = await findAll('psychological_test_results');
-    console.log('=== 心理测试结果 ===');
-    console.log('总数:', results.length);
-    if (results.length > 0) {
-      console.log('第一条记录:');
-      console.log(JSON.stringify(results[0], null, 2));
+    const tables = ['risk_config', 'account', 'daily_work_data'];
+
+    for (const table of tables) {
+      try {
+        const result = await pool.query(`SELECT * FROM ${table}`);
+        console.log(`${table}: ${result.rows.length} 条记录`);
+      } catch (err) {
+        console.error(`${table} 查询失败:`, err.message);
+      }
     }
+
   } catch (error) {
-    console.error('Error:', error.message);
+    console.error('测试失败:', error);
+  } finally {
+    pool.end();
   }
-})();
+}
+
+testFindAll();

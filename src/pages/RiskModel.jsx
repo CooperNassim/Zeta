@@ -109,7 +109,8 @@ const RiskConfig = () => {
   const [showToast, setShowToast] = useState(false)
 
   const handleSave = (data) => {
-    updateRiskConfig(data)
+    // 默认更新 real 账户的风险配置
+    updateRiskConfig('real', data)
     setShowToast(true)
   }
 
@@ -143,13 +144,13 @@ const RiskConfig = () => {
         <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
           <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>账户风险额度</div>
           <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>
-            {riskConfig?.totalRiskPercent || 6}%
+            {riskConfig?.real?.totalRiskPercent || 6}%
           </div>
         </div>
         <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
           <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>单笔风险额度</div>
           <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>
-            {riskConfig?.singleRiskPercent || 2}%
+            {riskConfig?.real?.singleRiskPercent || 2}%
           </div>
         </div>
       </div>
@@ -157,7 +158,7 @@ const RiskConfig = () => {
       <RiskConfigModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        initialData={{ totalRiskPercent: riskConfig?.totalRiskPercent || 6, singleRiskPercent: riskConfig?.singleRiskPercent || 2 }}
+        initialData={{ totalRiskPercent: riskConfig?.real?.totalRiskPercent || 6, singleRiskPercent: riskConfig?.real?.singleRiskPercent || 2 }}
         onSave={handleSave}
       />
       {showToast && <Toast type="success" message="保存成功" onClose={() => setShowToast(false)} />}
@@ -369,7 +370,7 @@ const CurrentPositions = ({ selectedPosition, onPositionSelect }) => {
               </div>
 
               <div style={{ fontSize: '11px', color: '#999', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e5e7eb' }}>
-                执行时间: {pos.scheduleTime}
+                交易时间: {pos.scheduleTime}
               </div>
             </div>
           ))

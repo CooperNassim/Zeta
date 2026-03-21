@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>清除 localStorage</title>
+</head>
+<body>
+  <h1>清除 localStorage</h1>
+  <p>localStorage 中的数据：</p>
+  <pre id="data"></pre>
+  <button onclick="clearStorage()">清除 localStorage</button>
+  <button onclick="reload()">刷新页面</button>
+
+  <script>
+    function displayData() {
+      const keys = Object.keys(localStorage);
+      let html = '';
+      keys.forEach(key => {
+        try {
+          const data = JSON.parse(localStorage.getItem(key));
+          html += `Key: ${key}\n`;
+          html += `Data: ${JSON.stringify(data, null, 2)}\n\n`;
+        } catch (e) {
+          html += `Key: ${key}\n`;
+          html += `Data: ${localStorage.getItem(key)}\n\n`;
+        }
+      });
+      document.getElementById('data').textContent = html;
+    }
+
+    function clearStorage() {
+      localStorage.clear();
+      alert('localStorage 已清除');
+      displayData();
+    }
+
+    function reload() {
+      location.reload();
+    }
+
+    displayData();
+  </script>
+</body>
+</html>

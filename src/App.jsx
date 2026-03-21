@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation, NavLink } from 'react-router-dom'
-import { TrendingUp, Brain, Target, Shield, Clock, Receipt, Activity, Home as HomeIcon, ChevronDown, Wallet2, Database, Bell } from 'lucide-react'
+import { TrendingUp, Brain, Target, Shield, Clock, Receipt, Activity, Home as HomeIcon, ChevronDown, Wallet2, Database } from 'lucide-react'
 import Home from './pages/Home'
 import DailyWork from './pages/DailyWork'
 import PsychologicalTest from './pages/PsychologicalTest'
@@ -11,7 +11,6 @@ import OrderManagement from './pages/OrderManagement'
 import TransactionHistory from './pages/TransactionHistory'
 import TradeRecords from './pages/TradeRecords'
 import StockPool from './pages/StockPool'
-import ScheduledOrderManagement from './pages/ScheduledOrderManagement'
 import useStore from './store/useStore'
 import { ToastProvider } from './contexts/ToastContext'
 
@@ -36,6 +35,7 @@ const API_BASE_URL = ''
 function DataSync() {
   const syncedRef = useRef(false)
   const isReadyRef = useRef(false)
+  const lastSyncTimeRef = useRef(0)
   const store = useStore()
 
   // 检查后端是否就绪
@@ -52,8 +52,18 @@ function DataSync() {
   }
 
   const syncData = useCallback(async () => {
-    // 防止重复同步
-    if (syncedRef.current) return
+    // 检查是否正在同步中（避免并发请求）
+    if (syncedRef.current) {
+      console.log('[DataSync] 正在同步中，跳过本次请求')
+      return
+    }
+
+    // 检查是否距离上次同步太近（避免频繁同步）
+    const now = Date.now()
+    if (lastSyncTimeRef.current && now - lastSyncTimeRef.current < 1000) {
+      console.log('[DataSync] 距离上次同步时间太短，跳过本次请求')
+      return
+    }
 
     // 等待后端就绪（最多等待5秒）
     let backendReady = await checkBackendReady()
@@ -68,15 +78,12 @@ function DataSync() {
     if (!backendReady) {
       console.warn('[DataSync] 后端未就绪，跳过本次同步')
       isReadyRef.current = false
-      // 2秒后重置，允许下次尝试
-      setTimeout(() => {
-        syncedRef.current = false
-      }, 2000)
+      syncedRef.current = false
       return
     }
 
     isReadyRef.current = true
-    syncedRef.current = true
+    syncedRef.current = true // 标记为正在同步
 
     console.log('[DataSync] 从数据库同步数据...')
 
@@ -102,21 +109,22 @@ function DataSync() {
         console.log('[DataSync] 原始响应:', result)
 
         if (result.success && result.data) {
-          const { orders, transactions, trade_records, stock_pool, daily_work_data, psychological_test_results, psychological_indicators, trading_strategies } = result.data
+          const { trade_orders, transactions, trade_records, stock_pool, daily_work_data, psychological_test_results, psychological_indicators, trading_strategies, risk_config } = result.data
 
           console.log('[DataSync] 数据库返回数据:', {
-            orders: orders?.length || 0,
+            trade_orders: trade_orders?.length || 0,
             transactions: transactions?.length || 0,
             trade_records: trade_records?.length || 0,
             stock_pool: stock_pool?.length || 0,
             daily_work_data: daily_work_data?.length || 0,
             psychological_test_results: psychological_test_results?.length || 0,
             psychological_indicators: psychological_indicators?.length || 0,
-            trading_strategies: trading_strategies?.length || 0
+            trading_strategies: trading_strategies?.length || 0,
+            risk_config: risk_config?.length || 0
           })
 
           // 总是导入数据，即使是空数组也会清空本地旧数据
-          if (orders) store.importOrders(orders)
+          if (trade_orders) store.importOrders(trade_orders)
           if (transactions) store.importTransactions(transactions)
           if (trade_records) store.importTradeRecords(trade_records)
           if (stock_pool) store.importStocks(stock_pool)
@@ -124,7 +132,10 @@ function DataSync() {
           if (psychological_test_results !== undefined) store.importPsychologicalTestResults(psychological_test_results)
           if (psychological_indicators !== undefined) store.importPsychologicalIndicators(psychological_indicators)
           if (trading_strategies !== undefined) store.importTradingStrategies(trading_strategies)
+          if (risk_config !== undefined) store.importRiskConfig(risk_config)
 
+          // 更新上次同步时间
+          lastSyncTimeRef.current = Date.now()
           console.log('[DataSync] 同步完成')
         } else {
           throw new Error(result.error || '同步响应格式错误')
@@ -139,15 +150,13 @@ function DataSync() {
         } else {
           console.warn('[DataSync] 同步失败，将使用本地数据或等待下次同步')
         }
+      } finally {
+        // 同步完成或失败后，重置锁
+        syncedRef.current = false
       }
     }
 
     await attemptSync()
-
-    // 5秒后重置，允许下次同步（避免短时间内频繁触发）
-    setTimeout(() => {
-      syncedRef.current = false
-    }, 5000)
   }, [store])
 
   useEffect(() => {
@@ -174,9 +183,16 @@ function DataSync() {
 
     window.addEventListener('focus', handleFocus)
 
+    // 定时自动同步（每2秒同步一次）
+    const syncInterval = setInterval(() => {
+      console.log('[DataSync] 定时自动同步...')
+      syncData()
+    }, 2000)
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('focus', handleFocus)
+      clearInterval(syncInterval)
     }
   }, [syncData])
 
@@ -193,7 +209,6 @@ function Navigation() {
     { id: 'strategy', icon: Target, label: '交易策略', path: '/trading-strategy', customIcon: 'strategy' },
     { id: 'risk', icon: Shield, label: '风险模型', path: '/risk-model', customIcon: 'risk' },
     { id: 'order', icon: Clock, label: '股票交易', path: '/order-management', customIcon: 'order' },
-    { id: 'scheduled', icon: Bell, label: '预约订单', path: '/scheduled-orders', customIcon: 'order' },
     { id: 'record', icon: Activity, label: '交易记录', path: '/trade-records', customIcon: 'record' },
     { id: 'transaction', icon: Receipt, label: '账单明细', path: '/transaction-history', customIcon: 'transaction' },
     { id: 'stockpool', icon: Database, label: '股票行情', path: '/stock-pool', customIcon: 'stockpool' },
@@ -428,7 +443,6 @@ function App() {
               <Route path="/risk-model" element={<RiskModel />} />
               <Route path="/stock-pool" element={<StockPool />} />
               <Route path="/order-management" element={<OrderManagement />} />
-              <Route path="/scheduled-orders" element={<ScheduledOrderManagement />} />
               <Route path="/transaction-history" element={<TransactionHistory />} />
               <Route path="/trade-records" element={<TradeRecords />} />
             </Routes>

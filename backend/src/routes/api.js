@@ -33,17 +33,14 @@ router.get('/sync/all', async (req, res) => {
       'psychological_indicators',
       'psychological_test_results',
       'trading_strategies',
-      'risk_models',
       'risk_config',
-      'account_risk_data',
       'technical_indicators',
-      'orders',
+      'trade_orders',
       'transactions',
       'trade_records',
       'stock_pool',
       'stock_kline_data',
-      'strategy_records',
-      'scheduled_orders'
+      'strategy_records'
     ];
 
     const syncData = {};
@@ -51,7 +48,32 @@ router.get('/sync/all', async (req, res) => {
     for (const table of tables) {
       try {
         const data = await findAll(table);
-        syncData[table] = data;
+        // 特殊处理日期格式，转换为 YYYY-MM-DD 字符串
+        if (table === 'psychological_test_results') {
+          syncData[table] = data.map(item => ({
+            ...item,
+            test_date: item.test_date ? (() => {
+              const dateObj = new Date(item.test_date);
+              const year = dateObj.getFullYear();
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const day = String(dateObj.getDate()).padStart(2, '0');
+              return `${year}-${month}-${day}`;
+            })() : null
+          }));
+        } else if (table === 'daily_work_data') {
+          syncData[table] = data.map(item => ({
+            ...item,
+            date: item.date ? (() => {
+              const dateObj = new Date(item.date);
+              const year = dateObj.getFullYear();
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const day = String(dateObj.getDate()).padStart(2, '0');
+              return `${year}-${month}-${day}`;
+            })() : null
+          }));
+        } else {
+          syncData[table] = data;
+        }
       } catch (err) {
         console.error(`Sync error for table ${table}:`, err.message);
         syncData[table] = [];
@@ -83,7 +105,7 @@ router.get('/export/all', async (req, res) => {
       'risk_config',
       'account_risk_data',
       'technical_indicators',
-      'orders',
+      'trade_orders',
       'transactions',
       'trade_records',
       'stock_pool',
@@ -430,7 +452,7 @@ router.post('/psychological_test_results', async (req, res) => {
        ON CONFLICT (test_date) DO UPDATE
        SET scores = EXCLUDED.scores, overall_score = EXCLUDED.overall_score, updated_at = CURRENT_TIMESTAMP
        RETURNING *`,
-      [test_date, JSON.stringify(scores), overall_score]
+      [test_date, JSON.stringify(scores), parseFloat(overall_score)]
     );
 
     res.json({ success: true, data: result.rows[0] });

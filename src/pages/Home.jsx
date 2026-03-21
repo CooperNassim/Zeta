@@ -683,24 +683,6 @@ const Home = () => {
                   justifyContent: 'center',
                   margin: '0 auto 16px'
                 }}>
-                  <Clock style={{ width: '28px', height: '28px', color: '#ffffff' }} />
-                </div>
-                <h4 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>预约订单</h4>
-                <p style={{ fontSize: '14px', color: '#9CA3AF', lineHeight: '1.6' }}>
-                  预设交易条件，自动触发执行，支持买入卖出策略
-                </p>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{
-                  width: '56px',
-                  height: '56px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 16px'
-                }}>
                   <ClipboardCheck style={{ width: '28px', height: '28px', color: '#ffffff' }} />
                 </div>
                 <h4 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>交易记录</h4>

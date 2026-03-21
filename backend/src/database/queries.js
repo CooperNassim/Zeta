@@ -19,7 +19,7 @@ const buildQuery = (table, options = {}) => {
 
   // 自动过滤已删除的记录（除非明确指定 includeDeleted）
   // 只对包含 deleted 字段的表进行过滤
-  const tablesWithDeleted = ['orders', 'daily_work_data', 'psychological_test_results', 'trade_records', 'stock_pool', 'trading_strategies', 'strategy_records'];
+  const tablesWithDeleted = ['trade_orders', 'daily_work_data', 'psychological_test_results', 'trade_records', 'stock_pool', 'trading_strategies', 'strategy_records'];
   if (!options.includeDeleted && tablesWithDeleted.includes(table)) {
     conditions.push(`deleted = false`);
   }
@@ -55,7 +55,7 @@ const findAll = async (table, options = {}) => {
 
 // 查询单条数据
 const findOne = async (table, options = {}) => {
-  const { query, params } = buildQuery({ ...options, limit: 1 });
+  const { query, params } = buildQuery(table, { ...options, limit: 1 });
   const result = await pool.query(query, params);
   return result.rows[0] || null;
 };

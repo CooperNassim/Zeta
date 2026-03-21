@@ -200,31 +200,36 @@ const OrderManagement = () => {
     }
   }, [evaluationResults.strategy, orderForm.strategyScores])
 
-  // 判断当天是否有心理测试
-  const hasTodayPsychologicalTest = () => {
-    if (psychologicalTests.length === 0) return false
-    // psychologicalTests 是按日期降序排序的，最新的在第一个位置
-    const latestTest = psychologicalTests[0]
-    if (!latestTest.date) return false
-
+  // 获取当天的心理测试结果
+  const getTodayPsychologicalTest = () => {
+    if (psychologicalTests.length === 0) return null
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    const testDate = new Date(latestTest.date)
-    testDate.setHours(0, 0, 0, 0)
-    return testDate.getTime() === today.getTime()
+
+    return psychologicalTests.find(test => {
+      if (!test.date) return false
+      const testDate = new Date(test.date)
+      testDate.setHours(0, 0, 0, 0)
+      return testDate.getTime() === today.getTime()
+    }) || null
+  }
+
+  // 判断当天是否有心理测试
+  const hasTodayPsychologicalTest = () => {
+    return getTodayPsychologicalTest() !== null
   }
 
   const handlePsychologicalEvaluation = () => {
-    // psychologicalTests 是按日期降序排序的，最新的在第一个位置
-    const latestTest = psychologicalTests[0]
-    if (!latestTest) {
+    const todayTest = getTodayPsychologicalTest()
+
+    if (!todayTest) {
       setToastType('error')
-      setToastMessage('请先完成心理测试')
+      setToastMessage('请先完成今天的心理测试')
       setShowToast(true)
       return false
     }
 
-    const score = latestTest.overallScore > 10 ? latestTest.overallScore / 10 : latestTest.overallScore
+    const score = todayTest.overallScore > 10 ? todayTest.overallScore / 10 : todayTest.overallScore
     // 根据心理测试的分数判断是否可以交易
     let pass = false
     let status = ''
@@ -240,7 +245,7 @@ const OrderManagement = () => {
       ...evaluationResults,
       psychological: {
         pass,
-        score: latestTest.overallScore,
+        score: todayTest.overallScore,
         status
       }
     })
@@ -691,20 +696,26 @@ const OrderManagement = () => {
                   <p className="text-sm text-gray-600">测试结果</p>
                   <div className="flex items-center justify-between mt-2">
                     <span className="text-2xl font-bold text-gray-900">
-                      {psychologicalTests.length > 0 ? (psychologicalTests[0].overallScore > 10 ? Math.round(psychologicalTests[0].overallScore / 10) : Math.round(psychologicalTests[0].overallScore)) : '未测试'}
+                      {(() => {
+                        const todayTest = getTodayPsychologicalTest()
+                        if (!todayTest) return '未测试'
+                        return todayTest.overallScore > 10 ? Math.round(todayTest.overallScore / 10) : Math.round(todayTest.overallScore)
+                      })()}
                     </span>
                     <span className={`px-3 py-1 rounded text-sm ${
                       (() => {
-                        if (psychologicalTests.length === 0) return 'bg-gray-500/20 text-gray-600'
-                        const score = psychologicalTests[0].overallScore > 10 ? psychologicalTests[0].overallScore / 10 : psychologicalTests[0].overallScore
+                        const todayTest = getTodayPsychologicalTest()
+                        if (!todayTest) return 'bg-gray-500/20 text-gray-600'
+                        const score = todayTest.overallScore > 10 ? todayTest.overallScore / 10 : todayTest.overallScore
                         if (score >= 7 && score <= 8) return 'bg-green-500/20 text-green-600'
                         if ((score >= 5 && score <= 6) || (score >= 9 && score <= 10)) return 'bg-yellow-500/20 text-yellow-600'
                         return 'bg-red-500/20 text-red-600'
                       })()
                     }`}>
                       {(() => {
-                        if (psychologicalTests.length === 0) return '未测试'
-                        const score = psychologicalTests[0].overallScore > 10 ? psychologicalTests[0].overallScore / 10 : psychologicalTests[0].overallScore
+                        const todayTest = getTodayPsychologicalTest()
+                        if (!todayTest) return '未测试'
+                        const score = todayTest.overallScore > 10 ? todayTest.overallScore / 10 : todayTest.overallScore
                         if (score >= 7 && score <= 8) return '可以交易'
                         if ((score >= 5 && score <= 6) || (score >= 9 && score <= 10)) return '谨慎交易'
                         return '禁止交易'
@@ -754,7 +765,7 @@ const OrderManagement = () => {
                             <div className="flex justify-between items-start">
                               <div>
                                 <h4 className={`font-bold mb-1 ${orderForm.strategyId === record.id ? 'text-white' : 'text-gray-900'}`}>{record.name}</h4>
-                                <p className={`text-xs ${orderForm.strategyId === record.id ? 'text-gray-300' : 'text-gray-500'}`}>{record._id || '-'}</p>
+                                <p className={`text-xs ${orderForm.strategyId === record.id ? 'text-gray-300' : 'text-gray-500'}`}>{record.revisionVersion || '-'}</p>
                               </div>
                               <span className={`px-2 py-1 text-xs rounded ${orderForm.strategyId === record.id ? 'bg-white text-gray-900' : 'bg-gray-100 text-gray-600'}`}>
                                 {record.strategyType}

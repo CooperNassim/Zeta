@@ -32,7 +32,7 @@ async function importData(filepath) {
       'daily_work_data',
       'psychological_tests',
       'account_risk_data',
-      'orders',
+      'trade_orders',
       'transactions',
       'stock_pool',
       'stock_kline_data',

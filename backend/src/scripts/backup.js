@@ -25,7 +25,7 @@ async function exportAllData() {
       'risk_config',
       'account_risk_data',
       'technical_indicators',
-      'orders',
+      'trade_orders',
       'transactions',
       'trade_records',
       'stock_pool',

@@ -25,12 +25,8 @@ const PsychologicalTest = () => {
     const dateStr = format(date, 'yyyy-MM-dd')
     return psychologicalTests.find(test => {
       if (!test.date) return false
-      try {
-        return format(new Date(test.date), 'yyyy-MM-dd') === dateStr
-      } catch (error) {
-        console.error('[PsychologicalTest] 日期格式错误:', test.date, error)
-        return false
-      }
+      // test.date 现在是 DATE 类型（YYYY-MM-DD），直接比较
+      return test.date === dateStr
     })
   }
 
@@ -101,30 +97,14 @@ const PsychologicalTest = () => {
 
     indicators.forEach(indicator => {
       const score = scores[indicator.id] || indicator.minScore
-      const weight = parseFloat(indicator.weight) // 确保weight是数字
-      const normalizedScore = ((score - indicator.minScore) / (indicator.maxScore - indicator.minScore)) * 100
+      const weight = parseFloat(indicator.weight)
+      const normalizedScore = ((score - indicator.minScore) / (indicator.maxScore - indicator.minScore)) * 10
       totalScore += normalizedScore * weight
       totalWeight += weight
-      console.log('[calculateOverallScore] 指标计算:', {
-        id: indicator.id,
-        name: indicator.name,
-        score: score,
-        normalizedScore: normalizedScore,
-        weight: indicator.weight,
-        parsedWeight: weight,
-        contribution: normalizedScore * weight
-      })
     })
 
-    const result = totalWeight > 0 ? (totalScore / totalWeight).toFixed(2) / 10 : 0
-    console.log('[calculateOverallScore] 最终计算:', {
-      totalScore,
-      totalWeight,
-      finalScore: result
-    })
-
-    // 返回 0-10 范围的分数
-    return result
+    const result = totalWeight > 0 ? (totalScore / totalWeight).toFixed(2) : 0
+    return parseFloat(result)
   }
 
   const handleScoreChange = (indicatorId, value) => {
@@ -173,28 +153,33 @@ const PsychologicalTest = () => {
       console.log('[PsychologicalTest] 选中日期:', selectedDate.toISOString())
       console.log('[PsychologicalTest] 日期字符串:', dateStr)
       console.log('[PsychologicalTest] 心理测试记录数:', psychologicalTests.length)
-      console.log('[PsychologicalTest] 所有测试记录:', psychologicalTests.map(t => ({
-        id: t.id,
-        date: t.date,
-        formattedDate: t.date ? (() => {
-          try {
-            return format(new Date(t.date), 'yyyy-MM-dd')
-          } catch (error) {
-            console.error('[PsychologicalTest] 日期格式错误:', t.date, error)
-            return '无效日期'
+      console.log('[PsychologicalTest] 所有测试记录:', psychologicalTests.map(t => {
+        let formattedDate = '无日期'
+        if (t.date) {
+          // t.date 已经是 YYYY-MM-DD 格式的字符串，直接使用，不需要 new Date()
+          if (typeof t.date === 'string' && t.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            formattedDate = t.date
+          } else {
+            try {
+              formattedDate = format(new Date(t.date), 'yyyy-MM-dd')
+            } catch (error) {
+              console.error('[PsychologicalTest] 日期格式错误:', t.date, error)
+              formattedDate = '无效日期'
+            }
           }
-        })() : '无日期'
-      })))
+        }
+        return {
+          id: t.id,
+          date: t.date,
+          formattedDate
+        }
+      }))
 
       // 检查是否已有当天的测试记录
       const existingTest = psychologicalTests.find(test => {
         if (!test.date) return false
-        try {
-          return format(new Date(test.date), 'yyyy-MM-dd') === dateStr
-        } catch (error) {
-          console.error('[PsychologicalTest] 日期格式错误:', test.date, error)
-          return false
-        }
+        // test.date 现在是 DATE 类型（YYYY-MM-DD），直接比较
+        return test.date === dateStr
       })
 
       console.log('[PsychologicalTest] 找到已有记录:', existingTest ? '是' : '否')
@@ -207,7 +192,7 @@ const PsychologicalTest = () => {
           scores: currentScores,
           overallScore: parseFloat(overallScore)
         })
-        showToast('测试结果已更新', 'success')
+        showToast('测试已更新', 'success')
       } else {
         // 添加新记录到数据库
         console.log('[PsychologicalTest] 添加新记录')
@@ -758,7 +743,7 @@ const PsychologicalTest = () => {
 
               <div style={{ flex: 1, overflow: 'auto', marginTop: '0px', minHeight: 0, paddingBottom: '0px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {indicators.map((indicator, index) => (
+                  {[...indicators].sort((a, b) => parseInt(a.id) - parseInt(b.id)).map((indicator, index) => (
                     <div
                       key={indicator.id}
                       style={{
@@ -770,14 +755,14 @@ const PsychologicalTest = () => {
                     >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#0F1419', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {indicator.name}
+                        {index + 1}. {indicator.name}
                       </div>
                       <div style={{ fontSize: '12px', color: '#666', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                         {indicator.description}
                       </div>
                     </div>
                   </div>
-                ))}
+                  ))}
                 </div>
               </div>
             </div>
@@ -818,7 +803,7 @@ const PsychologicalTest = () => {
             }
           >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '60vh', overflow: 'auto' }}>
-          {indicators.map((indicator, index) => (
+          {[...indicators].sort((a, b) => parseInt(a.id) - parseInt(b.id)).map((indicator, index) => (
             <div
               key={indicator.id}
               style={{

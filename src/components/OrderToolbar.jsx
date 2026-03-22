@@ -55,9 +55,9 @@ const OrderToolbar = ({ onAdd, onDelete, onSell, onExport, canDelete, canSell, c
             </motion.button>
           )}
         </div>
-        <div className="text-sm text-gray-500">
-          共 {totalCount} 条记录
-        </div>
+          <div className="text-sm text-gray-500" style={{ marginRight: '10px' }}>
+            共 {totalCount} 条记录
+          </div>
       </div>
     </div>
   )

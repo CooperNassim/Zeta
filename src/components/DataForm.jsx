@@ -2,6 +2,7 @@ import React from 'react'
 import CustomDatePicker from './CustomDatePicker'
 import CustomSelect from './CustomSelect'
 import CustomInput from './CustomInput'
+import ReadOnlyInput from './ReadOnlyInput'
 import ErrorMessage from './ErrorMessage'
 
 const DataForm = ({
@@ -12,8 +13,11 @@ const DataForm = ({
   onChange,
   getFieldComponent
 }) => {
+  // 检查是否有grid字段
+  const hasGridFields = fields.some(f => f.grid)
+  
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className={hasGridFields ? "grid grid-cols-3 gap-4" : "grid grid-cols-2 md:grid-cols-4 gap-4"}>
       {fields.map(field => {
         // 跳过标记为notRequired且不是readonly的字段，或标记为hideInForm的字段
         if ((field.notRequired && !field.readonly) || field.hideInForm) {
@@ -21,17 +25,17 @@ const DataForm = ({
         }
         const isFullWidth = field.fullWidth !== false && (field.fullWidth || field.type === 'textarea')
         return (
-        <div key={field.key} className={isFullWidth ? 'col-span-2 md:col-span-4' : ''}>
+        <div key={field.key} className={
+          hasGridFields ? (isFullWidth ? 'col-span-3' : 'col-span-1') :
+          (isFullWidth ? 'col-span-2 md:col-span-4' : '')
+        }>
           <label className="block text-sm text-gray-600 mb-1.5">
             {!field.notRequired && <span className="text-red-500">*</span>} {field.label}
           </label>
           {field.readonly ? (
-            <input
-              type="text"
+            <ReadOnlyInput
               value={formData[field.key] || ''}
-              readOnly
-              className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded text-gray-600"
-              disabled
+              placeholder={field.placeholder || ''}
             />
           ) : getFieldComponent ? (
             getFieldComponent(field, formData, formErrors, onChange)
@@ -91,8 +95,8 @@ const DataForm = ({
               />
             )
           )}
-          {!field.notRequired && !field.readonly && formErrors[field.key] && (
-            <ErrorMessage message={formErrorMessage?.[field.key] || '不能为空'} />
+          {(!field.notRequired || field.required) && !field.readonly && formErrors[field.key] && (
+            <ErrorMessage message={formErrors[field.key] || '不能为空'} />
           )}
         </div>
         )

@@ -8,8 +8,10 @@ import FilterSelect from '../components/FilterSelect'
 import SearchInput from '../components/SearchInput'
 import ExportModal from '../components/ExportModal'
 import FormModal from '../components/FormModal'
+import Modal from '../components/Modal'
 import Toolbar from '../components/Toolbar'
 import ErrorMessage from '../components/ErrorMessage'
+import StockChartModal from '../components/StockChartModal'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
 import ExcelJS from 'exceljs'
@@ -27,27 +29,48 @@ const formatDate = (date) => {
   return `${year}-${month}-${day} ${hours}:${minutes}`
 }
 
+// 格式化金额，整数取整，有小数点保留小数点后2位四舍五入，使用千位分隔符
+const formatAmount = (amount) => {
+  if (!amount || amount === null || amount === undefined) return '-'
+  const num = parseFloat(amount)
+  if (isNaN(num)) return '-'
+  const rounded = Math.round(num * 100) / 100
+  const isInteger = Number.isInteger(rounded)
+  const formatted = isInteger ? rounded.toLocaleString('en-US') : rounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return formatted
+}
+
 const TradeRecords = () => {
   const { showToast } = useToast()
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedFilter] = useState('all')
   const [filterSymbol, setFilterSymbol] = useState('')
   const [filterName, setFilterName] = useState('')
-  const [filterTradeType, setFilterTradeType] = useState('')
+  const [filterTradeId, setFilterTradeId] = useState('')
   const [filterScore, setFilterScore] = useState('')
   const [filterOverallScore, setFilterOverallScore] = useState('')
-  const [filterTradeDateRange, setFilterTradeDateRange] = useState('')
+  const [filterBuyGrade, setFilterBuyGrade] = useState('')
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportFormat, setExportFormat] = useState('xlsx')
   const [selectedIds, setSelectedIds] = useState([])
   const [showSummaryModal, setShowSummaryModal] = useState(false)
+  const [showBuyDetailModal, setShowBuyDetailModal] = useState(false)
+  const [showSellDetailModal, setShowSellDetailModal] = useState(false)
+  const [showStockChartModal, setShowStockChartModal] = useState(false)
+  const [chartRecord, setChartRecord] = useState(null)
   const [summaryFormData, setSummaryFormData] = useState({})
   const [summaryFormErrors, setSummaryFormErrors] = useState({})
+  const [buyDetailFormData, setBuyDetailFormData] = useState({})
+  const [buyDetailFormErrors, setBuyDetailFormErrors] = useState({})
+  const [sellDetailFormData, setSellDetailFormData] = useState({})
+  const [sellDetailFormErrors, setSellDetailFormErrors] = useState({})
   const [editingTradeId, setEditingTradeId] = useState(null)
+  const [detailRecord, setDetailRecord] = useState(null)
   const pageSize = 20
 
   const tradeRecords = useStore(state => state.tradeRecords)
   const updateTradeRecord = useStore(state => state.updateTradeRecord)
+  const strategies = useStore(state => state.strategies)
 
   // 筛选交易记录
   const filteredRecords = (() => {
@@ -76,22 +99,14 @@ const TradeRecords = () => {
       result = result.filter(r => r.name.toLowerCase().includes(filterName.toLowerCase()))
     }
 
-    // 交易类型筛选
-    if (filterTradeType) {
-      result = result.filter(r => r.tradeType === filterTradeType)
+    // 交易编号筛选
+    if (filterTradeId) {
+      result = result.filter(r => r.id && r.id.toString().includes(filterTradeId))
     }
 
-    // 操作评级筛选
+    // 卖出评级筛选
     if (filterScore) {
-      result = result.filter(r => {
-        const score = parseFloat(r.overallScore)
-        let grade = ''
-        if (score >= 90) grade = 'A'
-        else if (score >= 80) grade = 'B'
-        else if (score >= 70) grade = 'C'
-        else if (score >= 0) grade = 'D'
-        return grade === filterScore
-      })
+      result = result.filter(r => r.sellGrade === filterScore)
     }
 
     // 交易评级筛选
@@ -107,16 +122,9 @@ const TradeRecords = () => {
       })
     }
 
-    // 交易时间筛选（按买入/卖出时间）
-    if (filterTradeDateRange) {
-      const [startDate, endDate] = filterTradeDateRange.split('~')
-      if (startDate && endDate) {
-        result = result.filter(r => {
-          const tradeTime = r.tradeType === '买入' ? formatDate(r.buyTime) : formatDate(r.sellTime)
-          const recordDate = tradeTime ? tradeTime.split(' ')[0] : ''
-          return recordDate >= startDate && recordDate <= endDate
-        })
-      }
+    // 买入评级筛选
+    if (filterBuyGrade) {
+      result = result.filter(r => r.buyGrade === filterBuyGrade)
     }
 
     // 按交易编号分组，确保相同交易编号的记录相邻显示，买入在前
@@ -165,18 +173,26 @@ const TradeRecords = () => {
     if (!record) return
 
     setEditingTradeId(selectedIds[0])
-    setSummaryFormData({ tradeSummary: record.tradeSummary || '' })
+    setSummaryFormData({
+      buyPrice: record.buyPrice ? record.buyPrice.toFixed(2) : '',
+      tradeCommission: record.tradeCommission != null ? String(record.tradeCommission) : '',
+      otherFees: record.otherFees != null ? String(record.otherFees) : '',
+      sellPrice: record.sellPrice ? record.sellPrice.toFixed(2) : '',
+      sellTradeCommission: record.sellTradeCommission != null ? String(record.sellTradeCommission) : '',
+      sellOtherFees: record.sellOtherFees != null ? String(record.sellOtherFees) : '',
+      tradeSummary: record.tradeSummary || ''
+    })
     setSummaryFormErrors({})
     setShowSummaryModal(true)
   }
 
-  const handleSummaryFormSubmit = (e) => {
+  const handleSummaryFormSubmit = async (e) => {
     e.preventDefault()
 
     const errors = {}
     SUMMARY_FIELDS.forEach(field => {
-      if (!summaryFormData[field.key] || summaryFormData[field.key].trim() === '') {
-        errors[field.key] = true
+      if (field.required && (!summaryFormData[field.key] || summaryFormData[field.key].toString().trim() === '')) {
+        errors[field.key] = '不能为空'
       }
     })
 
@@ -185,12 +201,208 @@ const TradeRecords = () => {
       return
     }
 
-    updateTradeRecord(editingTradeId, { tradeSummary: summaryFormData.tradeSummary.trim() })
-    showToast('保存成功')
-    setShowSummaryModal(false)
-    setEditingTradeId(null)
-    setSummaryFormErrors({})
-    setSummaryFormData({})
+    try {
+      // 保存到数据库
+      const response = await fetch('/api/trade_records/' + editingTradeId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          buy_price: parseFloat(summaryFormData.buyPrice),
+          trade_commission: summaryFormData.tradeCommission.trim(),
+          other_fees: summaryFormData.otherFees.trim(),
+          sell_price: parseFloat(summaryFormData.sellPrice),
+          sell_trade_commission: summaryFormData.sellTradeCommission.trim(),
+          sell_other_fees: summaryFormData.sellOtherFees.trim(),
+          trade_summary: summaryFormData.tradeSummary.trim()
+        })
+      }).then(res => res.json())
+
+      if (response.success) {
+        // 从数据库重新同步数据
+        await fetch('/api/sync/all')
+          .then(res => res.json())
+          .then(syncResponse => {
+            if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
+              const { trade_records } = syncResponse.data
+              useStore.getState().importTradeRecords(trade_records)
+            }
+          })
+        showToast('保存成功', 'success')
+        setShowSummaryModal(false)
+        setEditingTradeId(null)
+      } else {
+        showToast('保存失败', 'error')
+      }
+    } catch (error) {
+      console.error('保存交易结案失败:', error)
+      showToast('保存失败', 'error')
+    }
+  }
+
+  const handleShowBuyDetail = (record) => {
+    setDetailRecord(record)
+    const formData = {
+      high: record.buyChannel?.high ? formatAmount(record.buyChannel.high) : '',
+      low: record.buyChannel?.low ? formatAmount(record.buyChannel.low) : '',
+      buyPrice: record.buyPrice ? record.buyPrice.toFixed(2) : '',
+      buyOrderPrice: record.buyOrderPrice ? formatAmount(record.buyOrderPrice) : '',
+      buySlippage: record.buyPrice && record.buyOrderPrice ? formatAmount((record.buyPrice - record.buyOrderPrice) * record.buyQuantity) : '',
+      tradeCommission: record.tradeCommission != null ? String(record.tradeCommission) : '',
+      otherFees: record.otherFees != null ? String(record.otherFees) : '',
+      buyStrategy: getStrategyName(record.buyStrategyId, 'buy'),
+      buyTime: formatDate(record.buyTime)
+    }
+    setBuyDetailFormData(formData)
+    setBuyDetailFormErrors({})
+    setShowBuyDetailModal(true)
+  }
+
+  const handleShowSellDetail = (record) => {
+    setDetailRecord(record)
+    const formData = {
+      high: record.sellChannel?.high ? formatAmount(record.sellChannel.high) : '',
+      low: record.sellChannel?.low ? formatAmount(record.sellChannel.low) : '',
+      sellPrice: record.sellPrice ? record.sellPrice.toFixed(2) : '',
+      sellOrderPrice: record.sellOrderPrice ? formatAmount(record.sellOrderPrice) : '',
+      sellSlippage: record.sellPrice && record.sellOrderPrice ? formatAmount((record.sellPrice - record.sellOrderPrice) * record.sellQuantity) : '',
+      tradeCommission: record.tradeCommission != null ? String(record.tradeCommission) : '',
+      otherFees: record.otherFees != null ? String(record.otherFees) : '',
+      sellStrategy: getStrategyName(record.sellStrategyId, 'sell'),
+      sellTime: formatDate(record.sellTime)
+    }
+    setSellDetailFormData(formData)
+    setSellDetailFormErrors({})
+    setShowSellDetailModal(true)
+  }
+
+  const handleBuyDetailSubmit = async (e) => {
+    e.preventDefault()
+
+    const errors = {}
+    const requiredFields = ['buyPrice', 'tradeCommission', 'otherFees']
+    requiredFields.forEach(field => {
+      if (!buyDetailFormData[field] || buyDetailFormData[field].toString().trim() === '') {
+        errors[field] = '不能为空'
+      }
+    })
+
+    if (Object.keys(errors).length > 0) {
+      setBuyDetailFormErrors(errors)
+      return
+    }
+
+    try {
+      // 保存到数据库
+      const response = await fetch('/api/trade_records/' + detailRecord.id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          buy_price: parseFloat(buyDetailFormData.buyPrice),
+          trade_commission: buyDetailFormData.tradeCommission.trim(),
+          other_fees: buyDetailFormData.otherFees.trim()
+        })
+      }).then(res => res.json())
+
+      if (response.success) {
+        // 从数据库重新同步数据
+        await fetch('/api/sync/all')
+          .then(res => res.json())
+          .then(syncResponse => {
+            if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
+              const { trade_records } = syncResponse.data
+              useStore.getState().importTradeRecords(trade_records)
+            }
+          })
+        showToast('保存成功', 'success')
+        setShowBuyDetailModal(false)
+        setDetailRecord(null)
+      } else {
+        showToast('保存失败', 'error')
+      }
+    } catch (error) {
+      console.error('保存买入详情失败:', error)
+      showToast('保存失败', 'error')
+    }
+  }
+
+  const handleBuyDetailFormDataChange = (newFormData, clearError = null) => {
+    setBuyDetailFormData(newFormData)
+    if (clearError) {
+      setBuyDetailFormErrors(prev => ({ ...prev, ...clearError }))
+    }
+  }
+
+  const handleSellDetailSubmit = async (e) => {
+    e.preventDefault()
+
+    const errors = {}
+    const requiredFields = ['sellPrice', 'tradeCommission', 'otherFees']
+    requiredFields.forEach(field => {
+      if (!sellDetailFormData[field] || sellDetailFormData[field].toString().trim() === '') {
+        errors[field] = '不能为空'
+      }
+    })
+
+    if (Object.keys(errors).length > 0) {
+      setSellDetailFormErrors(errors)
+      return
+    }
+
+    try {
+      // 保存到数据库
+      const response = await fetch('/api/trade_records/' + detailRecord.id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sell_price: parseFloat(sellDetailFormData.sellPrice),
+          trade_commission: sellDetailFormData.tradeCommission?.toString().trim() || '',
+          other_fees: sellDetailFormData.otherFees?.toString().trim() || ''
+        })
+      }).then(res => res.json())
+
+      if (response.success) {
+        // 从数据库重新同步数据
+        await fetch('/api/sync/all')
+          .then(res => res.json())
+          .then(syncResponse => {
+            if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
+              const { trade_records } = syncResponse.data
+              useStore.getState().importTradeRecords(trade_records)
+            }
+          })
+        showToast('保存成功', 'success')
+        setShowSellDetailModal(false)
+        setDetailRecord(null)
+      } else {
+        showToast('保存失败', 'error')
+      }
+    } catch (error) {
+      console.error('保存卖出详情失败:', error)
+      showToast('保存失败', 'error')
+    }
+  }
+
+  const handleSellDetailFormDataChange = (newFormData, clearError = null) => {
+    setSellDetailFormData(newFormData)
+    if (clearError) {
+      setSellDetailFormErrors(prev => ({ ...prev, ...clearError }))
+    }
+  }
+
+  const handleDetailModalClose = () => {
+    setShowBuyDetailModal(false)
+    setShowSellDetailModal(false)
+    setDetailRecord(null)
+    setBuyDetailFormData({})
+    setBuyDetailFormErrors({})
+    setSellDetailFormData({})
+    setSellDetailFormErrors({})
+  }
+
+  const getStrategyName = (strategyId, type) => {
+    const strategyList = strategies[type] || []
+    const strategy = strategyList.find(s => s.id === String(strategyId))
+    return strategy ? strategy.name : '-'
   }
 
   const handleSummaryFormDataChange = (newFormData, clearError = null) => {
@@ -202,12 +414,202 @@ const TradeRecords = () => {
 
   const SUMMARY_FIELDS = [
     {
+      key: 'buyPrice',
+      label: '买入成交价格',
+      type: 'text',
+      inputType: 'number',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
+      key: 'tradeCommission',
+      label: '买入佣金',
+      type: 'text',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
+      key: 'otherFees',
+      label: '买入其他费用',
+      type: 'text',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
+      key: 'sellPrice',
+      label: '卖出成交价格',
+      type: 'text',
+      inputType: 'number',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
+      key: 'sellTradeCommission',
+      label: '卖出佣金',
+      type: 'text',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
+      key: 'sellOtherFees',
+      label: '卖出其他费用',
+      type: 'text',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
       key: 'tradeSummary',
       label: '交易总结',
       type: 'textarea',
       placeholder: '请输入',
       required: true,
-      rows: 4
+      rows: 4,
+      fullWidth: true
+    }
+  ]
+
+  const SELL_DETAIL_FIELDS = [
+    {
+      key: 'high',
+      label: '最高点',
+      readonly: true,
+      notRequired: true,
+      grid: true
+    },
+    {
+      key: 'low',
+      label: '最低点',
+      readonly: true,
+      notRequired: true,
+      grid: true
+    },
+    {
+      key: 'sellOrderPrice',
+      label: '卖出价格',
+      readonly: true,
+      notRequired: true,
+      grid: true
+    },
+    {
+      key: 'sellPrice',
+      label: '卖出成交价格',
+      type: 'text',
+      inputType: 'number',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
+      key: 'sellSlippage',
+      label: '卖出滑点',
+      readonly: true,
+      notRequired: true,
+      grid: true
+    },
+    {
+      key: 'tradeCommission',
+      label: '卖出佣金',
+      type: 'text',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
+      key: 'otherFees',
+      label: '卖出其他费用',
+      type: 'text',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
+      key: 'sellStrategy',
+      label: '卖出策略',
+      readonly: true,
+      notRequired: true,
+      grid: true
+    },
+    {
+      key: 'sellTime',
+      label: '卖出时间',
+      readonly: true,
+      notRequired: true,
+      grid: true
+    }
+  ]
+
+  const BUY_DETAIL_FIELDS = [
+    {
+      key: 'high',
+      label: '最高点',
+      readonly: true,
+      notRequired: true,
+      grid: true
+    },
+    {
+      key: 'low',
+      label: '最低点',
+      readonly: true,
+      notRequired: true,
+      grid: true
+    },
+    {
+      key: 'buyOrderPrice',
+      label: '买入价格',
+      readonly: true,
+      notRequired: true,
+      grid: true
+    },
+    {
+      key: 'buyPrice',
+      label: '买入成交价格',
+      type: 'text',
+      inputType: 'number',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
+      key: 'buySlippage',
+      label: '买入滑点',
+      readonly: true,
+      notRequired: true,
+      grid: true
+    },
+    {
+      key: 'tradeCommission',
+      label: '买入佣金',
+      type: 'text',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
+      key: 'otherFees',
+      label: '买入其他费用',
+      type: 'text',
+      placeholder: '请输入',
+      required: true,
+      grid: true
+    },
+    {
+      key: 'buyStrategy',
+      label: '买入策略',
+      readonly: true,
+      notRequired: true,
+      grid: true
+    },
+    {
+      key: 'buyTime',
+      label: '买入时间',
+      readonly: true,
+      notRequired: true
     }
   ]
 
@@ -285,22 +687,17 @@ const TradeRecords = () => {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingRight: '10px', position: 'relative' }}>
         {/* 内容区域 */}
         <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
           {/* 筛选条件 */}
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px', flexShrink: 0 }}>
-            <div style={{ width: '180px' }}>
-              <FilterSelect
-                value={filterTradeType === '' ? '' : filterTradeType}
-                onChange={(value) => setFilterTradeType(value === '' ? '' : value)}
-                options={[
-                  { value: '买入', label: '买入' },
-                  { value: '卖出', label: '卖出' }
-                ]}
-                placeholder="交易类型"
-              />
-            </div>
+            <SearchInput
+              value={filterTradeId}
+              onChange={setFilterTradeId}
+              placeholder="交易编号"
+              width="200px"
+            />
             <SearchInput
               value={filterSymbol}
               onChange={setFilterSymbol}
@@ -313,15 +710,20 @@ const TradeRecords = () => {
               placeholder="股票名称"
               width="200px"
             />
-            <div style={{ position: 'relative', width: '240px' }}>
-              <DateRangePicker
-                value={filterTradeDateRange}
+            <div style={{ width: '180px' }}>
+              <FilterSelect
+                value={filterBuyGrade === '' ? '' : filterBuyGrade}
                 onChange={(value) => {
-                  setFilterTradeDateRange(value)
+                  setFilterBuyGrade(value === '' ? '' : value)
                   setCurrentPage(1)
                 }}
-                placeholder="交易时间"
-                style={{ width: '180px' }}
+                options={[
+                  { value: 'A', label: 'A' },
+                  { value: 'B', label: 'B' },
+                  { value: 'C', label: 'C' },
+                  { value: 'D', label: 'D' }
+                ]}
+                placeholder="买入评级"
               />
             </div>
             <div style={{ width: '180px' }}>
@@ -334,7 +736,7 @@ const TradeRecords = () => {
                   { value: 'C', label: 'C' },
                   { value: 'D', label: 'D' }
                 ]}
-                placeholder="操作评级"
+                placeholder="卖出评级"
               />
             </div>
             <div style={{ width: '180px' }}>
@@ -362,7 +764,7 @@ const TradeRecords = () => {
             hideAdd={true}
             hideImport={true}
             hideDelete={true}
-            editLabel="交易总结"
+            editLabel="交易结案"
           />
 
           {/* 数据表格 */}
@@ -372,27 +774,25 @@ const TradeRecords = () => {
                 showCheckbox={true}
                 fields={[
                   { key: 'tradeNumber', label: '交易编号', width: '120px' },
-                  { key: 'tradeType', label: '交易类型', width: '80px' },
                   { key: 'symbol', label: '股票代码', width: '100px' },
-                  { key: 'name', label: '股票名称', width: '120px' },
-                  { key: 'tradePrice', label: '交易价格', width: '120px' },
-                  { key: 'orderPrice', label: '预约价格', width: '120px' },
-                  { key: 'tradeQuantity', label: '交易数量', width: '100px' },
-                  { key: 'tradeAmount', label: '交易金额', width: '150px' },
-                  { key: 'tradeSlippage', label: '交易滑点', width: '120px' },
-                  { key: 'tradeCommission', label: '交易佣金', width: '120px' },
-                  { key: 'otherFees', label: '其他费用', width: '120px' },
-                  { key: 'tradeStrategy', label: '交易策略', width: '150px' },
-                  { key: 'tradeTime', label: '交易时间', width: '180px' },
-                  { key: 'grades', label: '操作评级', width: '150px' },
-                  { key: 'profitPercent', label: '盈亏比例', width: '120px' },
+                  { key: 'name', label: '股票名称', width: '100px' },
+                  { key: 'sellBuyQuantity', label: '卖出/买入数量', width: '140px' },
+                  { key: 'buyAmount', label: '买入金额', width: '120px' },
+                  { key: 'sellAmount', label: '卖出金额', width: '120px' },
+                  { key: 'tradeStatus', label: '交易状态', width: '100px' },
+                  { key: 'buyGrade', label: '买入评级', width: '100px' },
+                  { key: 'sellGrade', label: '卖出评级', width: '100px' },
                   { key: 'profit', label: '盈亏金额', width: '120px' },
-                  { key: 'fees', label: '手续费', width: '120px' },
+                  { key: 'profitPercent', label: '盈亏比例', width: '120px' },
                   { key: 'netProfitPercent', label: '净盈亏比', width: '120px' },
                   { key: 'netProfit', label: '净盈亏额', width: '120px' },
-                  { key: 'totalSlippage', label: '滑点', width: '120px' },
+                  { key: 'fees', label: '手续费', width: '120px' },
+                  { key: 'slippage', label: '滑点', width: '120px' },
                   { key: 'slippageNetProfitRatio', label: '滑净盈比', width: '120px' },
+                  { key: 'upperBand', label: '通道上轨', width: '120px' },
+                  { key: 'lowerBand', label: '通道下轨', width: '120px' },
                   { key: 'overallScore', label: '交易评级', width: '120px' },
+                  { key: 'chartReview', label: '图表回顾', width: '100px' },
                   { key: 'tradeSummary', label: '交易总结', width: '200px' }
                 ]}
                 data={paginatedData}
@@ -400,93 +800,29 @@ const TradeRecords = () => {
                 onSelectAll={handleSelectAll}
                 onSelectOne={handleSelectOne}
                 renderCell={(field, item) => {
-                  if (field.key === 'tradeType') {
-                    return <span>{item.tradeType}</span>
+                  if (field.key === 'buyAmount') {
+                    const amount = item.buyAmount
+                    if (!amount || amount === null || amount === undefined) return <span>-</span>
+                    return (
+                      <button
+                        onClick={() => handleShowBuyDetail(item)}
+                        className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition-colors"
+                      >
+                        {formatAmount(amount)}
+                      </button>
+                    )
                   }
-                  if (field.key === 'tradePrice') {
-                    if (item.tradeType === '买入') {
-                      const price = item.buyPrice
-                      return <span>{price !== null && price !== undefined ? (Number.isInteger(price) ? price : price.toFixed(2)) : '-'}</span>
-                    } else {
-                      const price = item.sellPrice
-                      return <span>{price !== null && price !== undefined ? (Number.isInteger(price) ? price : price.toFixed(2)) : '-'}</span>
-                    }
-                  }
-                  if (field.key === 'orderPrice') {
-                    if (item.tradeType === '买入') {
-                      const orderPrice = item.buyOrderPrice
-                      const tradePrice = item.buyPrice
-                      const price = orderPrice !== null && orderPrice !== undefined ? orderPrice : tradePrice
-                      return <span>{price !== null && price !== undefined ? (Number.isInteger(price) ? price : price.toFixed(2)) : '-'}</span>
-                    } else {
-                      const orderPrice = item.sellOrderPrice
-                      const tradePrice = item.sellPrice
-                      const price = orderPrice !== null && orderPrice !== undefined ? orderPrice : tradePrice
-                      return <span>{price !== null && price !== undefined ? (Number.isInteger(price) ? price : price.toFixed(2)) : '-'}</span>
-                    }
-                  }
-                  if (field.key === 'tradeQuantity') {
-                    if (item.tradeType === '买入') {
-                      return <span>{item.buyQuantity ? item.buyQuantity : '-'}</span>
-                    } else {
-                      return <span>{item.sellQuantity ? item.sellQuantity : '-'}</span>
-                    }
-                  }
-                  if (field.key === 'tradeAmount') {
-                    if (item.tradeType === '买入') {
-                      const amount = item.buyAmount ? parseFloat(item.buyAmount) : (item.buyPrice && item.buyQuantity ? item.buyPrice * item.buyQuantity : null)
-                      return <span>{amount !== null && amount !== undefined ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</span>
-                    } else {
-                      const amount = item.sellAmount ? parseFloat(item.sellAmount) : (item.sellPrice && item.sellQuantity ? item.sellPrice * item.sellQuantity : null)
-                      return <span>{amount !== null && amount !== undefined ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</span>
-                    }
-                  }
-                  if (field.key === 'tradeSlippage') {
-                    if (item.tradeType === '买入') {
-                      const tradePrice = item.buyPrice
-                      const orderPrice = item.buyOrderPrice
-                      const quantity = item.buyQuantity
-                      if (tradePrice !== null && tradePrice !== undefined && orderPrice !== null && orderPrice !== undefined && quantity) {
-                        const slippage = (tradePrice - orderPrice) * quantity
-                        return <span>{slippage.toFixed(2)}</span>
-                      }
-                      return <span>-</span>
-                    } else {
-                      const tradePrice = item.sellPrice
-                      const orderPrice = item.sellOrderPrice
-                      const quantity = item.sellQuantity
-                      if (tradePrice !== null && tradePrice !== undefined && orderPrice !== null && orderPrice !== undefined && quantity) {
-                        const slippage = (tradePrice - orderPrice) * quantity
-                        return <span>{slippage.toFixed(2)}</span>
-                      }
-                      return <span>-</span>
-                    }
-                  }
-                  if (field.key === 'tradeCommission') {
-                    return <span>-</span>
-                  }
-                  if (field.key === 'otherFees') {
-                    return <span>-</span>
-                  }
-                  if (field.key === 'tradeStrategy') {
-                    if (item.tradeType === '买入') {
-                      const strategyId = item.buyStrategyId
-                      const strategies = useStore.getState().strategies.buy || []
-                      const strategy = strategies.find(s => s.id === strategyId)
-                      return <span>{strategy ? strategy.name : '-'}</span>
-                    } else {
-                      const strategyId = item.sellStrategyId
-                      const strategies = useStore.getState().strategies.sell || []
-                      const strategy = strategies.find(s => s.id === strategyId)
-                      return <span>{strategy ? strategy.name : '-'}</span>
-                    }
-                  }
-                  if (field.key === 'tradeTime') {
-                    if (item.tradeType === '买入') {
-                      return <span>{item.buyTime ? formatDate(item.buyTime) : '-'}</span>
-                    } else {
-                      return <span>{item.sellTime ? formatDate(item.sellTime) : '-'}</span>
-                    }
+                  if (field.key === 'sellAmount') {
+                    const amount = item.sellAmount
+                    if (!amount || amount === null || amount === undefined) return <span>-</span>
+                    return (
+                      <button
+                        onClick={() => handleShowSellDetail(item)}
+                        className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition-colors"
+                      >
+                        {formatAmount(amount)}
+                      </button>
+                    )
                   }
                   if (field.key === 'profit') {
                     const profit = parseFloat(item.profit)
@@ -501,7 +837,7 @@ const TradeRecords = () => {
                   if (field.key === 'netProfit') {
                     return <span>-</span>
                   }
-                  if (field.key === 'totalSlippage') {
+                  if (field.key === 'slippage') {
                     return <span>-</span>
                   }
                   if (field.key === 'slippageNetProfitRatio') {
@@ -511,8 +847,34 @@ const TradeRecords = () => {
                     const percent = parseFloat(item.profitPercent)
                     return <span>{percent >= 0 ? '+' : ''}{percent.toFixed(2)}%</span>
                   }
-                  if (field.key === 'grades') {
+                  if (field.key === 'sellBuyQuantity') {
+                    const sellQty = item.sellQuantity || 0
+                    const buyQty = item.buyQuantity || 0
+                    return <span>{sellQty}/{buyQty}</span>
+                  }
+                  if (field.key === 'name') {
+                    return <span>{item.name || '-'}</span>
+                  }
+                  if (field.key === 'tradeStatus') {
+                    const sellQty = item.sellQuantity || 0
+                    const buyQty = item.buyQuantity || 0
+                    if (sellQty === 0 && buyQty === 0) {
+                      return <span>-</span>
+                    }
+                    const status = sellQty >= buyQty ? '结束' : '持仓中'
+                    return <span>{status}</span>
+                  }
+                  if (field.key === 'buyGrade') {
                     return <span>{item.buyGrade || '-'}</span>
+                  }
+                  if (field.key === 'sellGrade') {
+                    return <span>{item.sellGrade || '-'}</span>
+                  }
+                  if (field.key === 'upperBand') {
+                    return <span>{item.buyChannel?.upperBand ? item.buyChannel.upperBand.toFixed(2) : '-'}</span>
+                  }
+                  if (field.key === 'lowerBand') {
+                    return <span>{item.buyChannel?.lowerBand ? item.buyChannel.lowerBand.toFixed(2) : '-'}</span>
                   }
                   if (field.key === 'tradeSummary') {
                     return <span>{item.tradeSummary || '-'}</span>
@@ -525,6 +887,19 @@ const TradeRecords = () => {
                     else if (score >= 70) grade = 'C'
                     else if (score >= 0) grade = 'D'
                     return <span>{grade}</span>
+                  }
+                  if (field.key === 'chartReview') {
+                    return (
+                      <button
+                        onClick={() => {
+                          setChartRecord(item)
+                          setShowStockChartModal(true)
+                        }}
+                        className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition-colors"
+                      >
+                        查看
+                      </button>
+                    )
                   }
                   return null
                 }}
@@ -569,12 +944,45 @@ const TradeRecords = () => {
           setSummaryFormData({})
         }}
         onSubmit={handleSummaryFormSubmit}
-        title="交易总结"
+        title="交易结案"
         fields={SUMMARY_FIELDS}
         formData={summaryFormData}
         formErrors={summaryFormErrors}
         onFormDataChange={handleSummaryFormDataChange}
         width="max-w-md"
+      />
+
+      {/* 买入详情弹窗 */}
+      <FormModal
+        isOpen={showBuyDetailModal}
+        onClose={handleDetailModalClose}
+        onSubmit={handleBuyDetailSubmit}
+        title="买入详情"
+        fields={BUY_DETAIL_FIELDS}
+        formData={buyDetailFormData}
+        formErrors={buyDetailFormErrors}
+        onFormDataChange={handleBuyDetailFormDataChange}
+        width="max-w-md"
+      />
+
+      {/* 卖出详情弹窗 */}
+      <FormModal
+        isOpen={showSellDetailModal}
+        onClose={handleDetailModalClose}
+        onSubmit={handleSellDetailSubmit}
+        title="卖出详情"
+        fields={SELL_DETAIL_FIELDS}
+        formData={sellDetailFormData}
+        formErrors={sellDetailFormErrors}
+        onFormDataChange={handleSellDetailFormDataChange}
+        width="max-w-md"
+      />
+
+      {/* 图表回顾弹窗 */}
+      <StockChartModal
+        isOpen={showStockChartModal}
+        onClose={() => setShowStockChartModal(false)}
+        record={chartRecord}
       />
     </div>
   )

@@ -90,7 +90,7 @@ const Toolbar = ({ onAdd, onEdit, onEnable, onDisable, onImport, onExport, onDel
               </motion.button>
             )}
           </div>
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-gray-500" style={{ marginRight: '10px' }}>
             共 {totalCount} 条记录
           </div>
         </div>

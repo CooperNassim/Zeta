@@ -215,6 +215,48 @@ const useStore = create(
       // 交易编号计数器 (日期 -> 当前序号)
       tradeNumberCounter: {},
 
+      // 初始化当天交易编号计数器（从数据库同步）
+      initializeTradeNumberCounter: async () => {
+        try {
+          const today = new Date()
+          const dateStr = today.getFullYear() +
+            String(today.getMonth() + 1).padStart(2, '0') +
+            String(today.getDate()).padStart(2, '0')
+
+          // 获取所有订单数据并筛选
+          const response = await fetch(`${API_BASE_URL}/api/sync/all`)
+          const result = await response.json()
+
+          let maxNumber = 0
+          if (result.success && result.data && result.data.trade_orders) {
+            // 筛选今天的订单
+            const todayOrders = result.data.trade_orders.filter(order =>
+              order.trade_number && order.trade_number.startsWith(dateStr) && !order.deleted
+            )
+
+            if (todayOrders.length > 0) {
+              // 找出最大的编号
+              const maxTradeNumber = todayOrders.reduce((max, order) => {
+                const num = parseInt(order.trade_number.slice(-3))
+                return num > max ? num : max
+              }, 0)
+              maxNumber = maxTradeNumber
+            }
+          }
+
+          set((state) => ({
+            tradeNumberCounter: {
+              ...state.tradeNumberCounter,
+              [dateStr]: maxNumber
+            }
+          }))
+
+          console.log('[Store] 初始化交易编号计数器:', dateStr, '->', maxNumber)
+        } catch (error) {
+          console.error('[Store] 初始化交易编号计数器失败:', error)
+        }
+      },
+
       // 生成交易编号
       generateTradeNumber: () => {
         const today = new Date()
@@ -283,6 +325,12 @@ const useStore = create(
           buyChannel: { high: 1682.50, low: 1617.50, upperBand: 1702.00, lowerBand: 1598.00, type: 'bollinger' },
           sellChannel: null,
           tradeSummary: null,
+          tradeCommission: 50.00,
+          otherFees: 10.00,
+          slippage: 500.00,
+          netProfit: null,
+          netProfitPercent: null,
+          slippageNetProfitRatio: null,
           createdAt: '2024-02-15T09:30:00.000Z'
         },
         {
@@ -320,7 +368,99 @@ const useStore = create(
           buyChannel: { high: 1682.50, low: 1617.50, upperBand: 1702.00, lowerBand: 1598.00, type: 'bollinger' },
           sellChannel: { high: 1761.25, low: 1688.75, upperBand: 1783.00, lowerBand: 1667.00, type: 'bollinger' },
           tradeSummary: null,
+          tradeCommission: 52.50,
+          otherFees: 10.00,
+          slippage: 500.00,
+          netProfit: 7377.50,
+          netProfitPercent: 4.47,
+          slippageNetProfitRatio: 6.78,
           createdAt: '2024-03-01T10:15:00.000Z'
+        },
+        {
+          id: 'trade_002',
+          tradeNumber: '20240305001',
+          tradeType: '买入',
+          symbol: '000333',
+          name: '美的集团',
+          buyOrderId: 'buy_002',
+          sellOrderId: 'sell_002',
+          buyPrice: 62.50,
+          buyQuantity: 500,
+          buyTime: '2024-03-05T14:30:00.000Z',
+          buyOrderPrice: 62.00,
+          buyOrderTime: '2024-03-04T09:00:00.000Z',
+          buyPsychologicalScore: 8.2,
+          buyStrategyScore: 88.0,
+          buyStrategyId: 2,
+          sellPrice: null,
+          sellQuantity: null,
+          sellTime: null,
+          sellOrderPrice: null,
+          sellOrderTime: null,
+          sellPsychologicalScore: null,
+          sellStrategyScore: null,
+          sellStrategyId: null,
+          buyAmount: '31250.00',
+          sellAmount: null,
+          profit: null,
+          profitPercent: null,
+          holdDuration: 0,
+          buyGrade: 'A',
+          sellGrade: null,
+          overallScore: 88.1,
+          buyChannel: { high: 64.00, low: 61.00, upperBand: 65.00, lowerBand: 60.00, type: 'bollinger' },
+          sellChannel: null,
+          tradeSummary: null,
+          tradeCommission: 15.00,
+          otherFees: 5.00,
+          slippage: 250.00,
+          netProfit: null,
+          netProfitPercent: null,
+          slippageNetProfitRatio: null,
+          createdAt: '2024-03-05T14:30:00.000Z'
+        },
+        {
+          id: 'trade_002_sell',
+          tradeNumber: '20240305001',
+          tradeType: '卖出',
+          symbol: '000333',
+          name: '美的集团',
+          buyOrderId: 'buy_002',
+          sellOrderId: 'sell_002',
+          buyPrice: 62.50,
+          buyQuantity: 500,
+          buyTime: '2024-03-05T14:30:00.000Z',
+          buyOrderPrice: 62.00,
+          buyOrderTime: '2024-03-04T09:00:00.000Z',
+          buyPsychologicalScore: 8.2,
+          buyStrategyScore: 88.0,
+          buyStrategyId: 2,
+          sellPrice: 65.80,
+          sellQuantity: 500,
+          sellTime: '2024-03-20T10:45:00.000Z',
+          sellOrderPrice: 65.50,
+          sellOrderTime: '2024-03-19T15:00:00.000Z',
+          sellPsychologicalScore: 7.8,
+          sellStrategyScore: 86.5,
+          sellStrategyId: 2,
+          buyAmount: '31250.00',
+          sellAmount: '32900.00',
+          profit: '1650.00',
+          profitPercent: '5.28',
+          holdDuration: 15,
+          buyGrade: 'A',
+          sellGrade: 'B',
+          overallScore: 88.1,
+          buyChannel: { high: 64.00, low: 61.00, upperBand: 65.00, lowerBand: 60.00, type: 'bollinger' },
+          sellChannel: { high: 67.00, low: 64.50, upperBand: 68.00, lowerBand: 63.50, type: 'bollinger' },
+          tradeSummary: null,
+          tradeCommission: 16.50,
+          otherFees: 5.00,
+          slippage: 150.00,
+          netProfit: 1613.50,
+          netProfitPercent: 5.16,
+          slippageNetProfitRatio: 9.30,
+          createdAt: '2024-03-20T10:45:00.000Z'
         }
       ],
 
@@ -1269,7 +1409,22 @@ const useStore = create(
 
       // 添加预约单
       addOrder: (order) => set((state) => {
-        const tradeNumber = state.generateTradeNumber()
+        // 卖出订单: 如果关联了买入订单,继承该买入订单的交易编号
+        // 否则生成新的交易编号
+        let tradeNumber
+        if (order.type === 'sell' && order.buyOrderId) {
+          // 从买入订单获取交易编号
+          const buyOrder = state.orders.find(o => o.id === order.buyOrderId)
+          if (buyOrder && buyOrder.tradeNumber) {
+            tradeNumber = buyOrder.tradeNumber
+          } else {
+            tradeNumber = state.generateTradeNumber()
+          }
+        } else {
+          // 买入订单或不关联买入的卖出订单,生成新交易编号
+          tradeNumber = state.generateTradeNumber()
+        }
+
         const newOrder = { ...order, id: Date.now(), tradeNumber, createdAt: new Date().toISOString(), deleted: false, deletedAt: null }
 
         // 映射前端字段名到数据库字段名（camelCase -> snake_case）
@@ -1290,6 +1445,7 @@ const useStore = create(
           order_time: new Date().toTimeString().split(' ')[0].slice(0, 5),
           status: 'completed',
           is_virtual: newOrder.isVirtual || false,
+          buy_order_id: newOrder.buyOrderId || null,
           notes: null,
           deleted: false,
           deleted_at: null
@@ -1931,6 +2087,7 @@ const useStore = create(
             deletedAt: o.deleted_at || o.deletedAt || null,
             status: o.status,
             isVirtual: o.is_virtual || o.isVirtual,
+            buyOrderId: o.buy_order_id || o.buyOrderId || null,
             notes: o.notes
           }))
         // 直接使用数据库数据，不与本地数据合并

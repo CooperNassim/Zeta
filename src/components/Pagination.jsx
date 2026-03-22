@@ -11,7 +11,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange, selectedCount, tota
   if (totalPages < 0) return null
 
   return (
-    <div className="py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between gap-4 px-4 h-full">
+    <div className="py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between gap-4 px-4 h-full" style={{ marginLeft: '-10px' }}>
       <div className="text-sm text-gray-500">
         已选{selectedCount}条/共{totalCount}条
       </div>

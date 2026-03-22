@@ -4,24 +4,27 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Play, X, TrendingUp, TrendingDown, AlertCircle, CheckCircle, Clock } from 'lucide-react'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
+import ExcelJS from 'exceljs'
+import { useToast } from '../contexts/ToastContext'
 import Counter from '../components/Counter'
 import ScrollAnimation from '../components/ScrollAnimation'
 import DataTable from '../components/DataTable'
 import Pagination from '../components/Pagination'
 import OrderToolbar from '../components/OrderToolbar'
 import OrderModal from '../components/OrderModal'
-import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
 import ExportModal from '../components/ExportModal'
 import ScoreButtons from '../components/ScoreButtons'
 import FilterSelect from '../components/FilterSelect'
 import CustomInput from '../components/CustomInput'
+import ReadOnlyInput from '../components/ReadOnlyInput'
 import ErrorMessage from '../components/ErrorMessage'
 import EmptyState from '../components/EmptyState'
 
 
 const OrderManagement = () => {
   const navigate = useNavigate()
+  const { showToast } = useToast()
   const [showModal, setShowModal] = useState(false)
   const [orderType, setOrderType] = useState('buy')
   const [evaluationStep, setEvaluationStep] = useState(0)
@@ -29,39 +32,9 @@ const OrderManagement = () => {
   const [selectedFilter, setSelectedFilter] = useState('all')  // 默认显示全部订单
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState([])
-  const [showToast, setShowToast] = useState(false)
 
   // 格式化数字：整数取整，有小数点保留2位，四舍五入，千位分隔符
-  const formatAmount = (num) => {
-    if (num === undefined || num === null || isNaN(num)) return ''
-    
-    // 四舍五入到两位小数
-    const rounded = Math.round(num * 100) / 100
-    
-    // 检查是否实际上是整数（四舍五入后）
-    const isInteger = Math.abs(rounded - Math.round(rounded)) < 0.000001
-    
-    // 格式化为字符串：整数不显示小数位，非整数显示最多2位小数
-    let formattedNumber
-    if (isInteger) {
-      formattedNumber = Math.round(rounded).toString()
-    } else {
-      // 移除不必要的尾随零
-      formattedNumber = rounded.toFixed(2).replace(/\.?0+$/, '')
-      // 如果小数点后没有数字，移除小数点
-      if (formattedNumber.endsWith('.')) {
-        formattedNumber = formattedNumber.slice(0, -1)
-      }
-    }
-    
-    // 添加千位分隔符
-    const parts = formattedNumber.split('.')
-    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-    
-    return parts.length > 1 ? `${parts[0]}.${parts[1]}` : parts[0]
-  }
-  const [toastType, setToastType] = useState('success')
-  const [toastMessage, setToastMessage] = useState('')
+
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportFormat, setExportFormat] = useState('xlsx')
@@ -119,32 +92,122 @@ const OrderManagement = () => {
       strategyId: '',
       riskModelId: '',
       psychologicalScores: {},
-      isVirtual: false
+      isVirtual: false,
+      buyOrderId: null,
+      tradeNumber: ''
     }
 
     // 卖出交易:从选中的买入订单获取信息
-    if (type === 'sell' && selectedIds.length === 1) {
-      const selectedOrder = orders.find(order => order.id === selectedIds[0] && !order.deleted && order.type === 'buy')
-      if (selectedOrder) {
-        // 计算可卖出数量 = 买入数量 - 同一交易编号已卖出的数量
-        const buyQuantity = selectedOrder.quantity || 0
-        const soldQuantity = orders
-          .filter(o =>
+    if (type === 'sell') {
+      console.log('[handleAddOrder] 选中订单IDs:', selectedIds)
+      if (selectedIds.length === 1) {
+        const selectedOrder = orders.find(order => order.id === selectedIds[0] && !order.deleted && order.type === 'buy')
+        console.log('[handleAddOrder] 找到的买入订单:', selectedOrder)
+        if (selectedOrder) {
+          // 如果选中了买入订单，使用 buyOrderId 关联
+          const buyQuantity = selectedOrder.quantity || 0
+          const sellOrders = orders.filter(o =>
             !o.deleted &&
             o.type === 'sell' &&
             o.buyOrderId === selectedOrder.id
           )
-          .reduce((sum, o) => sum + (o.quantity || 0), 0)
+          console.log('[handleAddOrder] 关联的卖出订单:', sellOrders)
+          const soldQuantity = sellOrders.reduce((sum, o) => sum + (o.quantity || 0), 0)
+          const availableQuantity = Math.max(0, buyQuantity - soldQuantity)
+          console.log('[handleAddOrder] 计算结果:', { buyQuantity, soldQuantity, availableQuantity })
 
-        const availableQuantity = Math.max(0, buyQuantity - soldQuantity)
+          initialForm = {
+            ...initialForm,
+            symbol: selectedOrder.symbol || '',
+            name: selectedOrder.name || '',
+            quantity: availableQuantity.toString(),
+            buyOrderId: selectedOrder.id,
+            tradeNumber: selectedOrder.tradeNumber || ''
+          }
+          console.log('[handleAddOrder] 设置的 initialForm:', initialForm)
+        } else {
+          // 如果选中了卖出订单，获取其交易编号
+          const selectedSellOrder = orders.find(order => order.id === selectedIds[0] && !order.deleted && order.type === 'sell')
+          if (selectedSellOrder) {
+            // 基于交易编号计算可卖出数量
+            const sameTradeOrders = orders.filter(o =>
+              !o.deleted &&
+              o.tradeNumber === selectedSellOrder.tradeNumber
+            )
 
-        initialForm = {
-          ...initialForm,
-          symbol: selectedOrder.symbol || '',
-          name: selectedOrder.name || '',
-          quantity: availableQuantity.toString(),
-          buyOrderId: selectedOrder.id,
-          maxQuantity: availableQuantity  // 保存最大可卖出数量用于验证
+            const buyQuantity = sameTradeOrders
+              .filter(o => o.type === 'buy')
+              .reduce((sum, o) => sum + (o.quantity || 0), 0)
+
+            // 卖出数量：只统计关联到未删除买入订单的卖出订单
+            const activeBuyOrderIds = new Set(
+              sameTradeOrders
+                .filter(o => o.type === 'buy')
+                .map(o => o.id)
+            )
+
+            const soldQuantity = sameTradeOrders
+              .filter(o =>
+                o.type === 'sell' &&
+                (o.buyOrderId === null || activeBuyOrderIds.has(o.buyOrderId))
+              )
+              .reduce((sum, o) => sum + (o.quantity || 0), 0)
+
+            const availableQuantity = Math.max(0, buyQuantity - soldQuantity)
+
+            initialForm = {
+              ...initialForm,
+              symbol: selectedSellOrder.symbol || '',
+              name: selectedSellOrder.name || '',
+              quantity: availableQuantity.toString(),
+              tradeNumber: selectedSellOrder.tradeNumber || ''
+            }
+          }
+        }
+      } else if (selectedIds.length > 1) {
+        // 如果选中了多个订单，且它们都有相同的交易编号，使用该编号
+        const selectedOrders = orders.filter(order =>
+          selectedIds.includes(order.id) && !order.deleted
+        )
+
+        if (selectedOrders.length > 0) {
+          const tradeNumbers = [...new Set(selectedOrders.map(o => o.tradeNumber))]
+          if (tradeNumbers.length === 1) {
+            // 所有选中的订单都有相同的交易编号
+            const tradeNumber = tradeNumbers[0]
+            const sameTradeOrders = orders.filter(o =>
+              !o.deleted &&
+              o.tradeNumber === tradeNumber
+            )
+
+            const buyQuantity = sameTradeOrders
+              .filter(o => o.type === 'buy')
+              .reduce((sum, o) => sum + (o.quantity || 0), 0)
+
+            // 卖出数量：只统计关联到未删除买入订单的卖出订单
+            const activeBuyOrderIds = new Set(
+              sameTradeOrders
+                .filter(o => o.type === 'buy')
+                .map(o => o.id)
+            )
+
+            const soldQuantity = sameTradeOrders
+              .filter(o =>
+                o.type === 'sell' &&
+                (o.buyOrderId === null || activeBuyOrderIds.has(o.buyOrderId))
+              )
+              .reduce((sum, o) => sum + (o.quantity || 0), 0)
+
+            const availableQuantity = Math.max(0, buyQuantity - soldQuantity)
+
+            initialForm = {
+              ...initialForm,
+              symbol: selectedOrders[0].symbol || '',
+              name: selectedOrders[0].name || '',
+              quantity: availableQuantity.toString(),
+              tradeNumber
+            }
+          }
         }
       }
     }
@@ -157,22 +220,83 @@ const OrderManagement = () => {
     deleteMultipleOrders(selectedIds)
     setSelectedIds([])
     setShowDeleteModal(false)
-    setToastType('success')
-    setToastMessage('删除成功')
-    setShowToast(true)
+    showToast('删除成功')
   }
 
   const handleExport = () => {
     setShowExportModal(true)
   }
 
-  const confirmExport = () => {
-    // 这里可以添加实际的导出逻辑
-    console.log('导出格式:', exportFormat, '导出数据:', filteredOrders)
+  const confirmExport = async () => {
+    const headers = [
+      '交易编号',
+      '交易类型',
+      '股票代码',
+      '股票名称',
+      '交易价格',
+      '交易数量',
+      '止损价',
+      '止盈价',
+      '心理测试',
+      '策略评估',
+      '交易时间'
+    ]
+
+    const rows = filteredOrders.map(order => {
+      const date = order.createdAt ? new Date(order.createdAt) : null
+      const dateStr = date && !isNaN(date.getTime()) ? format(date, 'yyyy-MM-dd HH:mm:ss') : '-'
+
+      return [
+        order.tradeNumber || order.id?.toString() || '-',
+        order.type === 'buy' ? '买入' : '卖出',
+        order.symbol || '-',
+        order.name || '-',
+        order.price || '-',
+        order.quantity || '-',
+        order.type === 'buy' ? (order.stopLossPrice || '-') : '-',
+        order.type === 'buy' ? (order.takeProfitPrice || '-') : '-',
+        order.psychologicalScore !== undefined && order.psychologicalScore !== null ? order.psychologicalScore : '-',
+        order.strategyScore !== undefined && order.strategyScore !== null ? order.strategyScore : '-',
+        dateStr
+      ]
+    })
+
+    if (exportFormat === 'xlsx') {
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet('股票交易记录')
+
+      worksheet.columns = headers.map(header => ({
+        header: header,
+        key: header,
+        width: 18
+      }))
+
+      rows.forEach(row => {
+        worksheet.addRow(row)
+      })
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      })
+
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `股票交易记录_${format(new Date(), 'yyyyMMdd')}.xlsx`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } else {
+      const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n')
+      const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `股票交易记录_${format(new Date(), 'yyyyMMdd')}.csv`
+      link.click()
+    }
+
+    showToast('导出成功')
     setShowExportModal(false)
-    setToastType('success')
-    setToastMessage('导出成功')
-    setShowToast(true)
   }
 
   // 判断风险控制状态
@@ -283,9 +407,7 @@ const OrderManagement = () => {
     )
 
     if (!allRated) {
-      setToastType('error')
-      setToastMessage('请完成所有评估标准')
-      setShowToast(true)
+      showToast('请完成所有评估标准', 'error')
       return false
     }
 
@@ -310,6 +432,60 @@ const OrderManagement = () => {
 
     setEvaluationStep(3)
     return true
+  }
+
+  // 计算可卖出数量（实时计算：同编号的买入交易数量-同编号卖出数量）
+  const calculateAvailableQuantity = () => {
+    // 优先使用 buyOrderId 关联，如果没有则使用 tradeNumber
+    let buyQuantity = 0
+    let soldQuantity = 0
+
+    console.log('[calculateAvailableQuantity] orderForm:', { buyOrderId: orderForm.buyOrderId, tradeNumber: orderForm.tradeNumber })
+
+    if (orderForm.buyOrderId) {
+      // 方式1：通过 buyOrderId 关联（精确匹配某个买入订单）
+      const buyOrder = orders.find(order => order.id === orderForm.buyOrderId && !order.deleted && order.type === 'buy')
+      console.log('[calculateAvailableQuantity] 找到买入订单:', buyOrder)
+      if (buyOrder) {
+        buyQuantity = buyOrder.quantity || 0
+        const sellOrders = orders.filter(o =>
+          !o.deleted &&
+          o.type === 'sell' &&
+          o.buyOrderId === orderForm.buyOrderId
+        )
+        console.log('[calculateAvailableQuantity] 关联的卖出订单:', sellOrders)
+        soldQuantity = sellOrders.reduce((sum, o) => sum + (o.quantity || 0), 0)
+      }
+    } else if (orderForm.tradeNumber) {
+      // 方式2：通过 tradeNumber 关联（同一交易编号的所有订单）
+      // 关键修复：只统计未删除的订单
+      const sameTradeOrders = orders.filter(o =>
+        !o.deleted &&
+        o.tradeNumber === orderForm.tradeNumber
+      )
+
+      // 买入数量：只统计未删除的买入订单
+      buyQuantity = sameTradeOrders
+        .filter(o => o.type === 'buy')
+        .reduce((sum, o) => sum + (o.quantity || 0), 0)
+
+      // 卖出数量：只统计关联到未删除买入订单的卖出订单
+      // 修复：如果卖出订单关联的买入订单已被删除,则不计入
+      const activeBuyOrderIds = new Set(
+        sameTradeOrders
+          .filter(o => o.type === 'buy')
+          .map(o => o.id)
+      )
+
+      soldQuantity = sameTradeOrders
+        .filter(o =>
+          o.type === 'sell' &&
+          (o.buyOrderId === null || activeBuyOrderIds.has(o.buyOrderId))
+        )
+        .reduce((sum, o) => sum + (o.quantity || 0), 0)
+    }
+
+    return Math.max(0, buyQuantity - soldQuantity)
   }
 
   const handleSubmitOrder = (e) => {
@@ -370,10 +546,14 @@ const OrderManagement = () => {
       riskScore10 * 0.3
     ).toFixed(2)
 
-    // 计算数量（买入自动计算，卖出手动输入）
+    // 计算数量（买入自动计算，卖出手动输入并验证）
     const calculatedQuantity = orderType === 'buy'
       ? (orderForm.price ? Math.floor((accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100)) / parseFloat(orderForm.price) / 100) * 100 : 0)
-      : (orderForm.quantity ? parseInt(orderForm.quantity) : 0)
+      : (() => {
+          const inputQuantity = parseInt(orderForm.quantity) || 0
+          const maxQuantity = calculateAvailableQuantity()
+          return Math.min(inputQuantity, maxQuantity)
+        })()
 
     // 卖出订单需要关联买入订单
     let buyOrderId = null
@@ -392,16 +572,14 @@ const OrderManagement = () => {
       psychologicalScore: parseFloat(psychologicalScore10),
       strategyScore: parseFloat(strategyScore10),
       riskScore: riskScore10,
-    overallScore: parseFloat(overallScore),
-    buyOrderId,  // 卖出订单关联的买入订单ID
+      overallScore: parseFloat(overallScore),
+      buyOrderId,  // 卖出订单关联的买入订单ID
       evaluationResults,
       isVirtual: orderForm.isVirtual || false  // 虚拟盘标记
     })
 
     setShowModal(false)
-    setToastType('success')
-    setToastMessage(orderType === 'sell' ? '卖出成功' : '买入成功')
-    setShowToast(true)
+    showToast(orderType === 'sell' ? '卖出成功' : '买入成功')
   }
 
   // 持仓中：买入订单
@@ -464,9 +642,28 @@ const OrderManagement = () => {
     setSelectedIds([])
   }, [selectedFilter])
 
+  // 当卖出交易的交易编号或选中订单变化时,重新计算可卖出数量并填充（仅初始化时）
+  useEffect(() => {
+    console.log('[useEffect] 触发计算可卖出数量:', { orderType, tradeNumber: orderForm.tradeNumber, buyOrderId: orderForm.buyOrderId, selectedIds })
+    if (orderType === 'sell' && (orderForm.tradeNumber || selectedIds.length > 0)) {
+      // 只有当quantity为空或刚打开弹窗时才自动填充，避免覆盖用户输入
+      if (orderForm.quantity === '' || orderForm.quantity === undefined || orderForm.quantity === null) {
+        const availableQuantity = calculateAvailableQuantity()
+        console.log('[useEffect] 初始化可卖出数量:', availableQuantity)
+
+        // 计算出的可卖出数量默认填入卖出数量字段
+        // 为0时显示0
+        setOrderForm(prev => ({
+          ...prev,
+          quantity: availableQuantity.toString()
+        }))
+      }
+    }
+  }, [orderForm.tradeNumber, orderForm.buyOrderId, orderType])
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative', paddingBottom: '10px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '0px', paddingRight: '10px', position: 'relative', paddingBottom: '10px' }}>
       {/* 内容区域 */}
       <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {/* 筛选卡片 */}
@@ -619,7 +816,7 @@ const OrderManagement = () => {
               }
               if (field.key === 'createdAt') {
                 const date = item.createdAt ? new Date(item.createdAt) : null
-                return date && !isNaN(date.getTime()) ? format(date, 'yyyy-MM-dd HH:mm') : '-'
+                return date && !isNaN(date.getTime()) ? format(date, 'yyyy-MM-dd HH:mm:ss') : '-'
               }
               if (field.key === 'stopLossPrice' || field.key === 'takeProfitPrice') {
                 // 只有买入订单显示止损止盈
@@ -756,10 +953,10 @@ const OrderManagement = () => {
                           <div
                             key={record.id}
                             onClick={() => setOrderForm({ ...orderForm, strategyId: record.id, strategyScores: {} })}
-                            className={`p-4 rounded-lg cursor-pointer transition-all ${
+                            className={`p-4 rounded-lg cursor-pointer border ${
                               orderForm.strategyId === record.id
-                                ? 'bg-[#0F1419]'
-                                : 'border border-gray-200 hover:border-gray-900 bg-white'
+                                ? 'bg-[#0F1419] border-[#0F1419]'
+                                : 'border-gray-200 hover:border-gray-900 bg-white'
                             }`}
                           >
                             <div className="flex justify-between items-start">
@@ -767,7 +964,7 @@ const OrderManagement = () => {
                                 <h4 className={`font-bold mb-1 ${orderForm.strategyId === record.id ? 'text-white' : 'text-gray-900'}`}>{record.name}</h4>
                                 <p className={`text-xs ${orderForm.strategyId === record.id ? 'text-gray-300' : 'text-gray-500'}`}>{record.revisionVersion || '-'}</p>
                               </div>
-                              <span className={`px-2 py-1 text-xs rounded ${orderForm.strategyId === record.id ? 'bg-white text-gray-900' : 'bg-gray-100 text-gray-600'}`}>
+                              <span className={`px-2 py-1 text-xs rounded ${orderForm.strategyId === record.id ? 'bg-gray-200 text-gray-700' : 'bg-gray-100 text-gray-600'}`}>
                                 {record.strategyType}
                               </span>
                             </div>
@@ -877,32 +1074,38 @@ const OrderManagement = () => {
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' || orderType === 'sell') && <span className="text-red-500">*</span>} 股票代码
                       </label>
-                      <CustomInput
-                        type="text"
-                        value={orderForm.symbol || ''}
-                        onChange={(value) => {
-                          setOrderForm({ ...orderForm, symbol: value })
-                          setSymbolError(false)
-                          // TODO: 根据股票代码查询股票名称
-                        }}
-                        placeholder={orderType === 'sell' ? '' : (getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入')}
-                        error={symbolError && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' || orderType === 'sell')}
-                        disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' || orderType === 'sell'}
-                      />
-                      {symbolError && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' || orderType === 'sell') && (
-                        <ErrorMessage message="不能为空" showIcon={true} />
+                      {orderType === 'sell' ? (
+                        <ReadOnlyInput
+                          value={orderForm.symbol || ''}
+                          placeholder=""
+                        />
+                      ) : (
+                        <>
+                          <CustomInput
+                            type="text"
+                            value={orderForm.symbol || ''}
+                            onChange={(value) => {
+                              setOrderForm({ ...orderForm, symbol: value })
+                              setSymbolError(false)
+                              // TODO: 根据股票代码查询股票名称
+                            }}
+                            placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入'}
+                            error={symbolError && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail')}
+                            disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
+                          />
+                          {symbolError && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && (
+                            <ErrorMessage message="不能为空" showIcon={true} />
+                          )}
+                        </>
                       )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         股票名称
                       </label>
-                      <CustomInput
-                        type="text"
+                      <ReadOnlyInput
                         value={orderForm.name || ''}
-                        onChange={(value) => setOrderForm({ ...orderForm, name: value })}
                         placeholder={orderType === 'sell' ? '' : (getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动获取')}
-                        disabled
                       />
                     </div>
 
@@ -932,10 +1135,8 @@ const OrderManagement = () => {
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           可用额度
                         </label>
-                        <CustomInput
-                          type="text"  // 改为text类型以显示千位分隔符
+                        <ReadOnlyInput
                           value={formatAmount(accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100))}
-                          disabled
                           placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动计算'}
                         />
                       </div>
@@ -963,11 +1164,8 @@ const OrderManagement = () => {
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           买入数量
                         </label>
-                        <CustomInput
-                          type="number"
-                          step="1"
+                        <ReadOnlyInput
                           value={orderForm.price ? Math.floor((accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100)) / parseFloat(orderForm.price) / 100) * 100 : ''}
-                          disabled
                           placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动计算'}
                         />
                       </div>
@@ -1042,19 +1240,39 @@ const OrderManagement = () => {
                         <CustomInput
                           type="number"
                           step="1"
-                          value={orderForm.quantity || ''}
+                          value={orderForm.quantity ?? ''}
                           onChange={(value) => {
                             // 验证并限制数量不超过最大可卖出数量
-                            const newQuantity = parseInt(value) || 0
-                            const maxQuantity = orderForm.maxQuantity || 0
-                            const clampedQuantity = Math.min(Math.max(0, newQuantity), maxQuantity)
+                            const maxQuantity = calculateAvailableQuantity()
+                            const inputQuantity = parseInt(value) || 0
 
-                            setOrderForm({ ...orderForm, quantity: clampedQuantity.toString() })
+                            // 如果输入的数量超过最大值,自动设为最大值
+                            // 如果为0,显示0
+                            let clampedQuantity = inputQuantity
+                            if (inputQuantity > maxQuantity) {
+                              clampedQuantity = maxQuantity
+                            }
+                            if (inputQuantity < 0) {
+                              clampedQuantity = 0
+                            }
+
+                            setOrderForm(prev => ({
+                              ...prev,
+                              quantity: clampedQuantity.toString()
+                            }))
                             if (riskErrors.quantity) {
                               setRiskErrors({ ...riskErrors, quantity: false })
                             }
                           }}
-                          placeholder="请输入"
+                          onBlur={() => {
+                            // 失去焦点时,如果为空或0,保持为0显示
+                            const currentQuantity = parseInt(orderForm.quantity) || 0
+                            setOrderForm(prev => ({
+                              ...prev,
+                              quantity: currentQuantity.toString()
+                            }))
+                          }}
+                          placeholder={`可卖出: ${calculateAvailableQuantity()}`}
                           error={riskErrors.quantity}
                         />
                         {riskErrors.quantity && <ErrorMessage message="不能为空" />}
@@ -1145,7 +1363,6 @@ const OrderManagement = () => {
               </div>
             )}
       </OrderModal>
-      {showToast && <Toast type={toastType} message={toastMessage} onClose={() => setShowToast(false)} />}
       <ConfirmModal
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}

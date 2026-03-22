@@ -184,16 +184,16 @@ const Home = () => {
             <div style={{ padding: '0', margin: '0', marginLeft: '100px', marginTop: '-60px' }}>
               <h1
                 className="text-5xl md:text-6xl font-bold mb-2 leading-tight"
-                style={{ fontSize: '64px', lineHeight: '78px', letterSpacing: 'normal', color: '#111827', marginTop: '50px', fontWeight: '800' }}
+                style={{ fontSize: '64px', lineHeight: '78px', letterSpacing: 'normal', color: '#111827', marginTop: '50px', fontWeight: '1000' }}
               >
-                建立自己交易系统
+                构建专属交易系统
               </h1>
               <p
                 className="text-5xl md:text-6xl font-bold leading-tight"
-                style={{ fontSize: '64px', lineHeight: '78px', letterSpacing: 'normal', color: '#111827', fontWeight: '800' }}
+                style={{ fontSize: '64px', lineHeight: '78px', letterSpacing: 'normal', color: '#111827', fontWeight: '1000' }}
               >
                 学习 <span style={{
-                  fontWeight: '700',
+                  fontWeight: '1000',
                   background: 'linear-gradient(90deg, #06b6d4 0%, #3B82F6 100%)',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
@@ -206,7 +206,7 @@ const Home = () => {
                 className="text-gray-600 mb-8 leading-relaxed"
                 style={{ width: '80%', marginTop: '30px', fontSize: '18px' }}
               >
-                告别非理性交易，将交易变成可重复的成功
+                远离非理性交易，让成功的交易再次重现
               </p>
 
               <div className="flex flex-wrap gap-4">

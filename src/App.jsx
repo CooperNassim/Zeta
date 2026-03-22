@@ -134,6 +134,9 @@ function DataSync() {
           if (trading_strategies !== undefined) store.importTradingStrategies(trading_strategies)
           if (risk_config !== undefined) store.importRiskConfig(risk_config)
 
+          // 初始化交易编号计数器
+          await store.initializeTradeNumberCounter()
+
           // 更新上次同步时间
           lastSyncTimeRef.current = Date.now()
           console.log('[DataSync] 同步完成')
@@ -211,11 +214,15 @@ function Navigation() {
     { id: 'order', icon: Clock, label: '股票交易', path: '/order-management', customIcon: 'order' },
     { id: 'record', icon: Activity, label: '交易记录', path: '/trade-records', customIcon: 'record' },
     { id: 'transaction', icon: Receipt, label: '账单明细', path: '/transaction-history', customIcon: 'transaction' },
+  ]
+
+  const researchMenuItems = [
     { id: 'stockpool', icon: Database, label: '股票行情', path: '/stock-pool', customIcon: 'stockpool' },
     { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
   ]
 
   const isTradingPage = tradingMenuItems.some(item => item.path === location.pathname)
+  const isResearchPage = researchMenuItems.some(item => item.path === location.pathname)
 
   return (
     <>
@@ -266,14 +273,42 @@ function Navigation() {
                 <NavLink
                   to="/daily-work"
                   className={({ isActive }) =>
-                    `flex items-center py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900 relative ${isActive ? 'text-gray-900' : ''}`
+                    `flex items-center py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900 relative ${isActive || isTradingPage ? 'text-gray-900' : ''}`
                   }
                   style={{ fontSize: '16px', paddingLeft: '12px', paddingRight: '12px' }}
                 >
                   {({ isActive }) => (
                     <>
                       交易
-                      {isActive && (
+                      {(isActive || isTradingPage) && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: '-4px',
+                            left: '12px',
+                            right: '12px',
+                            height: '2px',
+                            backgroundColor: '#0F1419',
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                </NavLink>
+              </div>
+
+              <div>
+                <NavLink
+                  to="/stock-pool"
+                  className={({ isActive }) =>
+                    `flex items-center py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900 relative ${isActive || isResearchPage ? 'text-gray-900' : ''}`
+                  }
+                  style={{ fontSize: '16px', paddingLeft: '12px', paddingRight: '12px' }}
+                >
+                  {({ isActive }) => (
+                    <>
+                      研究院
+                      {(isActive || isResearchPage) && (
                         <div
                           style={{
                             position: 'absolute',
@@ -346,17 +381,6 @@ function Navigation() {
                         fill={isActive ? '#ffffff' : '#0F1419'}
                       />
                     </svg>
-                  ) : item.customIcon === 'technical' ? (
-                    <svg
-                      viewBox="0 0 1024 1024"
-                      xmlns="http://www.w3.org/2000/svg"
-                      className={`w-5 h-5 mr-3 ${isActive ? 'text-white' : 'text-[#0F1419]'}`}
-                    >
-                      <path
-                        d="M826.4704 79.36c21.4016 18.7392 38.4512 34.4576 51.1488 47.3088 12.6464 12.8512 22.3744 23.7568 29.1328 32.7168 6.7072 8.96 10.9056 16.5376 12.4928 22.784 1.536 6.1952 2.3552 11.6736 2.3552 16.3328v18.688h-174.7968a30.208 30.208 0 0 1-22.016-8.7552 77.9776 77.9776 0 0 1-14.848-20.48 109.5168 109.5168 0 0 1-11.8784-44.3392V0h2.4064c7.1168 0 13.824 0.768 20.1728 2.3552 6.3488 1.536 14.08 5.2224 23.1936 11.0592s20.224 14.0288 33.28 24.576c13.1072 10.4448 29.5424 24.2688 49.3568 41.4208z m-203.264 66.56c0 14.848 2.3552 30.7712 7.1168 47.9232 4.7104 17.1008 12.288 32.8704 22.528 47.2576 10.3424 14.3872 23.4496 26.4704 39.2704 36.1984 15.872 9.728 34.5088 14.592 55.9104 14.592H921.6v585.0112c0 22.528-4.5568 42.8032-13.6704 60.672-9.1136 17.92-21.1968 33.28-36.2496 46.1312a171.008 171.008 0 0 1-49.9712 29.7984 148.5824 148.5824 0 0 1-53.504 10.496H255.7952c-15.104 0-31.5392-4.3008-49.3568-12.8a208.6912 208.6912 0 0 1-49.92-33.8944 192.4096 192.4096 0 0 1-38.656-48.4864A113.9712 113.9712 0 0 1 102.4 872.192V150.6304c0-16.384 3.9424-33.4848 11.8784-51.4048 7.936-17.92 18.432-34.048 31.5392-48.4352 13.056-14.3872 27.904-26.4704 44.544-36.1984C207.0528 4.864 224.4608 0 242.688 0h380.4672v145.92z m-95.1808 526.6432c9.5232-9.3696 14.6944-21.8112 15.4624-37.376 0.8192-15.5648-3.584-27.648-13.056-36.1984L335.4624 406.3232a48.128 48.128 0 0 0-35.1232-14.0288 48.128 48.128 0 0 0-35.072 14.0288 50.3296 50.3296 0 0 0-14.2336 35.6352c0 13.6192 4.7616 25.088 14.2336 34.4064l159.3344 158.8224-159.3344 157.6448a46.3872 46.3872 0 0 0-14.2336 34.4064c0 13.6192 4.7616 25.4976 14.2336 35.6352a48.128 48.128 0 0 0 35.072 14.0288c13.8752 0 25.6-4.7104 35.1232-14.0288l192.5632-190.3104z m243.7632 129.5872h-223.5392v73.5744h223.5392v-73.5744z"
-                        fill={isActive ? '#ffffff' : '#0F1419'}
-                      />
-                    </svg>
                   ) : item.customIcon === 'risk' ? (
                     <svg
                       viewBox="0 0 1024 1024"
@@ -364,18 +388,7 @@ function Navigation() {
                       className={`w-5 h-5 mr-3 ${isActive ? 'text-white' : 'text-[#0F1419]'}`}
                     >
                       <path
-                        d="M510.656012 0.00896c6.143946 0 12.351892 0.767993 16.895852 2.30398l380.796668 128.638874a26.23977 26.23977 0 0 1 16.767853 23.615794v535.99531c0 9.855914-6.399944 22.783801-14.143876 28.799748l-386.30062 298.429388a23.039798 23.039798 0 0 1-14.079877 4.543961 23.295796 23.295796 0 0 1-14.143876-4.543961L110.083517 719.362666a41.599636 41.599636 0 0 1-14.143876-28.799748V154.567608c0-9.791914 7.679933-20.479821 16.895852-23.551794l380.796668-128.638875A55.551514 55.551514 0 0 1 510.720011 0.00896z m115.774987 319.9972H483.520249c-1.023991 0-2.047982 0.639994-2.559977 1.855984l-96.575155 206.718191c-1.15199 2.495978 0.255998 5.567951 2.559977 5.567951h65.023431l-33.279709 165.246554c-0.767993 3.583969 2.751976 6.143946 4.927957 3.519969L639.102888 448.00504c1.919983-2.30398 0.639994-6.399944-2.047982-6.399944H554.879625l73.791354-115.582989C630.270965 323.590129 628.926977 320.00616 626.430999 320.00616z"
-                        fill={isActive ? '#ffffff' : '#0F1419'}
-                      />
-                    </svg>
-                  ) : item.customIcon === 'stockpool' ? (
-                    <svg
-                      viewBox="0 0 1024 1024"
-                      xmlns="http://www.w3.org/2000/svg"
-                      className={`w-5 h-5 mr-3 ${isActive ? 'text-white' : 'text-[#0F1419]'}`}
-                    >
-                      <path
-                        d="M891.014 919.275l-751.154 0.017c-17.975-0.017-34.445-16.537-34.486-34.487l0-212.937c0-34.589 17.37-52.689 35.606-35.348l101.585 79.955c13.648 11.687 34.159 27.584 45.575 13.724l116.429-141.367c11.418-13.859 32.013-33.427 45.77-21.858l100.187 87.228c13.751 11.553 42.225 31.726 53.415 17.666l249.285-300.427c33.671-38.437 71.223-29.419 71.223 17.673 0 35.093 0 495.69 0 495.69-0.001 17.95-15.469 34.487-33.436 34.47zM598.671 550.304c-9.228 11.821-22.852 19.364-37.754 20.931-14.929 1.769-29.807-3.013-41.266-12.646l-113.01-95.177-113.506 149.821c-9.069 11.939-22.574 19.718-37.46 21.489-2.163 0.251-4.337 0.386-6.509 0.386-12.654 0-25.015-4.38-34.917-12.496l-99.058-81.049c-23.584-19.282-27.061-54.054-7.772-77.639 19.274-23.617 54.038-27.069 77.614-7.772l54.761 44.794 113.987-150.478c9.142-12.075 22.817-19.838 37.839-21.521 15.13-1.65 30.093 2.913 41.662 12.612l113.625 95.709 146.807-184.141-40.912-33.983c-29.03-24.106-22.582-50.224 14.331-58.028l212.767-45.004c36.906-7.805 48.322 10.305 25.37 40.263l-306.597 393.925z"
+                        d="M511.99984 500.479844a63.23198 63.23198 0 0 1-26.751992-7.039998l-337.599894-161.27995a57.151982 57.151982 0 0 1-33.34399-52.095984c0-22.591993 13.055996-43.007987 33.27999-52.159983L468.479854 73.791977a100.607969 100.607969 0 0 1 86.655973 0l320.959899 154.111952a57.151982 57.151982 0 0 1 33.34399 52.159983 57.151982 57.151982 0 0 1-33.27999 52.159984l-337.791894 161.08795a61.183981 61.183981 0 0 1-26.367992 7.231998v-0.064zM424.703867 1023.99968c-8.671997 0-17.215995-2.239999-24.831992-6.399998L95.03997 872.447727A58.783982 58.783982 0 0 1 63.99998 819.711744V449.53586a59.519981 59.519981 0 0 1 28.607991-50.559985 52.639984 52.639984 0 0 1 52.479984 0l304.511905 145.087955a60.159981 60.159981 0 0 1 30.91199 50.559984v370.559884a60.127981 60.127981 0 0 1-28.415991 50.559985 56.383982 56.383982 0 0 1-27.391992 8.255997z m174.271946 0a54.815983 54.815983 0 0 1-27.135992-7.295998 60.095981 60.095981 0 0 1-28.351991-50.559984V594.431814a59.615981 59.615981 0 0 1 29.823991-50.559984l306.559904-145.919954a51.839984 51.839984 0 0 1 51.455984 1.279999 58.879982 58.879982 0 0 1 28.607991 50.559984v369.919885a58.879982 58.879982 0 0 1-29.887991 52.735983l-306.175904 145.279955c-7.615998 4.159999-16.159995 6.303998-24.831992 6.271998h-0.064z"
                         fill={isActive ? '#ffffff' : '#0F1419'}
                       />
                     </svg>
@@ -422,6 +435,58 @@ function Navigation() {
           </div>
         </aside>
       )}
+
+      {/* 左侧边栏 - 仅在研究室页面显示 */}
+      {isResearchPage && (
+        <aside
+          className="fixed left-0 top-[52px] bottom-0 w-[166px] bg-white border-r border-gray-200 overflow-y-auto z-40 pt-0"
+        >
+          <div className="px-0 space-y-1">
+            {researchMenuItems.map((item) => {
+              const isActive = location.pathname === item.path
+              return (
+                <Link
+                  key={item.id}
+                  to={item.path}
+                  className={`flex items-center px-0 pl-5 py-[18px] text-sm font-medium transition-all duration-200 ${
+                    isActive
+                      ? 'bg-[#0F1419] text-white'
+                      : 'text-[#0F1419] hover:bg-gray-100'
+                  }`}
+                  style={{ fontSize: '15px' }}
+                >
+                  {item.customIcon === 'stockpool' ? (
+                    <svg
+                      viewBox="0 0 1024 1024"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className={`w-5 h-5 mr-3 ${isActive ? 'text-white' : 'text-[#0F1419]'}`}
+                    >
+                      <path
+                        d="M210.20672 60.23168h599.8848c82.83136 0 149.96992 67.15392 149.96992 149.97504v599.8848c0 82.83136-67.13856 149.96992-149.96992 149.96992H210.20672c-82.82112 0-149.97504-67.13856-149.97504-149.96992V210.20672c0-82.82112 67.15392-149.97504 149.97504-149.97504z m326.64576 386.34496h-50.69312c-21.28896 0-38.528 17.17248-38.528 38.34368v261.46816c0 21.18656 17.24416 38.36928 38.528 38.36928h50.69312c21.28896 0 38.53312-17.18272 38.53312-38.36928V484.9152c0.00512-21.16608-17.24416-38.33856-38.53312-38.33856zM324.81792 322.1248h-50.69824c-21.28384 0-38.528 17.17248-38.528 38.34368v385.90976c0 21.19168 17.24928 38.36928 38.528 38.36928h50.69824c21.28384 0 38.528-17.1776 38.528-38.36928V360.46848c0-21.1712-17.24416-38.34368-38.528-38.34368z m421.36064-86.56896h-47.97952c-21.28896 0-38.54848 17.16736-38.54848 38.3488v472.48384c0 21.18656 17.25952 38.36928 38.54848 38.36928h47.97952c21.28896 0 38.51776-17.18272 38.51776-38.36928V273.90464c0.01536-21.18144-17.2288-38.3488-38.51776-38.3488z"
+                        fill={isActive ? '#ffffff' : '#0F1419'}
+                      />
+                    </svg>
+                  ) : item.customIcon === 'technical' ? (
+                    <svg
+                      viewBox="0 0 1024 1024"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className={`w-5 h-5 mr-3 ${isActive ? 'text-white' : 'text-[#0F1419]'}`}
+                    >
+                      <path
+                        d="M938.88 182.144H518.336a22.272 22.272 0 0 1-15.168-5.952l-111.488-106.24A21.952 21.952 0 0 0 376.448 64H127.616c-16.896 0-33.088 6.208-44.992 17.28A56.96 56.96 0 0 0 64 123.072v713.856c0 15.68 6.656 30.72 18.56 41.792 11.968 11.072 28.16 17.28 45.056 17.28h768.768c16.896 0 33.088-6.208 44.992-17.28a56.96 56.96 0 0 0 18.624-41.792V201.856a18.88 18.88 0 0 0-6.144-13.952 21.952 21.952 0 0 0-14.912-5.76zM530.56 366.72c25.728 0.832 46.144 20.48 46.144 44.352 0 23.936-20.416 43.52-46.144 44.288H238.976a48.704 48.704 0 0 1-42.688-21.76 41.6 41.6 0 0 1 0-45.12 48.704 48.704 0 0 1 42.688-21.76H530.56z m254.464 334.848H238.976a48.704 48.704 0 0 1-42.688-21.76 41.6 41.6 0 0 1 0-45.184 48.704 48.704 0 0 1 42.688-21.76h546.048a48.704 48.704 0 0 1 42.688 21.76 41.6 41.6 0 0 1 0 45.184 48.704 48.704 0 0 1-42.688 21.76z"
+                        fill={isActive ? '#ffffff' : '#0F1419'}
+                      />
+                    </svg>
+                  ) : (
+                    <item.icon className={`w-5 h-5 mr-3 ${isActive ? 'text-white' : 'text-[#0F1419]'}`} />
+                  )}
+                  <span>{item.label}</span>
+                </Link>
+              )
+            })}
+          </div>
+        </aside>
+      )}
     </>
   )
 }
@@ -430,10 +495,45 @@ function App() {
   return (
     <ToastProvider>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <div className="h-screen bg-gray-50 overflow-hidden" style={{ margin: '0', padding: '0' }}>
+        <AppContent />
+      </BrowserRouter>
+    </ToastProvider>
+  )
+}
+
+function AppContent() {
+  const location = useLocation()
+  const tradingMenuItems = [
+    { path: '/daily-work' },
+    { path: '/psychological-test' },
+    { path: '/trading-strategy' },
+    { path: '/risk-model' },
+    { path: '/order-management' },
+    { path: '/trade-records' },
+    { path: '/transaction-history' },
+  ]
+  const researchMenuItems = [
+    { path: '/stock-pool' },
+    { path: '/technical-indicators' },
+  ]
+
+  const isTradingPage = tradingMenuItems.some(item => item.path === location.pathname)
+  const isResearchPage = researchMenuItems.some(item => item.path === location.pathname)
+
+  return (
+    <div className="h-screen bg-gray-50 overflow-hidden" style={{ margin: '0', padding: '0' }}>
           <DataSync />
           <Navigation />
-          <main className="w-full" style={{ padding: '0', margin: '0', height: 'calc(100vh)', position: 'relative' }}>
+          <main
+            className="w-full"
+            style={{
+              padding: '0',
+              margin: '0',
+              height: 'calc(100vh)',
+              position: 'relative',
+              marginLeft: (isTradingPage || isResearchPage) ? '10px' : '0'
+            }}
+          >
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/daily-work" element={<DailyWork />} />
@@ -448,8 +548,6 @@ function App() {
             </Routes>
           </main>
         </div>
-      </BrowserRouter>
-    </ToastProvider>
   )
 }
 

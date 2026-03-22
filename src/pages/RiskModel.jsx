@@ -649,7 +649,7 @@ const RiskModel = () => {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '0px', paddingRight: '10px', position: 'relative' }}>
         {/* 主内容区域 */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.7fr 1.2fr', gridTemplateRows: '6fr 4fr', gap: '10px', marginTop: '10px', flex: 1, minHeight: 0, paddingBottom: '10px' }}>
           {/* 左上角：账户风险 */}

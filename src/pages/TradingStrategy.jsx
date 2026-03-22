@@ -597,7 +597,7 @@ const TradingStrategy = () => {
         }
       `}</style>
       <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '10px', paddingRight: '10px', position: 'relative' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '0px', paddingRight: '10px', position: 'relative' }}>
         {/* 筛选条件 */}
         <div style={{ flexShrink: 0, marginTop: '10px' }}>
           <div className="flex gap-2 items-center" style={{ gap: '10px' }}>

@@ -34,6 +34,15 @@ const OrderManagement = () => {
   const [selectedIds, setSelectedIds] = useState([])
 
   // 格式化数字：整数取整，有小数点保留2位，四舍五入，千位分隔符
+  const formatAmount = (amount) => {
+    if (!amount || amount === null || amount === undefined) return '-'
+    const num = parseFloat(amount)
+    if (isNaN(num)) return '-'
+    const rounded = Math.round(num * 100) / 100
+    const isInteger = Number.isInteger(rounded)
+    const formatted = isInteger ? rounded.toLocaleString('en-US') : rounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    return formatted
+  }
 
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
@@ -642,10 +651,10 @@ const OrderManagement = () => {
     setSelectedIds([])
   }, [selectedFilter])
 
-  // 当卖出交易的交易编号或选中订单变化时,重新计算可卖出数量并填充（仅初始化时）
+  // 当卖出交易的选择变化时,重新计算可卖出数量并填充（仅初始化或刚打开弹窗时）
   useEffect(() => {
     console.log('[useEffect] 触发计算可卖出数量:', { orderType, tradeNumber: orderForm.tradeNumber, buyOrderId: orderForm.buyOrderId, selectedIds })
-    if (orderType === 'sell' && (orderForm.tradeNumber || selectedIds.length > 0)) {
+    if (orderType === 'sell' && (orderForm.tradeNumber || orderForm.buyOrderId)) {
       // 只有当quantity为空或刚打开弹窗时才自动填充，避免覆盖用户输入
       if (orderForm.quantity === '' || orderForm.quantity === undefined || orderForm.quantity === null) {
         const availableQuantity = calculateAvailableQuantity()
@@ -659,7 +668,7 @@ const OrderManagement = () => {
         }))
       }
     }
-  }, [orderForm.tradeNumber, orderForm.buyOrderId, orderType])
+  }, [orderForm.tradeNumber, orderForm.buyOrderId, orderType, selectedIds])
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>

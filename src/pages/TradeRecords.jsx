@@ -101,7 +101,7 @@ const TradeRecords = () => {
 
     // 交易编号筛选
     if (filterTradeId) {
-      result = result.filter(r => r.id && r.id.toString().includes(filterTradeId))
+      result = result.filter(r => r.tradeNumber && r.tradeNumber.toString().includes(filterTradeId))
     }
 
     // 卖出评级筛选
@@ -127,28 +127,64 @@ const TradeRecords = () => {
       result = result.filter(r => r.buyGrade === filterBuyGrade)
     }
 
-    // 按交易编号分组，确保相同交易编号的记录相邻显示，买入在前
-    const groupedRecords = []
-    const tradeNumbers = [...new Set(result.map(r => r.tradeNumber))]
+    // 按交易编号合并记录，同一交易编号只显示一条记录
+    const mergedRecordsMap = new Map()
 
-    tradeNumbers.forEach(tradeNumber => {
-      const group = result.filter(r => r.tradeNumber === tradeNumber)
-      const buyRecord = group.find(r => r.tradeType === '买入')
-      const sellRecord = group.find(r => r.tradeType === '卖出')
-
-      if (buyRecord) groupedRecords.push(buyRecord)
-      if (sellRecord) groupedRecords.push(sellRecord)
-    })
-
-    // 按买入记录时间降序排序
-    groupedRecords.sort((a, b) => {
-      if (a.tradeNumber === b.tradeNumber) {
-        return a.tradeType === '买入' ? -1 : 1
+    result.forEach(r => {
+      if (mergedRecordsMap.has(r.tradeNumber)) {
+        // 已存在该交易编号的记录，合并信息
+        const existing = mergedRecordsMap.get(r.tradeNumber)
+        if (r.buyTime && !existing.buyTime) {
+          // 更新买入信息
+          Object.assign(existing, {
+            buyOrderId: r.buyOrderId,
+            buyPrice: r.buyPrice,
+            buyQuantity: r.buyQuantity,
+            buyTime: r.buyTime,
+            buyOrderPrice: r.buyOrderPrice,
+            buyOrderTime: r.buyOrderTime,
+            buyPsychologicalScore: r.buyPsychologicalScore,
+            buyStrategyScore: r.buyStrategyScore,
+            buyStrategyId: r.buyStrategyId,
+            buyGrade: r.buyGrade,
+            buyAmount: r.buyAmount,
+            buyChannel: r.buyChannel
+          })
+        }
+        if (r.sellTime && !existing.sellTime) {
+          // 更新卖出信息
+          Object.assign(existing, {
+            sellOrderId: r.sellOrderId,
+            sellPrice: r.sellPrice,
+            sellQuantity: r.sellQuantity,
+            sellTime: r.sellTime,
+            sellOrderPrice: r.sellOrderPrice,
+            sellOrderTime: r.sellOrderTime,
+            sellPsychologicalScore: r.sellPsychologicalScore,
+            sellStrategyScore: r.sellStrategyScore,
+            sellStrategyId: r.sellStrategyId,
+            sellGrade: r.sellGrade,
+            sellChannel: r.sellChannel,
+            sellAmount: r.sellAmount,
+            profit: r.profit,
+            profitPercent: r.profitPercent,
+            holdDuration: r.holdDuration
+          })
+        }
+        // 更新最新时间和评分
+        if (r.createdAt) existing.createdAt = r.createdAt
+        if (r.overallScore) existing.overallScore = r.overallScore
+      } else {
+        // 新建该交易编号的记录
+        mergedRecordsMap.set(r.tradeNumber, { ...r })
       }
-      return new Date(b.createdAt) - new Date(a.createdAt)
     })
 
-    return groupedRecords
+    // 转换为数组并按时间降序排序
+    const mergedRecords = Array.from(mergedRecordsMap.values())
+    mergedRecords.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+
+    return mergedRecords
   })()
 
   const totalPages = Math.ceil(filteredRecords.length / pageSize)

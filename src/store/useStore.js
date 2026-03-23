@@ -289,180 +289,7 @@ const useStore = create(
       virtualTransactions: [],
 
       // 交易记录
-      tradeRecords: [
-        {
-          id: 'trade_001',
-          tradeNumber: '20240215001',
-          tradeType: '买入',
-          symbol: '600519',
-          name: '贵州茅台',
-          buyOrderId: 'buy_001',
-          sellOrderId: 'sell_001',
-          buyPrice: 1650.00,
-          buyQuantity: 100,
-          buyTime: '2024-02-15T09:30:00.000Z',
-          buyOrderPrice: 1645.00,
-          buyOrderTime: '2024-02-14T15:00:00.000Z',
-          buyPsychologicalScore: 7.5,
-          buyStrategyScore: 85.2,
-          buyStrategyId: 1,
-          sellPrice: null,
-          sellQuantity: null,
-          sellTime: null,
-          sellOrderPrice: null,
-          sellOrderTime: null,
-          sellPsychologicalScore: null,
-          sellStrategyScore: null,
-          sellStrategyId: null,
-          buyAmount: '165000.00',
-          sellAmount: null,
-          profit: null,
-          profitPercent: null,
-          holdDuration: 0,
-          buyGrade: 'A',
-          sellGrade: null,
-          overallScore: 85.5,
-          buyChannel: { high: 1682.50, low: 1617.50, upperBand: 1702.00, lowerBand: 1598.00, type: 'bollinger' },
-          sellChannel: null,
-          tradeSummary: null,
-          tradeCommission: 50.00,
-          otherFees: 10.00,
-          slippage: 500.00,
-          netProfit: null,
-          netProfitPercent: null,
-          slippageNetProfitRatio: null,
-          createdAt: '2024-02-15T09:30:00.000Z'
-        },
-        {
-          id: 'trade_001_sell',
-          tradeNumber: '20240215001',
-          tradeType: '卖出',
-          symbol: '600519',
-          name: '贵州茅台',
-          buyOrderId: 'buy_001',
-          sellOrderId: 'sell_001',
-          buyPrice: 1650.00,
-          buyQuantity: 100,
-          buyTime: '2024-02-15T09:30:00.000Z',
-          buyOrderPrice: 1645.00,
-          buyOrderTime: '2024-02-14T15:00:00.000Z',
-          buyPsychologicalScore: 7.5,
-          buyStrategyScore: 85.2,
-          buyStrategyId: 1,
-          sellPrice: 1725.00,
-          sellQuantity: 100,
-          sellTime: '2024-03-01T10:15:00.000Z',
-          sellOrderPrice: 1720.00,
-          sellOrderTime: '2024-02-28T14:30:00.000Z',
-          sellPsychologicalScore: 8.0,
-          sellStrategyScore: 88.5,
-          sellStrategyId: 1,
-          buyAmount: '165000.00',
-          sellAmount: '172500.00',
-          profit: '7500.00',
-          profitPercent: '4.55',
-          holdDuration: 15,
-          buyGrade: 'A',
-          sellGrade: 'A',
-          overallScore: 85.5,
-          buyChannel: { high: 1682.50, low: 1617.50, upperBand: 1702.00, lowerBand: 1598.00, type: 'bollinger' },
-          sellChannel: { high: 1761.25, low: 1688.75, upperBand: 1783.00, lowerBand: 1667.00, type: 'bollinger' },
-          tradeSummary: null,
-          tradeCommission: 52.50,
-          otherFees: 10.00,
-          slippage: 500.00,
-          netProfit: 7377.50,
-          netProfitPercent: 4.47,
-          slippageNetProfitRatio: 6.78,
-          createdAt: '2024-03-01T10:15:00.000Z'
-        },
-        {
-          id: 'trade_002',
-          tradeNumber: '20240305001',
-          tradeType: '买入',
-          symbol: '000333',
-          name: '美的集团',
-          buyOrderId: 'buy_002',
-          sellOrderId: 'sell_002',
-          buyPrice: 62.50,
-          buyQuantity: 500,
-          buyTime: '2024-03-05T14:30:00.000Z',
-          buyOrderPrice: 62.00,
-          buyOrderTime: '2024-03-04T09:00:00.000Z',
-          buyPsychologicalScore: 8.2,
-          buyStrategyScore: 88.0,
-          buyStrategyId: 2,
-          sellPrice: null,
-          sellQuantity: null,
-          sellTime: null,
-          sellOrderPrice: null,
-          sellOrderTime: null,
-          sellPsychologicalScore: null,
-          sellStrategyScore: null,
-          sellStrategyId: null,
-          buyAmount: '31250.00',
-          sellAmount: null,
-          profit: null,
-          profitPercent: null,
-          holdDuration: 0,
-          buyGrade: 'A',
-          sellGrade: null,
-          overallScore: 88.1,
-          buyChannel: { high: 64.00, low: 61.00, upperBand: 65.00, lowerBand: 60.00, type: 'bollinger' },
-          sellChannel: null,
-          tradeSummary: null,
-          tradeCommission: 15.00,
-          otherFees: 5.00,
-          slippage: 250.00,
-          netProfit: null,
-          netProfitPercent: null,
-          slippageNetProfitRatio: null,
-          createdAt: '2024-03-05T14:30:00.000Z'
-        },
-        {
-          id: 'trade_002_sell',
-          tradeNumber: '20240305001',
-          tradeType: '卖出',
-          symbol: '000333',
-          name: '美的集团',
-          buyOrderId: 'buy_002',
-          sellOrderId: 'sell_002',
-          buyPrice: 62.50,
-          buyQuantity: 500,
-          buyTime: '2024-03-05T14:30:00.000Z',
-          buyOrderPrice: 62.00,
-          buyOrderTime: '2024-03-04T09:00:00.000Z',
-          buyPsychologicalScore: 8.2,
-          buyStrategyScore: 88.0,
-          buyStrategyId: 2,
-          sellPrice: 65.80,
-          sellQuantity: 500,
-          sellTime: '2024-03-20T10:45:00.000Z',
-          sellOrderPrice: 65.50,
-          sellOrderTime: '2024-03-19T15:00:00.000Z',
-          sellPsychologicalScore: 7.8,
-          sellStrategyScore: 86.5,
-          sellStrategyId: 2,
-          buyAmount: '31250.00',
-          sellAmount: '32900.00',
-          profit: '1650.00',
-          profitPercent: '5.28',
-          holdDuration: 15,
-          buyGrade: 'A',
-          sellGrade: 'B',
-          overallScore: 88.1,
-          buyChannel: { high: 64.00, low: 61.00, upperBand: 65.00, lowerBand: 60.00, type: 'bollinger' },
-          sellChannel: { high: 67.00, low: 64.50, upperBand: 68.00, lowerBand: 63.50, type: 'bollinger' },
-          tradeSummary: null,
-          tradeCommission: 16.50,
-          otherFees: 5.00,
-          slippage: 150.00,
-          netProfit: 1613.50,
-          netProfitPercent: 5.16,
-          slippageNetProfitRatio: 9.30,
-          createdAt: '2024-03-20T10:45:00.000Z'
-        }
-      ],
+      tradeRecords: [],
 
       // 股票池数据
       stockPool: [
@@ -1456,8 +1283,199 @@ const useStore = create(
           .then(result => console.log('[Store] 创建订单成功:', result))
           .catch(err => console.error('[Store] 创建订单失败:', err))
 
-        return {
-          orders: [...state.orders, newOrder]
+        // ====== 自动创建/更新交易记录 ======
+        // 查找该交易编号是否已存在交易记录
+        const existingRecord = state.tradeRecords.find(r => r.tradeNumber === tradeNumber)
+
+        if (existingRecord) {
+          // 已有记录，更新买入或卖出信息
+          const updatedRecord = { ...existingRecord }
+
+          if (order.type === 'buy') {
+            // 更新买入信息
+            updatedRecord.symbol = newOrder.symbol
+            updatedRecord.name = newOrder.name
+            updatedRecord.buyOrderId = newOrder.id
+            updatedRecord.buyPrice = parseFloat(newOrder.price)
+            updatedRecord.buyQuantity = parseInt(newOrder.quantity)
+            updatedRecord.buyTime = newOrder.createdAt
+            updatedRecord.buyOrderPrice = parseFloat(newOrder.price)
+            updatedRecord.buyOrderTime = newOrder.createdAt
+            updatedRecord.buyPsychologicalScore = newOrder.psychologicalScore
+            updatedRecord.buyStrategyScore = newOrder.strategyScore
+            updatedRecord.buyStrategyId = newOrder.strategyId
+            updatedRecord.buyGrade = (newOrder.overallScore >= 70 ? 'A' : newOrder.overallScore >= 40 ? 'B' : 'C')
+            updatedRecord.buyAmount = (parseFloat(newOrder.price) * parseInt(newOrder.quantity)).toFixed(2)
+          } else {
+            // 更新卖出信息
+            updatedRecord.sellOrderId = newOrder.id
+            updatedRecord.sellPrice = parseFloat(newOrder.price)
+            updatedRecord.sellQuantity = parseInt(newOrder.quantity)
+            updatedRecord.sellTime = newOrder.createdAt
+            updatedRecord.sellOrderPrice = parseFloat(newOrder.price)
+            updatedRecord.sellOrderTime = newOrder.createdAt
+            updatedRecord.sellPsychologicalScore = newOrder.psychologicalScore
+            updatedRecord.sellStrategyScore = newOrder.strategyScore
+            updatedRecord.sellStrategyId = newOrder.strategyId
+            updatedRecord.sellGrade = (newOrder.overallScore >= 70 ? 'A' : newOrder.overallScore >= 40 ? 'B' : 'C')
+
+            // 计算盈亏
+            const buyAmount = parseFloat(existingRecord.buyAmount) || (existingRecord.buyPrice * existingRecord.buyQuantity)
+            const sellAmount = parseFloat(newOrder.price) * parseInt(newOrder.quantity)
+            const profit = sellAmount - buyAmount
+            const profitPercent = buyAmount > 0 ? ((profit / buyAmount) * 100).toFixed(2) : 0
+
+            // 计算持仓天数
+            const buyTime = new Date(existingRecord.buyTime || existingRecord.createdAt)
+            const sellTime = new Date(newOrder.createdAt)
+            const holdDuration = Math.ceil((sellTime - buyTime) / (1000 * 60 * 60 * 24))
+
+            updatedRecord.sellAmount = sellAmount.toFixed(2)
+            updatedRecord.profit = profit.toFixed(2)
+            updatedRecord.profitPercent = profitPercent
+            updatedRecord.holdDuration = holdDuration
+
+            // 计算整体评分
+            const buyScore = existingRecord.buyGrade === 'A' ? 90 : existingRecord.buyGrade === 'B' ? 70 : 50
+            const sellScore = updatedRecord.sellGrade === 'A' ? 90 : updatedRecord.sellGrade === 'B' ? 70 : 50
+            updatedRecord.overallScore = ((buyScore + sellScore) / 2).toFixed(1)
+          }
+
+          updatedRecord.updatedAt = new Date().toISOString()
+
+          // 同步到数据库
+          apiCall(`/api/trade_records/${existingRecord.id}`, 'PUT', updatedRecord)
+            .then(result => console.log('[Store] 更新交易记录成功:', result))
+            .catch(err => console.error('[Store] 更新交易记录失败:', err))
+
+          return {
+            orders: [...state.orders, newOrder],
+            tradeRecords: state.tradeRecords.map(r =>
+              r.id === existingRecord.id ? updatedRecord : r
+            )
+          }
+        } else {
+          // 没有已有记录，创建新的交易记录（买入时创建初始记录，卖出时也创建）
+          const tradeRecordId = Date.now()
+
+          // 构建交易记录对象（使用数据库下划线字段名）
+          const newTradeRecord = {
+            id: tradeRecordId,
+            trade_number: tradeNumber,
+            symbol: newOrder.symbol,
+            name: newOrder.name || '',
+            is_virtual: newOrder.isVirtual || false,
+            created_at: newOrder.createdAt,
+            deleted: false,
+            deleted_at: null
+          }
+
+          if (order.type === 'buy') {
+            // 买入：创建包含买入信息的记录
+            Object.assign(newTradeRecord, {
+              buy_order_id: newOrder.id,
+              buy_price: parseFloat(newOrder.price),
+              buy_quantity: parseInt(newOrder.quantity),
+              buy_time: newOrder.createdAt,
+              buy_order_price: parseFloat(newOrder.price),
+              buy_order_time: newOrder.createdAt,
+              buy_psychological_score: newOrder.psychologicalScore,
+              buy_strategy_score: newOrder.strategyScore,
+              buy_strategy_id: newOrder.strategyId,
+              buy_grade: (newOrder.overallScore >= 70 ? 'A' : newOrder.overallScore >= 40 ? 'B' : 'C'),
+              buy_amount: (parseFloat(newOrder.price) * parseInt(newOrder.quantity)).toFixed(2),
+              buy_channel: null,
+              // 卖出字段初始化
+              sell_order_id: null,
+              sell_price: null,
+              sell_quantity: null,
+              sell_time: null,
+              sell_order_price: null,
+              sell_order_time: null,
+              sell_psychological_score: null,
+              sell_strategy_score: null,
+              sell_strategy_id: null,
+              sell_grade: null,
+              sell_channel: null,
+              sell_amount: null,
+              // 交易结果初始化
+              profit: null,
+              profit_percent: null,
+              hold_duration: 0,
+              overall_score: parseFloat(newOrder.overallScore),
+              // 费用相关
+              trade_commission: null,
+              other_fees: null,
+              slippage: null,
+              net_profit: null,
+              net_profit_percent: null,
+              slippage_net_profit_ratio: null,
+              trade_summary: null
+            })
+          } else {
+            // 卖出：创建包含卖出信息的记录（关联到买入）
+            // 查找关联的买入订单以获取更多信息
+            const buyOrder = order.buyOrderId ? state.orders.find(o => o.id === order.buyOrderId) : null
+
+            Object.assign(newTradeRecord, {
+              buy_order_id: order.buyOrderId || null,
+              buy_price: buyOrder ? parseFloat(buyOrder.price) : null,
+              buy_quantity: buyOrder ? parseInt(buyOrder.quantity) : null,
+              buy_time: buyOrder ? buyOrder.createdAt : null,
+              buy_order_price: buyOrder ? parseFloat(buyOrder.price) : null,
+              buy_order_time: buyOrder ? buyOrder.createdAt : null,
+              buy_psychological_score: buyOrder ? buyOrder.psychologicalScore : null,
+              buy_strategy_score: buyOrder ? buyOrder.strategyScore : null,
+              buy_strategy_id: buyOrder ? buyOrder.strategyId : null,
+              buy_grade: buyOrder ? (buyOrder.overallScore >= 70 ? 'A' : buyOrder.overallScore >= 40 ? 'B' : 'C') : null,
+              buy_amount: buyOrder ? (parseFloat(buyOrder.price) * parseInt(buyOrder.quantity)).toFixed(2) : null,
+              buy_channel: null,
+              // 卖出信息
+              sell_order_id: newOrder.id,
+              sell_price: parseFloat(newOrder.price),
+              sell_quantity: parseInt(newOrder.quantity),
+              sell_time: newOrder.createdAt,
+              sell_order_price: parseFloat(newOrder.price),
+              sell_order_time: newOrder.createdAt,
+              sell_psychological_score: newOrder.psychologicalScore,
+              sell_strategy_score: newOrder.strategyScore,
+              sell_strategy_id: newOrder.strategyId,
+              sell_grade: (newOrder.overallScore >= 70 ? 'A' : newOrder.overallScore >= 40 ? 'B' : 'C'),
+              sell_channel: null,
+              // 计算盈亏
+              buy_amount: buyOrder ? (parseFloat(buyOrder.price) * parseInt(buyOrder.quantity)).toFixed(2) : null,
+              sell_amount: (parseFloat(newOrder.price) * parseInt(newOrder.quantity)).toFixed(2),
+              profit: buyOrder ? ((parseFloat(newOrder.price) - parseFloat(buyOrder.price)) * parseInt(newOrder.quantity)).toFixed(2) : null,
+              hold_duration: buyOrder ? Math.ceil((new Date(newOrder.createdAt) - new Date(buyOrder.createdAt)) / (1000 * 60 * 60 * 24)) : 0,
+              // 评分
+              overall_score: buyOrder ? ((parseFloat(newOrder.overallScore) + parseFloat(buyOrder.overallScore)) / 2).toFixed(1) : parseFloat(newOrder.overallScore),
+              // 费用相关
+              trade_commission: null,
+              other_fees: null,
+              slippage: null,
+              net_profit: null,
+              net_profit_percent: null,
+              slippage_net_profit_ratio: null,
+              trade_summary: null
+            })
+
+            // 计算盈利百分比
+            if (newTradeRecord.buy_amount && parseFloat(newTradeRecord.buy_amount) > 0) {
+              const profit = parseFloat(newTradeRecord.sell_amount) - parseFloat(newTradeRecord.buy_amount)
+              newTradeRecord.profit = profit.toFixed(2)
+              newTradeRecord.profit_percent = ((profit / parseFloat(newTradeRecord.buy_amount)) * 100).toFixed(2)
+            }
+          }
+
+          // 同步到数据库
+          apiCall('/api/trade_records', 'POST', newTradeRecord)
+            .then(result => console.log('[Store] 创建交易记录成功:', result))
+            .catch(err => console.error('[Store] 创建交易记录失败:', err))
+
+          return {
+            orders: [...state.orders, newOrder],
+            tradeRecords: [...state.tradeRecords, newTradeRecord]
+          }
         }
       }),
 
@@ -2087,7 +2105,7 @@ const useStore = create(
             deletedAt: o.deleted_at || o.deletedAt || null,
             status: o.status,
             isVirtual: o.is_virtual || o.isVirtual,
-            buyOrderId: o.buy_order_id || o.buyOrderId || null,
+            buyOrderId: (o.buy_order_id != null ? String(o.buy_order_id) : (o.buyOrderId != null ? String(o.buyOrderId) : null)),
             notes: o.notes
           }))
         // 直接使用数据库数据，不与本地数据合并
@@ -2116,24 +2134,24 @@ const useStore = create(
         return { transactions: mergedTransactions }
       }),
 
-      // 批量导入交易记录（从数据库同步）- 合并到现有数据
+      // 批量导入交易记录（从数据库同步）- 直接使用数据库数据，不合并本地数据
       importTradeRecords: (records) => set((state) => {
+        if (!records || records.length === 0) {
+          // 数据库返回空，直接清空本地数据
+          console.log('[Store] importTradeRecords - 数据库返回空，清空本地数据')
+          return { tradeRecords: [] }
+        }
         const newRecords = records.map(r => ({
           ...r,
-          tradeNumber: r.tradeNumber || r.id,
+          tradeNumber: r.trade_number || r.tradeNumber || r.id,
           createdAt: r.created_at || r.createdAt || new Date().toISOString(),
           deleted: r.deleted || false,
           deletedAt: r.deleted_at || r.deletedAt || null
         }))
-        // 按 tradeNumber 去重
-        const existingTradeNumbers = new Set(state.tradeRecords.map(r => r.tradeNumber))
-        const mergedRecords = [...state.tradeRecords]
-        newRecords.forEach(r => {
-          if (!existingTradeNumbers.has(r.tradeNumber)) {
-            mergedRecords.push(r)
-          }
-        })
-        return { tradeRecords: mergedRecords }
+        // 直接使用数据库数据，不与本地数据合并
+        console.log('[Store] importTradeRecords - 使用数据库数据，不与本地合并')
+        console.log('[Store] importTradeRecords - 数据库交易记录数量:', newRecords.length)
+        return { tradeRecords: newRecords }
       }),
 
       // 批量导入股票（从数据库同步）- 合并到现有数据

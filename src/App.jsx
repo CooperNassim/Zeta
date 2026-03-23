@@ -186,11 +186,11 @@ function DataSync() {
 
     window.addEventListener('focus', handleFocus)
 
-    // 定时自动同步（每2秒同步一次）
+    // 定时自动同步（每30秒同步一次）
     const syncInterval = setInterval(() => {
       console.log('[DataSync] 定时自动同步...')
       syncData()
-    }, 2000)
+    }, 30000)
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)

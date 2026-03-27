@@ -585,10 +585,17 @@ const OrderManagement = () => {
       buyOrderId,  // 卖出订单关联的买入订单ID
       evaluationResults,
       isVirtual: orderForm.isVirtual || false  // 虚拟盘标记
+    }).then(result => {
+      setShowModal(false)
+      if (result.success) {
+        showToast(orderType === 'sell' ? '卖出成功' : '买入成功')
+      } else {
+        showToast('创建失败: ' + (result.error || '未知错误'), 'error')
+      }
+    }).catch(err => {
+      setShowModal(false)
+      showToast('创建失败: ' + err.message, 'error')
     })
-
-    setShowModal(false)
-    showToast(orderType === 'sell' ? '卖出成功' : '买入成功')
   }
 
   // 持仓中：买入订单

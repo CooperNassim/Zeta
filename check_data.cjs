@@ -1,7 +1,5 @@
-import dotenv from 'dotenv';
-dotenv.config({ path: './backend/.env' });
-
-import { pool } from './backend/src/config/database.js';
+require('dotenv').config({ path: './backend/.env' });
+const { pool } = require('./backend/src/config/database.js');
 
 async function check() {
   try {

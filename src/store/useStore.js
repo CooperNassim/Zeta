@@ -1235,12 +1235,13 @@ const useStore = create(
       }),
 
       // 添加预约单
-      addOrder: (order) => set((state) => {
-        // 卖出订单: 如果关联了买入订单,继承该买入订单的交易编号
-        // 否则生成新的交易编号
+      addOrder: async (order) => {
+        console.log('[Store] 开始添加订单:', order)
+        
+        // 生成交易编号
         let tradeNumber
+        const state = useStore.getState()
         if (order.type === 'sell' && order.buyOrderId) {
-          // 从买入订单获取交易编号
           const buyOrder = state.orders.find(o => o.id === order.buyOrderId)
           if (buyOrder && buyOrder.tradeNumber) {
             tradeNumber = buyOrder.tradeNumber
@@ -1248,16 +1249,16 @@ const useStore = create(
             tradeNumber = state.generateTradeNumber()
           }
         } else {
-          // 买入订单或不关联买入的卖出订单,生成新交易编号
           tradeNumber = state.generateTradeNumber()
         }
 
         const newOrder = { ...order, id: Date.now(), tradeNumber, createdAt: new Date().toISOString(), deleted: false, deletedAt: null }
+        console.log('[Store] 生成的订单对象:', newOrder)
 
         // 映射前端字段名到数据库字段名（camelCase -> snake_case）
         const dbOrder = {
           trade_number: newOrder.tradeNumber,
-          order_type: newOrder.type,
+          order_type: newOrder.type === 'buy' ? '买入' : '卖出', // 转换为中文
           symbol: newOrder.symbol,
           name: newOrder.name,
           price: newOrder.price,
@@ -1269,7 +1270,7 @@ const useStore = create(
           risk_score: newOrder.riskScore,
           overall_score: newOrder.overallScore,
           order_date: new Date().toISOString().split('T')[0],
-          order_time: new Date().toTimeString().split(' ')[0].slice(0, 5),
+          order_time: new Date().toISOString(), // 发送完整的ISO时间戳，触发器会自动处理
           status: 'completed',
           is_virtual: newOrder.isVirtual || false,
           buy_order_id: newOrder.buyOrderId || null,
@@ -1277,207 +1278,71 @@ const useStore = create(
           deleted: false,
           deleted_at: null
         }
+        console.log('[Store] 准备保存到数据库的订单:', dbOrder)
 
-        // 同步到数据库
-        apiCall('/api/trade_orders', 'POST', dbOrder)
-          .then(result => console.log('[Store] 创建订单成功:', result))
-          .catch(err => console.error('[Store] 创建订单失败:', err))
+        try {
+          // 同步订单到数据库
+          // 数据库触发器会自动创建交易记录
+          const result = await apiCall('/api/trade_orders', 'POST', dbOrder)
+          console.log('[Store] 创建订单API返回:', result)
 
-        // ====== 自动创建/更新交易记录 ======
-        // 查找该交易编号是否已存在交易记录
-        const existingRecord = state.tradeRecords.find(r => r.tradeNumber === tradeNumber)
-
-        if (existingRecord) {
-          // 已有记录，更新买入或卖出信息
-          const updatedRecord = { ...existingRecord }
-
-          if (order.type === 'buy') {
-            // 更新买入信息
-            updatedRecord.symbol = newOrder.symbol
-            updatedRecord.name = newOrder.name
-            updatedRecord.buyOrderId = newOrder.id
-            updatedRecord.buyPrice = parseFloat(newOrder.price)
-            updatedRecord.buyQuantity = parseInt(newOrder.quantity)
-            updatedRecord.buyTime = newOrder.createdAt
-            updatedRecord.buyOrderPrice = parseFloat(newOrder.price)
-            updatedRecord.buyOrderTime = newOrder.createdAt
-            updatedRecord.buyPsychologicalScore = newOrder.psychologicalScore
-            updatedRecord.buyStrategyScore = newOrder.strategyScore
-            updatedRecord.buyStrategyId = newOrder.strategyId
-            updatedRecord.buyGrade = (newOrder.overallScore >= 70 ? 'A' : newOrder.overallScore >= 40 ? 'B' : 'C')
-            updatedRecord.buyAmount = (parseFloat(newOrder.price) * parseInt(newOrder.quantity)).toFixed(2)
-          } else {
-            // 更新卖出信息
-            updatedRecord.sellOrderId = newOrder.id
-            updatedRecord.sellPrice = parseFloat(newOrder.price)
-            updatedRecord.sellQuantity = parseInt(newOrder.quantity)
-            updatedRecord.sellTime = newOrder.createdAt
-            updatedRecord.sellOrderPrice = parseFloat(newOrder.price)
-            updatedRecord.sellOrderTime = newOrder.createdAt
-            updatedRecord.sellPsychologicalScore = newOrder.psychologicalScore
-            updatedRecord.sellStrategyScore = newOrder.strategyScore
-            updatedRecord.sellStrategyId = newOrder.strategyId
-            updatedRecord.sellGrade = (newOrder.overallScore >= 70 ? 'A' : newOrder.overallScore >= 40 ? 'B' : 'C')
-
-            // 计算盈亏
-            const buyAmount = parseFloat(existingRecord.buyAmount) || (existingRecord.buyPrice * existingRecord.buyQuantity)
-            const sellAmount = parseFloat(newOrder.price) * parseInt(newOrder.quantity)
-            const profit = sellAmount - buyAmount
-            const profitPercent = buyAmount > 0 ? ((profit / buyAmount) * 100).toFixed(2) : 0
-
-            // 计算持仓天数
-            const buyTime = new Date(existingRecord.buyTime || existingRecord.createdAt)
-            const sellTime = new Date(newOrder.createdAt)
-            const holdDuration = Math.ceil((sellTime - buyTime) / (1000 * 60 * 60 * 24))
-
-            updatedRecord.sellAmount = sellAmount.toFixed(2)
-            updatedRecord.profit = profit.toFixed(2)
-            updatedRecord.profitPercent = profitPercent
-            updatedRecord.holdDuration = holdDuration
-
-            // 计算整体评分
-            const buyScore = existingRecord.buyGrade === 'A' ? 90 : existingRecord.buyGrade === 'B' ? 70 : 50
-            const sellScore = updatedRecord.sellGrade === 'A' ? 90 : updatedRecord.sellGrade === 'B' ? 70 : 50
-            updatedRecord.overallScore = ((buyScore + sellScore) / 2).toFixed(1)
+          if (!result.success) {
+            console.error('[Store] 创建订单失败:', result.error)
+            return { success: false, error: result.error || '创建订单失败' }
           }
 
-          updatedRecord.updatedAt = new Date().toISOString()
+          // 获取数据库返回的真实ID
+          const dbOrderId = result.data?.id || newOrder.id
+          const finalOrder = { ...newOrder, id: dbOrderId }
+          console.log('[Store] 最终订单对象:', finalOrder)
 
-          // 同步到数据库
-          apiCall(`/api/trade_records/${existingRecord.id}`, 'PUT', updatedRecord)
-            .then(result => console.log('[Store] 更新交易记录成功:', result))
-            .catch(err => console.error('[Store] 更新交易记录失败:', err))
+          // 先立即更新本地状态，确保用户能看到数据
+          useStore.setState(state => {
+            const updatedOrders = [...state.orders, finalOrder]
+            console.log('[Store] 立即更新本地订单，数量:', updatedOrders.length)
+            return { orders: updatedOrders }
+          })
 
-          return {
-            orders: [...state.orders, newOrder],
-            tradeRecords: state.tradeRecords.map(r =>
-              r.id === existingRecord.id ? updatedRecord : r
-            )
-          }
-        } else {
-          // 没有已有记录，创建新的交易记录（买入时创建初始记录，卖出时也创建）
-          const tradeRecordId = Date.now()
+          // 然后从数据库重新同步数据（延迟500ms，确保数据库已完成写入）
+          setTimeout(async () => {
+            try {
+              console.log('[Store] 延迟500ms后开始同步数据...')
+              const syncResponse = await apiCall('/api/sync/all')
+              console.log('[Store] 同步数据返回:', syncResponse)
+              
+              if (syncResponse.success && syncResponse.data) {
+                // 更新订单数据
+                if (syncResponse.data.trade_orders) {
+                  const { trade_orders } = syncResponse.data
+                  console.log('[Store] 同步到的订单数量:', trade_orders.length)
+                  useStore.setState((state) => {
+                    state.importOrders(trade_orders)
+                    return {}
+                  })
+                }
 
-          // 构建交易记录对象（使用数据库下划线字段名）
-          const newTradeRecord = {
-            id: tradeRecordId,
-            trade_number: tradeNumber,
-            symbol: newOrder.symbol,
-            name: newOrder.name || '',
-            is_virtual: newOrder.isVirtual || false,
-            created_at: newOrder.createdAt,
-            deleted: false,
-            deleted_at: null
-          }
-
-          if (order.type === 'buy') {
-            // 买入：创建包含买入信息的记录
-            Object.assign(newTradeRecord, {
-              buy_order_id: newOrder.id,
-              buy_price: parseFloat(newOrder.price),
-              buy_quantity: parseInt(newOrder.quantity),
-              buy_time: newOrder.createdAt,
-              buy_order_price: parseFloat(newOrder.price),
-              buy_order_time: newOrder.createdAt,
-              buy_psychological_score: newOrder.psychologicalScore,
-              buy_strategy_score: newOrder.strategyScore,
-              buy_strategy_id: newOrder.strategyId,
-              buy_grade: (newOrder.overallScore >= 70 ? 'A' : newOrder.overallScore >= 40 ? 'B' : 'C'),
-              buy_amount: (parseFloat(newOrder.price) * parseInt(newOrder.quantity)).toFixed(2),
-              buy_channel: null,
-              // 卖出字段初始化
-              sell_order_id: null,
-              sell_price: null,
-              sell_quantity: null,
-              sell_time: null,
-              sell_order_price: null,
-              sell_order_time: null,
-              sell_psychological_score: null,
-              sell_strategy_score: null,
-              sell_strategy_id: null,
-              sell_grade: null,
-              sell_channel: null,
-              sell_amount: null,
-              // 交易结果初始化
-              profit: null,
-              profit_percent: null,
-              hold_duration: 0,
-              overall_score: parseFloat(newOrder.overallScore),
-              // 费用相关
-              trade_commission: null,
-              other_fees: null,
-              slippage: null,
-              net_profit: null,
-              net_profit_percent: null,
-              slippage_net_profit_ratio: null,
-              trade_summary: null
-            })
-          } else {
-            // 卖出：创建包含卖出信息的记录（关联到买入）
-            // 查找关联的买入订单以获取更多信息
-            const buyOrder = order.buyOrderId ? state.orders.find(o => o.id === order.buyOrderId) : null
-
-            Object.assign(newTradeRecord, {
-              buy_order_id: order.buyOrderId || null,
-              buy_price: buyOrder ? parseFloat(buyOrder.price) : null,
-              buy_quantity: buyOrder ? parseInt(buyOrder.quantity) : null,
-              buy_time: buyOrder ? buyOrder.createdAt : null,
-              buy_order_price: buyOrder ? parseFloat(buyOrder.price) : null,
-              buy_order_time: buyOrder ? buyOrder.createdAt : null,
-              buy_psychological_score: buyOrder ? buyOrder.psychologicalScore : null,
-              buy_strategy_score: buyOrder ? buyOrder.strategyScore : null,
-              buy_strategy_id: buyOrder ? buyOrder.strategyId : null,
-              buy_grade: buyOrder ? (buyOrder.overallScore >= 70 ? 'A' : buyOrder.overallScore >= 40 ? 'B' : 'C') : null,
-              buy_amount: buyOrder ? (parseFloat(buyOrder.price) * parseInt(buyOrder.quantity)).toFixed(2) : null,
-              buy_channel: null,
-              // 卖出信息
-              sell_order_id: newOrder.id,
-              sell_price: parseFloat(newOrder.price),
-              sell_quantity: parseInt(newOrder.quantity),
-              sell_time: newOrder.createdAt,
-              sell_order_price: parseFloat(newOrder.price),
-              sell_order_time: newOrder.createdAt,
-              sell_psychological_score: newOrder.psychologicalScore,
-              sell_strategy_score: newOrder.strategyScore,
-              sell_strategy_id: newOrder.strategyId,
-              sell_grade: (newOrder.overallScore >= 70 ? 'A' : newOrder.overallScore >= 40 ? 'B' : 'C'),
-              sell_channel: null,
-              // 计算盈亏
-              buy_amount: buyOrder ? (parseFloat(buyOrder.price) * parseInt(buyOrder.quantity)).toFixed(2) : null,
-              sell_amount: (parseFloat(newOrder.price) * parseInt(newOrder.quantity)).toFixed(2),
-              profit: buyOrder ? ((parseFloat(newOrder.price) - parseFloat(buyOrder.price)) * parseInt(newOrder.quantity)).toFixed(2) : null,
-              hold_duration: buyOrder ? Math.ceil((new Date(newOrder.createdAt) - new Date(buyOrder.createdAt)) / (1000 * 60 * 60 * 24)) : 0,
-              // 评分
-              overall_score: buyOrder ? ((parseFloat(newOrder.overallScore) + parseFloat(buyOrder.overallScore)) / 2).toFixed(1) : parseFloat(newOrder.overallScore),
-              // 费用相关
-              trade_commission: null,
-              other_fees: null,
-              slippage: null,
-              net_profit: null,
-              net_profit_percent: null,
-              slippage_net_profit_ratio: null,
-              trade_summary: null
-            })
-
-            // 计算盈利百分比
-            if (newTradeRecord.buy_amount && parseFloat(newTradeRecord.buy_amount) > 0) {
-              const profit = parseFloat(newTradeRecord.sell_amount) - parseFloat(newTradeRecord.buy_amount)
-              newTradeRecord.profit = profit.toFixed(2)
-              newTradeRecord.profit_percent = ((profit / parseFloat(newTradeRecord.buy_amount)) * 100).toFixed(2)
+                // 更新交易记录数据
+                if (syncResponse.data.trade_records) {
+                  const { trade_records } = syncResponse.data
+                  console.log('[Store] 同步到的交易记录数量:', trade_records.length)
+                  useStore.setState((state) => {
+                    state.importTradeRecords(trade_records)
+                    return {}
+                  })
+                }
+              }
+            } catch (syncErr) {
+              console.error('[Store] 延迟同步数据失败:', syncErr)
+              // 同步失败不影响订单已创建成功
             }
-          }
+          }, 500)
 
-          // 同步到数据库
-          apiCall('/api/trade_records', 'POST', newTradeRecord)
-            .then(result => console.log('[Store] 创建交易记录成功:', result))
-            .catch(err => console.error('[Store] 创建交易记录失败:', err))
-
-          return {
-            orders: [...state.orders, newOrder],
-            tradeRecords: [...state.tradeRecords, newTradeRecord]
-          }
+          return { success: true, order: finalOrder }
+        } catch (err) {
+          console.error('[Store] 创建订单异常:', err)
+          return { success: false, error: err.message }
         }
-      }),
+      },
 
       // 执行预约单
       executeOrder: (id) => set((state) => {
@@ -1497,7 +1362,7 @@ const useStore = create(
             tradeType: '买入',
             symbol: order.symbol,
             name: order.name || '',
-            buyPrice: parseFloat(order.price),
+            fillPrice: parseFloat(order.price),
             buyQuantity: parseInt(order.quantity),
             buyTime: new Date().toISOString(),
             sellPrice: null,
@@ -1512,7 +1377,11 @@ const useStore = create(
             psychologicalScore: order.psychologicalScore,
             strategyScore: order.strategyScore,
             riskScore: order.riskScore,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            // 交易字段关联：买入类型
+            tradePrice: parseFloat(order.price),
+            tradeQuantity: parseInt(order.quantity),
+            tradeTime: new Date().toISOString()
           }
 
           const sellRecord = {
@@ -1521,7 +1390,7 @@ const useStore = create(
             tradeType: '卖出',
             symbol: order.symbol,
             name: order.name || '',
-            buyPrice: parseFloat(order.price),
+            fillPrice: parseFloat(order.price),
             buyQuantity: parseInt(order.quantity),
             buyTime: new Date().toISOString(),
             sellPrice: null,
@@ -1536,7 +1405,11 @@ const useStore = create(
             psychologicalScore: order.psychologicalScore,
             strategyScore: order.strategyScore,
             riskScore: order.riskScore,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            // 交易字段关联：卖出类型
+            tradePrice: parseFloat(order.price),
+            tradeQuantity: parseInt(order.quantity),
+            tradeTime: new Date().toISOString()
           }
 
           newTradeRecords = [buyRecord, sellRecord]
@@ -1552,10 +1425,10 @@ const useStore = create(
           if (buyRecord) {
             // 更新买入记录的卖出信息
             const sellPrice = parseFloat(order.price)
-            const buyPrice = buyRecord.buyPrice
+            const fillPrice = buyRecord.fillPrice
             const quantity = buyRecord.buyQuantity
-            const profit = (sellPrice - buyPrice) * quantity
-            const profitPercent = ((sellPrice - buyPrice) / buyPrice) * 100
+            const profit = (sellPrice - fillPrice) * quantity
+            const profitPercent = ((sellPrice - fillPrice) / fillPrice) * 100
             const buyTime = new Date(buyRecord.buyTime)
             const sellTime = new Date()
             const holdDuration = Math.ceil((sellTime - buyTime) / (1000 * 60 * 60 * 24))
@@ -1569,7 +1442,11 @@ const useStore = create(
               profit,
               profitPercent,
               sellGrade: order.overallScore >= 70 ? 'A' : order.overallScore >= 40 ? 'B' : 'C',
-              overallScore: ((buyRecord.overallScore + order.overallScore) / 2).toFixed(1)
+              overallScore: ((buyRecord.overallScore + order.overallScore) / 2).toFixed(1),
+              // 交易字段关联：卖出类型
+              tradePrice: sellPrice,
+              tradeQuantity: quantity,
+              tradeTime: sellTime.toISOString()
             }
 
             // 更新对应的卖出记录
@@ -1587,7 +1464,11 @@ const useStore = create(
               profit,
               profitPercent,
               sellGrade: order.overallScore >= 70 ? 'A' : order.overallScore >= 40 ? 'B' : 'C',
-              overallScore: ((buyRecord.overallScore + order.overallScore) / 2).toFixed(1)
+              overallScore: ((buyRecord.overallScore + order.overallScore) / 2).toFixed(1),
+              // 交易字段关联：卖出类型
+              tradePrice: sellPrice,
+              tradeQuantity: quantity,
+              tradeTime: sellTime.toISOString()
             } : null
 
             newTradeRecords = state.tradeRecords.map(t =>
@@ -1786,8 +1667,41 @@ const useStore = create(
       addTransaction: (transaction, accountType = 'real') => set((state) => {
         const newTransaction = { ...transaction, id: Date.now(), deleted: false, deletedAt: null }
 
+        // 构造数据库格式的数据（字段映射到数据库schema）
+        const now = new Date()
+        const transactionDate = now.toISOString().split('T')[0] // YYYY-MM-DD
+        const transactionTime = now.toTimeString().split(' ')[0] // HH:mm:ss
+
+        // 手动记账没有价格和数量，使用 amount 作为 total_price
+        const dbTransaction = {
+          order_id: null, // 手动记账没有关联订单
+          transaction_type: transaction.type === '买入' ? 'buy' : (transaction.type === '卖出' ? 'sell' : (transaction.type === '入账' ? 'income' : 'expense')),
+          symbol: transaction.symbol || null,
+          price: transaction.price || Math.abs(transaction.amount), // 使用金额作为价格
+          quantity: transaction.quantity || 1, // 手动记账数量默认为1
+          total_price: transaction.amount,
+          transaction_date: transactionDate,
+          transaction_time: transactionTime,
+          fee: 0,
+          profit: null,
+          description: transaction.description || null,
+          // 前端额外字段（不存入数据库，只用于本地显示）
+          name: transaction.name || null,
+          createdAt: newTransaction.createdAt,
+          localId: newTransaction.id // 本地ID，用于前端关联
+        }
+
         // 同步到数据库
-        apiCall('/api/transactions', 'POST', newTransaction).catch(err => console.error('同步账单到数据库失败:', err))
+        apiCall('/api/transactions', 'POST', dbTransaction)
+          .then(result => {
+            if (result.success && result.data) {
+              console.log('[Store] 账单保存到数据库成功:', result.data)
+              // 可选：用数据库返回的ID更新本地记录（如果需要）
+            } else {
+              console.warn('[Store] 账单保存到数据库返回格式异常:', result)
+            }
+          })
+          .catch(err => console.error('[Store] 同步账单到数据库失败:', err))
 
         return {
           transactions: accountType === 'real'
@@ -2089,7 +2003,7 @@ const useStore = create(
           .map(o => ({
             id: o.id?.toString(),
             tradeNumber: o.trade_number || o.tradeNumber || o.id?.toString(),
-            type: o.order_type || o.type,
+            type: (o.order_type === '买入' ? 'buy' : (o.order_type === '卖出' ? 'sell' : o.order_type)) || o.type,
             symbol: o.symbol,
             name: o.name,
             price: o.price,
@@ -2106,6 +2020,7 @@ const useStore = create(
             status: o.status,
             isVirtual: o.is_virtual || o.isVirtual,
             buyOrderId: (o.buy_order_id != null ? String(o.buy_order_id) : (o.buyOrderId != null ? String(o.buyOrderId) : null)),
+            buyOrderPrice: o.buy_order_price ? parseFloat(o.buy_order_price) : (o.buyOrderPrice || null),
             notes: o.notes
           }))
         // 直接使用数据库数据，不与本地数据合并
@@ -2137,17 +2052,47 @@ const useStore = create(
       // 批量导入交易记录（从数据库同步）- 直接使用数据库数据，不合并本地数据
       importTradeRecords: (records) => set((state) => {
         if (!records || records.length === 0) {
-          // 数据库返回空，直接清空本地数据
-          console.log('[Store] importTradeRecords - 数据库返回空，清空本地数据')
-          return { tradeRecords: [] }
+          // 数据库返回空，不清空本地数据（可能是本地新建的数据还没同步到数据库）
+          console.log('[Store] importTradeRecords - 数据库返回空，保留本地数据')
+          return state
         }
-        const newRecords = records.map(r => ({
-          ...r,
-          tradeNumber: r.trade_number || r.tradeNumber || r.id,
-          createdAt: r.created_at || r.createdAt || new Date().toISOString(),
-          deleted: r.deleted || false,
-          deletedAt: r.deleted_at || r.deletedAt || null
-        }))
+        const newRecords = records.map(r => {
+          // 自动计算买入金额 = 买入数量 * 买入价格
+          const buyQuantity = parseFloat(r.buy_quantity || r.buyQuantity) || 0
+          const buyPrice = parseFloat(r.buy_price || r.buyPrice) || 0
+          const calculatedBuyAmount = (buyQuantity && buyPrice) ? (buyQuantity * buyPrice).toFixed(2) : null
+
+          // 自动计算卖出金额 = 卖出数量 * 卖出价格
+          const sellQuantity = parseFloat(r.sell_quantity || r.sellQuantity) || 0
+          const sellPrice = parseFloat(r.sell_price || r.sellPrice) || 0
+          const calculatedSellAmount = (sellQuantity && sellPrice) ? (sellQuantity * sellPrice).toFixed(2) : null
+
+          return {
+            ...r,
+            // 确保驼峰格式字段存在（兼容数据库的下划线格式和前端驼峰格式）
+            buyQuantity: r.buy_quantity ? parseFloat(r.buy_quantity) : (r.buyQuantity || 0),
+            // 买入成交价格buy_price：人工手动填写（成交价），不再自动取值
+            buyPrice: r.buyPrice || null,
+            // 买入订单价格buy_order_price：自动从数据库获取，为空时回退到buy_price
+            buyOrderPrice: r.buy_order_price ? parseFloat(r.buy_order_price) : (r.buyOrderPrice || parseFloat(r.buy_price) || null),
+            buyOrderTime: r.buy_order_time || r.buyOrderTime || null,
+            // fillPrice使用buyOrderPrice（订单价格），为空时回退到buy_price
+            fillPrice: r.buy_order_price ? parseFloat(r.buy_order_price) : (r.fillPrice || parseFloat(r.buy_price) || null),
+            buyTime: r.buy_time || r.buyTime || null,
+            buyOrderId: r.buy_order_id ? String(r.buy_order_id) : (r.buyOrderId || null),
+            sellQuantity: r.sell_quantity ? parseFloat(r.sell_quantity) : (r.sellQuantity || 0),
+            sellPrice: r.sell_price ? parseFloat(r.sell_price) : (r.sellPrice || null),
+            sellOrderPrice: r.sell_order_price ? parseFloat(r.sell_order_price) : (r.sellOrderPrice || null),
+            sellOrderTime: r.sell_order_time || r.sellOrderTime || null,
+            sellTime: r.sell_time || r.sellTime || null,
+            tradeNumber: r.trade_number || r.tradeNumber || r.id,
+            createdAt: r.created_at || r.createdAt || new Date().toISOString(),
+            deleted: r.deleted || false,
+            deletedAt: r.deleted_at || r.deletedAt || null,
+            buyAmount: calculatedBuyAmount,
+            sellAmount: calculatedSellAmount
+          }
+        })
         // 直接使用数据库数据，不与本地数据合并
         console.log('[Store] importTradeRecords - 使用数据库数据，不与本地合并')
         console.log('[Store] importTradeRecords - 数据库交易记录数量:', newRecords.length)
@@ -2453,7 +2398,12 @@ const useStore = create(
           // 评分
           buyGrade,
           sellGrade,
-          overallScore: parseFloat((overallScore * 100).toFixed(2))
+          overallScore: parseFloat((overallScore * 100).toFixed(2)),
+
+          // 交易字段关联：使用卖出类型
+          tradePrice: sellOrder.price,
+          tradeQuantity: sellOrder.quantity,
+          tradeTime: sellOrder.executedAt || sellOrder.createdAt
         }
 
         // 检查是否已存在该交易记录

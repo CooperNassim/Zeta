@@ -156,9 +156,9 @@ const Home = () => {
           }
         `}
       </style>
-      <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-white" style={{ margin: '0', padding: '0', paddingTop: '72px', paddingLeft: '20px', minHeight: '100vh', maxWidth: '1920px', marginLeft: 'auto', marginRight: 'auto' }}>
+      <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-white" style={{ margin: '0', padding: '0', paddingTop: 'clamp(48px, 6vw, 72px)', paddingLeft: 'clamp(10px, 2vw, 20px)', minHeight: '100vh', maxWidth: '1920px', marginLeft: 'auto', marginRight: 'auto' }}>
       {/* Hero Section */}
-      <section className="relative overflow-hidden" style={{ margin: '0', padding: '0', width: '100%', minHeight: 'calc(100vh - 72px)', maxHeight: '1080px' }}>
+      <section className="relative overflow-hidden flex flex-col" style={{ margin: '0', padding: '0', width: '100%', height: 'calc(100vh - clamp(48px, 6vw, 72px))' }}>
         {/* 装饰性背景元素 */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {/* 渐变光晕 */}
@@ -178,19 +178,20 @@ const Home = () => {
 
         </div>
 
-        <div className="relative z-10" style={{ minHeight: 'calc(100vh - 56px)', padding: '0', margin: '0', width: '100%' }}>
-          <div className="grid lg:grid-cols-2 gap-12 items-center h-full" style={{ margin: '0', width: '100%' }}>
-            {/* 左侧文字 */}
-            <div style={{ padding: '0', margin: '0', marginLeft: '100px', marginTop: '-60px' }}>
-              <h1
-                className="text-5xl md:text-6xl font-bold mb-2 leading-tight"
-                style={{ fontSize: '64px', lineHeight: '78px', letterSpacing: 'normal', color: '#111827', marginTop: '50px', fontWeight: '1000' }}
-              >
-                构建专属交易系统
-              </h1>
+        <div className="relative z-10 flex-1 flex flex-col" style={{ padding: '0', margin: '0', width: '100%' }}>
+          <div className="grid lg:grid-cols-2 gap-12 w-full h-full" style={{ margin: '0', width: '100%', gap: 'clamp(20px, 3vw, 48px)' }}>
+            {/* 左侧区域 - 分为上下两部分 */}
+            <div style={{ padding: '0', margin: '0', marginLeft: 'clamp(40px, 6vw, 140px)', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', paddingTop: '8%' }}>
+              <div>
+                <h1
+                  className="text-5xl md:text-6xl font-bold leading-tight"
+                  style={{ fontSize: 'clamp(40px, 5vw, 64px)', lineHeight: '1.22', letterSpacing: 'normal', color: '#111827', fontWeight: '1000', marginBottom: '0.5%' }}
+                >
+                  构建专属交易系统
+                </h1>
               <p
                 className="text-5xl md:text-6xl font-bold leading-tight"
-                style={{ fontSize: '64px', lineHeight: '78px', letterSpacing: 'normal', color: '#111827', fontWeight: '1000' }}
+                style={{ fontSize: 'clamp(40px, 5vw, 64px)', lineHeight: '1.22', letterSpacing: 'normal', color: '#111827', fontWeight: '1000', marginBottom: '6%' }}
               >
                 学习 <span style={{
                   fontWeight: '1000',
@@ -204,28 +205,28 @@ const Home = () => {
               </p>
               <p
                 className="text-gray-600 mb-8 leading-relaxed"
-                style={{ width: '80%', marginTop: '30px', fontSize: '18px' }}
+                style={{ width: 'clamp(60%, 80%, 90%)', marginTop: '5.5%', fontSize: 'clamp(14px, 1.5vw, 18px)' }}
               >
                 远离非理性交易，让成功的交易再次重现
               </p>
 
-              <div className="flex flex-wrap gap-4">
+              <div className="flex flex-wrap gap-4" style={{ marginTop: '6%' }}>
                 <Link to="/daily-work">
                   <button
                     className="px-6 py-2 text-white inline-flex items-center group"
-                    style={{ backgroundColor: '#0F1419', borderRadius: '0', fontSize: '16px' }}
+                    style={{ backgroundColor: '#0F1419', borderRadius: '0', fontSize: 'clamp(14px, 1.2vw, 16px)', padding: 'clamp(8px, 1vw, 12px) clamp(16px, 2vw, 24px)' }}
                   >
                     立即开始
                     <div className="inline-flex items-center ml-2 transition-transform duration-150 group-hover:translate-x-1" style={{ willChange: 'transform' }}>
-                      <ArrowRight className="w-5 h-5" style={{ position: 'relative', zIndex: 1 }} />
-                      <ChevronRight style={{ marginLeft: '-8px', fontSize: '24px', fontWeight: 'bold', position: 'relative', zIndex: 2 }} />
+                      <ArrowRight className="w-5 h-5" style={{ position: 'relative', zIndex: 1, width: 'clamp(16px, 2vw, 20px)', height: 'clamp(16px, 2vw, 20px)' }} />
+                      <ChevronRight style={{ marginLeft: '-8px', fontSize: 'clamp(20px, 2.5vw, 24px)', fontWeight: 'bold', position: 'relative', zIndex: 2 }} />
                     </div>
                   </button>
                 </Link>
                 <Link to="/psychological-test">
                   <button
                     className="px-8 py-2 inline-flex items-center gap-2"
-                    style={{ backgroundColor: '#E5E7EB', borderRadius: '0', fontSize: '16px', color: '#0F1419', transition: 'none' }}
+                    style={{ backgroundColor: '#E5E7EB', borderRadius: '0', fontSize: 'clamp(14px, 1.2vw, 16px)', color: '#0F1419', transition: 'none', padding: 'clamp(8px, 1vw, 12px) clamp(24px, 3vw, 32px)' }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#D1D5DB'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#E5E7EB'}
                   >
@@ -234,7 +235,7 @@ const Home = () => {
                       viewBox="0 0 1026 1024"
                       xmlns="http://www.w3.org/2000/svg"
                       className="w-[18px] h-[18px]"
-                      style={{ fill: '#0F1419', marginLeft: '2px', marginTop: '2px' }}
+                      style={{ fill: '#0F1419', marginLeft: '2px', marginTop: '2px', width: 'clamp(14px, 1.5vw, 18px)', height: 'clamp(14px, 1.5vw, 18px)' }}
                     >
                       <path
                         d="M1022.448485 314.957576c-18.618182-113.260606-108.606061-204.8-220.315152-226.521212-96.193939-18.618182-184.630303 12.412121-246.690909 71.369697-17.066667 17.066667-46.545455 15.515152-62.060606-3.103031-60.509091-68.266667-153.6-107.054545-256-89.987878C124.121212 85.333333 31.030303 175.321212 9.309091 290.133333c-15.515152 83.781818 3.10303 155.151515 48.09697 220.315152v1.551515l1.551515 3.10303c6.206061 12.412121 20.169697 31.030303 31.030303 40.339394l395.636363 429.769697c17.066667 18.618182 46.545455 18.618182 65.163637 0l392.533333-422.012121c4.654545-4.654545 9.309091-10.860606 15.515152-15.515152l3.10303-4.654545c49.648485-60.509091 76.024242-141.187879 60.509091-228.072727zM814.545455 529.066667l-170.666667 1.551515-31.030303 125.672727c-3.10303 12.412121-13.963636 21.721212-26.375758 23.272727h-3.10303c-10.860606 0-21.721212-6.206061-26.375758-15.515151l-139.636363-260.654546-34.133334 119.466667c-3.10303 12.412121-15.515152 21.721212-29.478787 21.721212H192.387879c-17.066667 0-31.030303-13.963636-31.030303-31.030303s13.963636-31.030303 31.030303-31.030303h138.084848l48.09697-169.115151c3.10303-12.412121 13.963636-20.169697 26.375758-21.721213 12.412121-1.551515 24.824242 4.654545 29.478787 15.515152l139.636364 259.10303 18.618182-72.921212c3.10303-13.963636 15.515152-23.272727 29.478788-23.272727l192.387879-3.10303c7.757576 0 15.515152 1.551515 20.169697 7.757575 6.206061 6.206061 10.860606 13.963636 10.860606 23.272728 0 17.066667-13.963636 31.030303-31.030303 31.030303z"
@@ -243,13 +244,14 @@ const Home = () => {
                   </button>
                 </Link>
               </div>
+              </div>
 
-              {/* 统计数据 */}
-              <div className="grid grid-cols-2 gap-6 mt-8">
+              {/* 统计数据 - 下半部分 */}
+              <div className="grid grid-cols-2 gap-6" style={{ paddingBottom: '16%', gap: 'clamp(20px, 2.5vw, 30px)' }}>
                 {stats.map((stat, index) => (
                   <div key={stat.label} style={index === 1 || index === 3 ? { marginLeft: '-30%', textAlign: 'left' } : {}}>
-                    <p className="text-sm text-gray-600 mb-1">{stat.label}</p>
-                    <p className="font-bold text-gray-900" style={{ fontSize: '32px' }}>
+                    <p className="text-sm text-gray-600 mb-1" style={{ fontSize: 'clamp(14px, 1.5vw, 18px)' }}>{stat.label}</p>
+                    <p className="font-bold text-gray-900" style={{ fontSize: 'clamp(28px, 3.5vw, 36px)' }}>
                       {stat.prefix}
                       <Counter end={stat.value} duration={2} decimals={0} />
                       {stat.suffix}
@@ -259,18 +261,18 @@ const Home = () => {
               </div>
             </div>
 
-            {/* 右侧机器人动画 */}
-            <div className="relative h-full py-8 flex items-center overflow-visible" style={{ paddingLeft: '50px' }}>
+            {/* 右侧机器人动画 - 垂直居中 */}
+            <div className="relative h-full flex items-center" style={{ paddingLeft: 'clamp(20px, 3vw, 50px)' }}>
               {/* 机器人主容器 */}
-              <div className="relative" style={{ width: '500px', height: '500px' }}>
+              <div className="relative" style={{ width: '80%', height: '80%', maxWidth: '600px', maxHeight: '600px' }}>
                 {/* 背部火焰效果 - 最低层级，左下角 */}
                 <div
                   className="absolute"
                   style={{
                     bottom: '10%',
                     left: '32%',
-                    width: '250px',
-                    height: '350px',
+                    width: '50%',
+                    height: '70%',
                     zIndex: -1,
                     animation: 'float 3s ease-in-out infinite'
                   }}

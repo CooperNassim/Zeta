@@ -235,19 +235,19 @@ function Navigation() {
             {/* Logo */}
             <div className="flex items-center">
               <Link to="/" className="flex items-center">
-                <img src="/Zeta.png" alt="Zeta Logo" style={{ height: '26.4px', width: 'auto', marginLeft: '20px' }} />
+                <img src="/Zeta.png" alt="Zeta Logo" style={{ height: 'clamp(20px, 3vw, 26.4px)', width: 'auto', marginLeft: 'clamp(10px, 2vw, 20px)' }} />
               </Link>
             </div>
 
             {/* 导航菜单 */}
-            <div className="flex items-center flex-1 justify-start space-x-8 pl-8">
+            <div className="flex items-center flex-1 justify-start" style={{ paddingLeft: 'clamp(10px, 3vw, 32px)', gap: 'clamp(20px, 5vw, 40px)' }}>
               <div>
                 <NavLink
                   to="/"
                   className={({ isActive }) =>
                     `flex items-center py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900 relative ${isActive ? 'text-gray-900' : ''}`
                   }
-                  style={{ fontSize: '16px', paddingLeft: '18px', paddingRight: '18px' }}
+                  style={{ fontSize: 'clamp(14px, 1.5vw, 16px)', paddingLeft: 'clamp(10px, 1.5vw, 18px)', paddingRight: 'clamp(10px, 1.5vw, 18px)' }}
                 >
                   {({ isActive }) => (
                     <>
@@ -257,8 +257,8 @@ function Navigation() {
                           style={{
                             position: 'absolute',
                             bottom: '-4px',
-                            left: '18px',
-                            right: '18px',
+                            left: 'clamp(10px, 1.5vw, 18px)',
+                            right: 'clamp(10px, 1.5vw, 18px)',
                             height: '2px',
                             backgroundColor: '#0F1419',
                           }}
@@ -275,7 +275,7 @@ function Navigation() {
                   className={({ isActive }) =>
                     `flex items-center py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900 relative ${isActive || isTradingPage ? 'text-gray-900' : ''}`
                   }
-                  style={{ fontSize: '16px', paddingLeft: '12px', paddingRight: '12px' }}
+                  style={{ fontSize: 'clamp(14px, 1.5vw, 16px)', paddingLeft: 'clamp(8px, 1vw, 12px)', paddingRight: 'clamp(8px, 1vw, 12px)' }}
                 >
                   {({ isActive }) => (
                     <>
@@ -285,8 +285,8 @@ function Navigation() {
                           style={{
                             position: 'absolute',
                             bottom: '-4px',
-                            left: '12px',
-                            right: '12px',
+                            left: 'clamp(8px, 1vw, 12px)',
+                            right: 'clamp(8px, 1vw, 12px)',
                             height: '2px',
                             backgroundColor: '#0F1419',
                           }}
@@ -303,7 +303,7 @@ function Navigation() {
                   className={({ isActive }) =>
                     `flex items-center py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900 relative ${isActive || isResearchPage ? 'text-gray-900' : ''}`
                   }
-                  style={{ fontSize: '16px', paddingLeft: '12px', paddingRight: '12px' }}
+                  style={{ fontSize: 'clamp(14px, 1.5vw, 16px)', paddingLeft: 'clamp(8px, 1vw, 12px)', paddingRight: 'clamp(8px, 1vw, 12px)' }}
                 >
                   {({ isActive }) => (
                     <>
@@ -313,8 +313,8 @@ function Navigation() {
                           style={{
                             position: 'absolute',
                             bottom: '-4px',
-                            left: '12px',
-                            right: '12px',
+                            left: 'clamp(8px, 1vw, 12px)',
+                            right: 'clamp(8px, 1vw, 12px)',
                             height: '2px',
                             backgroundColor: '#0F1419',
                           }}
@@ -333,6 +333,7 @@ function Navigation() {
       {isTradingPage && (
         <aside
           className="fixed left-0 top-[52px] bottom-0 w-[166px] bg-white border-r border-gray-200 overflow-y-auto z-40 pt-0"
+          style={{ width: 'clamp(140px, 15vw, 166px)' }}
         >
           <div className="px-0 space-y-1">
             {tradingMenuItems.map((item) => {
@@ -346,7 +347,7 @@ function Navigation() {
                       ? 'bg-[#0F1419] text-white'
                       : 'text-[#0F1419] hover:bg-gray-100'
                   }`}
-                  style={{ fontSize: '15px' }}
+                  style={{ fontSize: 'clamp(13px, 1.3vw, 15px)', paddingLeft: 'clamp(15px, 2vw, 20px)' }}
                 >
                   {item.customIcon === 'daily' ? (
                     <svg
@@ -440,6 +441,7 @@ function Navigation() {
       {isResearchPage && (
         <aside
           className="fixed left-0 top-[52px] bottom-0 w-[166px] bg-white border-r border-gray-200 overflow-y-auto z-40 pt-0"
+          style={{ width: 'clamp(140px, 15vw, 166px)' }}
         >
           <div className="px-0 space-y-1">
             {researchMenuItems.map((item) => {
@@ -453,7 +455,7 @@ function Navigation() {
                       ? 'bg-[#0F1419] text-white'
                       : 'text-[#0F1419] hover:bg-gray-100'
                   }`}
-                  style={{ fontSize: '15px' }}
+                  style={{ fontSize: 'clamp(13px, 1.3vw, 15px)', paddingLeft: 'clamp(15px, 2vw, 20px)' }}
                 >
                   {item.customIcon === 'stockpool' ? (
                     <svg

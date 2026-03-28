@@ -12,7 +12,12 @@
     "db:export": "node src/scripts/export_schema.js",
     "db:import": "node src/scripts/import_schema.js",
     "db:update": "node src/scripts/update_migration.js",
-    "db:incremental": "node src/scripts/export_schema_incremental.js"
+    "db:incremental": "node src/scripts/export_schema_incremental.js",
+    "migrate": "node src/scripts/run_migration.js",
+    "migrate:verify": "node src/scripts/verify_migration.js",
+    "migrate:skip-backup": "node src/scripts/run_migration.js --skip-backup",
+    "cleanup:scripts": "node cleanup_old_scripts.js",
+    "cleanup:scripts:delete": "node cleanup_old_scripts.js --delete"
   },
   "keywords": [
     "trading",

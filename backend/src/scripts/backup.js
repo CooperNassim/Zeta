@@ -15,23 +15,17 @@ async function exportAllData() {
   console.log('📦 Starting data export...\n');
 
   try {
-    const tables = [
-      'account',
-      'daily_work_data',
-      'psychological_indicators',
-      'psychological_tests',
-      'trading_strategies',
-      'risk_models',
-      'risk_config',
-      'account_risk_data',
-      'technical_indicators',
-      'trade_orders',
-      'transactions',
-      'trade_records',
-      'stock_pool',
-      'stock_kline_data',
-      'strategy_records'
-    ];
+    // 动态获取所有表
+    const tablesResult = await pool.query(`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+      AND table_type = 'BASE TABLE'
+      ORDER BY table_name
+    `);
+
+    const tables = tablesResult.rows.map(row => row.table_name);
+    console.log(`Found ${tables.length} tables to backup\n`);
 
     const exportData = {};
 

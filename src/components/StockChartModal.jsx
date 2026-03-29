@@ -2,6 +2,18 @@ import React, { useState } from 'react'
 import Modal from './Modal'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, Label } from 'recharts'
 
+// 格式化价格，整数显示整数，小数正常显示小数
+const formatPrice = (price) => {
+  if (!price || price === null || price === undefined) return '-'
+  const num = parseFloat(price)
+  if (isNaN(num)) return '-'
+  const rounded = Math.round(num * 100) / 100
+  if (Number.isInteger(rounded)) {
+    return rounded.toLocaleString('en-US')
+  }
+  return rounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 const StockChartModal = ({ isOpen, onClose, record }) => {
   const [period, setPeriod] = useState('day') // day, week, month
 
@@ -93,8 +105,8 @@ const StockChartModal = ({ isOpen, onClose, record }) => {
           <div>
             <p className="font-medium text-gray-900">{record.symbol} {record.name}</p>
             <p className="text-sm text-gray-600">
-              买入: {record.buyPrice?.toFixed(2)} 
-              {record.sellPrice && ` | 卖出: ${record.sellPrice.toFixed(2)}`}
+              买入: {formatPrice(record.buyPrice)} 
+              {record.sellPrice && ` | 卖出: ${formatPrice(record.sellPrice)}`}
             </p>
           </div>
           <div className="text-right">
@@ -184,12 +196,12 @@ const StockChartModal = ({ isOpen, onClose, record }) => {
         <div className="flex justify-center gap-8 text-sm">
           <div className="flex items-center gap-2">
             <div className="w-4 h-0.5 bg-red-500 border-dashed border-t-2 border-red-500"></div>
-            <span className="text-gray-600">B - 买入点 ({record.buyPrice?.toFixed(2)})</span>
+            <span className="text-gray-600">B - 买入点 ({formatPrice(record.buyPrice)})</span>
           </div>
           {record.sellPrice && (
             <div className="flex items-center gap-2">
               <div className="w-4 h-0.5 bg-green-500 border-dashed border-t-2 border-green-500"></div>
-              <span className="text-gray-600">S - 卖出点 ({record.sellPrice.toFixed(2)})</span>
+              <span className="text-gray-600">S - 卖出点 ({formatPrice(record.sellPrice)})</span>
             </div>
           )}
         </div>

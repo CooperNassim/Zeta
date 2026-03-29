@@ -741,7 +741,7 @@ const useStore = create(
       // 批量导入心理测试指标
       importPsychologicalIndicators: (dataList) => set((state) => {
         if (!dataList || dataList === undefined) {
-          console.log('[Store] 心理测试指标数据未提供，保持现有数据')
+          console.log('[Store] 心理测试指标数据未提供，保持现有数据，当前指标:', state.psychologicalIndicators)
           return {}
         }
         // 确保数值字段是正确的类型
@@ -754,6 +754,7 @@ const useStore = create(
           weight: parseFloat(item.weight) || 1
         }))
         console.log('[Store] 映射后的心理测试指标数据:', mappedData)
+        console.log('[Store] 心理测试指标数量:', mappedData.length)
         return { psychologicalIndicators: mappedData }
       }),
 
@@ -2071,8 +2072,8 @@ const useStore = create(
             ...r,
             // 确保驼峰格式字段存在（兼容数据库的下划线格式和前端驼峰格式）
             buyQuantity: r.buy_quantity ? parseFloat(r.buy_quantity) : (r.buyQuantity || 0),
-            // 买入成交价格buy_price：人工手动填写（成交价），不再自动取值
-            buyPrice: r.buyPrice || null,
+            // 买入成交价格buy_price：人工手动填写（成交价），从数据库下划线格式读取
+            buyPrice: r.buy_price != null ? parseFloat(r.buy_price) : (r.buyPrice || null),
             // 买入订单价格buy_order_price：自动从数据库获取，为空时回退到buy_price
             buyOrderPrice: r.buy_order_price ? parseFloat(r.buy_order_price) : (r.buyOrderPrice || parseFloat(r.buy_price) || null),
             buyOrderTime: r.buy_order_time || r.buyOrderTime || null,
@@ -2090,7 +2091,12 @@ const useStore = create(
             deleted: r.deleted || false,
             deletedAt: r.deleted_at || r.deletedAt || null,
             buyAmount: calculatedBuyAmount,
-            sellAmount: calculatedSellAmount
+            sellAmount: calculatedSellAmount,
+            // 佣金和费用字段映射
+            tradeCommission: r.trade_commission != null ? r.trade_commission : (r.tradeCommission != null ? r.tradeCommission : null),
+            otherFees: r.other_fees != null ? r.other_fees : (r.otherFees != null ? r.otherFees : null),
+            sellTradeCommission: r.sell_trade_commission != null ? r.sell_trade_commission : (r.sellTradeCommission != null ? r.sellTradeCommission : null),
+            sellOtherFees: r.sell_other_fees != null ? r.sell_other_fees : (r.sellOtherFees != null ? r.sellOtherFees : null)
           }
         })
         // 直接使用数据库数据，不与本地数据合并

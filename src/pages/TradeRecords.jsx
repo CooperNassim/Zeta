@@ -40,6 +40,27 @@ const formatAmount = (amount) => {
   return formatted
 }
 
+// 格式化价格，整数显示整数，小数正常显示小数
+const formatPrice = (price) => {
+  if (!price || price === null || price === undefined) return '-'
+  const num = parseFloat(price)
+  if (isNaN(num)) return '-'
+  const rounded = Math.round(num * 100) / 100
+  if (Number.isInteger(rounded)) {
+    return rounded.toLocaleString('en-US')
+  }
+  return rounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// 解析价格（支持千位分隔符格式）
+const parsePrice = (value) => {
+  if (!value || typeof value !== 'string') return parseFloat(value) || 0
+  // 移除千位分隔符和其他非数字字符（保留小数点）
+  const cleaned = value.replace(/,/g, '')
+  const num = parseFloat(cleaned)
+  return isNaN(num) ? 0 : num
+}
+
 const TradeRecords = () => {
   const { showToast } = useToast()
   const [currentPage, setCurrentPage] = useState(1)
@@ -71,6 +92,7 @@ const TradeRecords = () => {
   const tradeRecords = useStore(state => state.tradeRecords)
   const updateTradeRecord = useStore(state => state.updateTradeRecord)
   const strategies = useStore(state => state.strategies)
+  const orders = useStore(state => state.orders)
 
   // 筛选交易记录
   const filteredRecords = (() => {
@@ -210,10 +232,10 @@ const TradeRecords = () => {
 
     setEditingTradeId(selectedIds[0])
     setSummaryFormData({
-      buyPrice: record.buyPrice ? record.buyPrice.toFixed(2) : '',
+      buyPrice: record.buyPrice ? formatPrice(record.buyPrice) : '',
       tradeCommission: record.tradeCommission != null ? String(record.tradeCommission) : '',
       otherFees: record.otherFees != null ? String(record.otherFees) : '',
-      sellPrice: record.sellPrice ? record.sellPrice.toFixed(2) : '',
+      sellPrice: record.sellPrice ? formatPrice(record.sellPrice) : '',
       sellTradeCommission: record.sellTradeCommission != null ? String(record.sellTradeCommission) : '',
       sellOtherFees: record.sellOtherFees != null ? String(record.sellOtherFees) : '',
       tradeSummary: record.tradeSummary || ''
@@ -243,10 +265,10 @@ const TradeRecords = () => {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          buy_price: parseFloat(summaryFormData.buyPrice),
+          buy_price: parsePrice(summaryFormData.buyPrice),
           trade_commission: summaryFormData.tradeCommission.trim(),
           other_fees: summaryFormData.otherFees.trim(),
-          sell_price: parseFloat(summaryFormData.sellPrice),
+          sell_price: parsePrice(summaryFormData.sellPrice),
           sell_trade_commission: summaryFormData.sellTradeCommission.trim(),
           sell_other_fees: summaryFormData.sellOtherFees.trim(),
           trade_summary: summaryFormData.tradeSummary.trim()
@@ -277,11 +299,15 @@ const TradeRecords = () => {
 
   const handleShowBuyDetail = (record) => {
     setDetailRecord(record)
+    // 买入成交价格默认取买入订单价格(buyOrderPrice)，但允许用户手动修改
+    const defaultBuyPrice = record.buyOrderPrice 
+      ? formatPrice(record.buyOrderPrice) 
+      : (record.buyPrice ? formatPrice(record.buyPrice) : '')
     const formData = {
       high: record.buyChannel?.high ? formatAmount(record.buyChannel.high) : '',
       low: record.buyChannel?.low ? formatAmount(record.buyChannel.low) : '',
-      buyPrice: record.buyPrice ? record.buyPrice.toFixed(2) : '',
-      buyOrderPrice: record.buyOrderPrice ? formatAmount(record.buyOrderPrice) : '',
+      buyPrice: defaultBuyPrice,
+      buyOrderPrice: record.buyOrderPrice ? formatPrice(record.buyOrderPrice) : '',
       buySlippage: record.buyPrice && record.buyOrderPrice ? formatAmount((record.buyPrice - record.buyOrderPrice) * record.buyQuantity) : '',
       tradeCommission: record.tradeCommission != null ? String(record.tradeCommission) : '',
       otherFees: record.otherFees != null ? String(record.otherFees) : '',
@@ -295,11 +321,21 @@ const TradeRecords = () => {
 
   const handleShowSellDetail = (record) => {
     setDetailRecord(record)
+    // 卖出订单价格：优先使用 record.sellOrderPrice，其次从订单中获取
+    let sellOrderPriceValue = record.sellOrderPrice
+    if (!sellOrderPriceValue && record.sellOrderId) {
+      const sellOrder = orders.find(o => String(o.id) === String(record.sellOrderId))
+      if (sellOrder && sellOrder.price) {
+        sellOrderPriceValue = sellOrder.price
+      }
+    }
+    // 卖出价格和卖出成交价格都默认取股票卖出交易价格(record.sellPrice)
+    const defaultSellPrice = record.sellPrice ? formatPrice(record.sellPrice) : ''
     const formData = {
       high: record.sellChannel?.high ? formatAmount(record.sellChannel.high) : '',
       low: record.sellChannel?.low ? formatAmount(record.sellChannel.low) : '',
-      sellPrice: record.sellPrice ? record.sellPrice.toFixed(2) : '',
-      sellOrderPrice: record.sellOrderPrice ? formatAmount(record.sellOrderPrice) : '',
+      sellPrice: defaultSellPrice,
+      sellOrderPrice: record.sellPrice ? formatPrice(record.sellPrice) : '',
       sellSlippage: record.sellPrice && record.sellOrderPrice ? formatAmount((record.sellPrice - record.sellOrderPrice) * record.sellQuantity) : '',
       tradeCommission: record.tradeCommission != null ? String(record.tradeCommission) : '',
       otherFees: record.otherFees != null ? String(record.otherFees) : '',
@@ -333,7 +369,7 @@ const TradeRecords = () => {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          buy_price: parseFloat(buyDetailFormData.buyPrice),
+          buy_price: parsePrice(buyDetailFormData.buyPrice),
           trade_commission: buyDetailFormData.tradeCommission.trim(),
           other_fees: buyDetailFormData.otherFees.trim()
         })
@@ -390,9 +426,9 @@ const TradeRecords = () => {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sell_price: parseFloat(sellDetailFormData.sellPrice),
-          trade_commission: sellDetailFormData.tradeCommission?.toString().trim() || '',
-          other_fees: sellDetailFormData.otherFees?.toString().trim() || ''
+          sell_price: parsePrice(sellDetailFormData.sellPrice),
+          sell_trade_commission: sellDetailFormData.tradeCommission?.toString().trim() || '',
+          sell_other_fees: sellDetailFormData.otherFees?.toString().trim() || ''
         })
       }).then(res => res.json())
 

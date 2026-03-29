@@ -49,24 +49,35 @@ const Home = () => {
     }
   }, [phase])
 
-  // 计算统计数据 - 基于所有订单
-  // 由于不再使用状态，这里使用所有订单进行计算
-  const transactions = useStore(state => state.transactions)
+  // 计算统计数据 - 基于交易记录
+  // 使用 tradeRecords（交易记录）而不是 transactions（账单明细）
+  const tradeRecords = useStore(state => state.tradeRecords)
 
-  // 计算交易金额（所有交易的金额总和）
-  const tradeAmount = transactions.reduce((sum, t) => sum + (t.amount || 0), 0)
+  // 计算交易金额（所有交易的买入金额总和）
+  const tradeAmount = tradeRecords.reduce((sum, t) => {
+    // 使用 buy_amount 字段，如果没有则尝试其他字段
+    const buyAmt = parseFloat(t.buy_amount || t.buyAmount || 0)
+    return sum + buyAmt
+  }, 0)
 
   // 计算盈亏额（所有交易的盈亏总和）
-  const profitLoss = transactions.reduce((sum, t) => sum + (t.profit || 0), 0)
+  const profitLoss = tradeRecords.reduce((sum, t) => {
+    const profit = parseFloat(t.profit || 0)
+    return sum + profit
+  }, 0)
 
-  // 计算手续费（所有交易的手续费总和）
-  const totalFee = transactions.reduce((sum, t) => sum + (t.fee || 0), 0)
+  // 计算手续费（从 fees 或 trade_commission 字段获取）
+  const totalFee = tradeRecords.reduce((sum, t) => {
+    // 尝试从多个费用字段获取
+    const fees = parseFloat(t.fees || t.trade_commission || t.sell_trade_commission || 0)
+    return sum + fees
+  }, 0)
 
   const stats = [
     { label: '交易金额', value: tradeAmount, prefix: '¥' },
     { label: '盈亏额', value: profitLoss, prefix: '¥' },
     { label: '手续费', value: totalFee, prefix: '¥' },
-    { label: '交易记录', value: transactions.length },
+    { label: '交易记录', value: tradeRecords.length },
   ]
 
   return (
@@ -158,7 +169,7 @@ const Home = () => {
       </style>
       <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-white" style={{ margin: '0', padding: '0', paddingTop: 'clamp(48px, 6vw, 72px)', paddingLeft: 'clamp(10px, 2vw, 20px)', minHeight: '100vh', maxWidth: '1920px', marginLeft: 'auto', marginRight: 'auto' }}>
       {/* Hero Section */}
-      <section className="relative overflow-hidden flex flex-col" style={{ margin: '0', padding: '0', width: '100%', height: 'calc(100vh - clamp(48px, 6vw, 72px))' }}>
+      <section className="relative overflow-hidden flex flex-col" style={{ margin: '0', padding: '0', width: '100%', minHeight: 'calc(100vh - clamp(48px, 6vw, 72px))' }}>
         {/* 装饰性背景元素 */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {/* 渐变光晕 */}
@@ -247,7 +258,7 @@ const Home = () => {
               </div>
 
               {/* 统计数据 - 下半部分 */}
-              <div className="grid grid-cols-2 gap-6" style={{ paddingBottom: '16%', gap: 'clamp(20px, 2.5vw, 30px)' }}>
+              <div className="grid grid-cols-2 gap-6" style={{ paddingBottom: '16%', gap: 'clamp(20px, 2.5vw, 30px)', marginTop: '10px' }}>
                 {stats.map((stat, index) => (
                   <div key={stat.label} style={index === 1 || index === 3 ? { marginLeft: '-30%', textAlign: 'left' } : {}}>
                     <p className="text-sm text-gray-600 mb-1" style={{ fontSize: 'clamp(14px, 1.5vw, 18px)' }}>{stat.label}</p>

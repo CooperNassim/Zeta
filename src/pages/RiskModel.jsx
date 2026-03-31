@@ -13,6 +13,14 @@ const RiskConfigModal = ({ isOpen, onClose, initialData, onSave }) => {
   const [singleRiskPercent, setSingleRiskPercent] = useState(initialData.singleRiskPercent)
   const [errors, setErrors] = useState({ totalRisk: false, singleRisk: false })
 
+  // 监听 initialData 变化，更新 state
+  useEffect(() => {
+    if (isOpen) {
+      setTotalRiskPercent(initialData.totalRiskPercent)
+      setSingleRiskPercent(initialData.singleRiskPercent)
+    }
+  }, [isOpen, initialData])
+
   const validateForm = () => {
     const newErrors = {
       totalRisk: totalRiskPercent === '' || totalRiskPercent === undefined || totalRiskPercent === null,

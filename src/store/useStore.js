@@ -641,12 +641,8 @@ const useStore = create(
             await apiCall('/api/sync/all').then(syncResponse => {
               if (syncResponse.success && syncResponse.data) {
                 set((state) => {
-                  const mappedData = (syncResponse.data.psychological_test_results || []).map(item => ({
-                    ...item,
-                    date: item.test_date,
-                    overallScore: item.overall_score
-                  }))
-                  return { psychologicalTests: mappedData }
+                  state.importPsychologicalTestResults(syncResponse.data.psychological_test_results || [])
+                  return {}
                 })
               }
             })
@@ -678,12 +674,8 @@ const useStore = create(
             await apiCall('/api/sync/all').then(syncResponse => {
               if (syncResponse.success && syncResponse.data) {
                 set((state) => {
-                  const mappedData = (syncResponse.data.psychological_test_results || []).map(item => ({
-                    ...item,
-                    date: item.test_date,
-                    overallScore: item.overall_score
-                  }))
-                  return { psychologicalTests: mappedData }
+                  state.importPsychologicalTestResults(syncResponse.data.psychological_test_results || [])
+                  return {}
                 })
               }
             })

@@ -14,7 +14,8 @@ const FormModal = ({
   formErrorMessage,
   onFormDataChange,
   getFieldComponent,
-  width
+  width,
+  hideButtons = false
 }) => {
   const handleChange = (newFormData, clearError = null) => {
     onFormDataChange(newFormData, clearError)
@@ -26,7 +27,7 @@ const FormModal = ({
       onClose={onClose}
       title={title}
       width={width || "max-w-6xl"}
-      footer={
+      footer={hideButtons ? null : (
         <>
           <motion.button
             whileHover={{ scale: 1.02 }}
@@ -47,7 +48,7 @@ const FormModal = ({
             保存
           </motion.button>
         </>
-      }
+      )}
     >
       <form id="dataForm" onSubmit={onSubmit} className="space-y-4">
         <DataForm

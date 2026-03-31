@@ -198,7 +198,7 @@ const Home = () => {
                   className="text-5xl md:text-6xl font-bold leading-tight"
                   style={{ fontSize: 'clamp(40px, 5vw, 64px)', lineHeight: '1.22', letterSpacing: 'normal', color: '#111827', fontWeight: '1000', marginBottom: '0.5%' }}
                 >
-                  构建专属交易系统
+                  模拟交易协助系统
                 </h1>
               <p
                 className="text-5xl md:text-6xl font-bold leading-tight"
@@ -218,7 +218,7 @@ const Home = () => {
                 className="text-gray-600 mb-8 leading-relaxed"
                 style={{ width: 'clamp(60%, 80%, 90%)', marginTop: '5.5%', fontSize: 'clamp(14px, 1.5vw, 18px)' }}
               >
-                远离非理性交易，让成功的交易再次重现
+                帮助你建立专属的交易体系，该系统适合所有人
               </p>
 
               <div className="flex flex-wrap gap-4" style={{ marginTop: '6%' }}>
@@ -261,8 +261,8 @@ const Home = () => {
               <div className="grid grid-cols-2 gap-6" style={{ paddingBottom: '16%', gap: 'clamp(20px, 2.5vw, 30px)', marginTop: '10px' }}>
                 {stats.map((stat, index) => (
                   <div key={stat.label} style={index === 1 || index === 3 ? { marginLeft: '-30%', textAlign: 'left' } : {}}>
-                    <p className="text-sm text-gray-600 mb-1" style={{ fontSize: 'clamp(14px, 1.5vw, 18px)' }}>{stat.label}</p>
-                    <p className="font-bold text-gray-900" style={{ fontSize: 'clamp(28px, 3.5vw, 36px)' }}>
+                    <p className="text-sm text-gray-600 mb-1" style={{ fontSize: 'clamp(12px, 1.3vw, 16px)' }}>{stat.label}</p>
+                    <p className="font-bold text-gray-900" style={{ fontSize: 'clamp(24px, 3vw, 32px)' }}>
                       {stat.prefix}
                       <Counter end={stat.value} duration={2} decimals={0} />
                       {stat.suffix}

@@ -52,6 +52,18 @@ const formatPrice = (price) => {
   return rounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+// 格式化滑点，整数取整，有小数点显示2位小数四舍五入
+const formatSlippage = (slippage) => {
+  if (slippage === null || slippage === undefined) return '-'
+  const num = parseFloat(slippage)
+  if (isNaN(num)) return '-'
+  const rounded = Math.round(num * 100) / 100
+  if (Number.isInteger(rounded)) {
+    return rounded.toLocaleString('en-US')
+  }
+  return rounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 // 解析价格（支持千位分隔符格式）
 const parsePrice = (value) => {
   if (!value || typeof value !== 'string') return parseFloat(value) || 0
@@ -299,16 +311,24 @@ const TradeRecords = () => {
 
   const handleShowBuyDetail = (record) => {
     setDetailRecord(record)
-    // 买入成交价格默认取买入订单价格(buyOrderPrice)，但允许用户手动修改
-    const defaultBuyPrice = record.buyOrderPrice 
-      ? formatPrice(record.buyOrderPrice) 
-      : (record.buyPrice ? formatPrice(record.buyPrice) : '')
+    // 买入成交价格取交易结案弹窗的值(record.buyPrice)
+    const buyPriceValue = record.buyPrice ? formatPrice(record.buyPrice) : ''
+    // 计算买入滑点：(买入价格 - 买入成交价格) × 买入数量
+    // 成交价格 > 订单价格 = 亏钱（负数），成交价格 < 订单价格 = 赚钱（正数）
+    let buySlippage = null
+    if (record.buyPrice !== null && record.buyPrice !== undefined &&
+        record.buyOrderPrice !== null && record.buyOrderPrice !== undefined &&
+        record.buyQuantity !== null && record.buyQuantity !== undefined) {
+      const priceDiff = parseFloat(record.buyOrderPrice) - parseFloat(record.buyPrice)
+      const quantity = parseFloat(record.buyQuantity)
+      buySlippage = priceDiff * quantity
+    }
     const formData = {
       high: record.buyChannel?.high ? formatAmount(record.buyChannel.high) : '',
       low: record.buyChannel?.low ? formatAmount(record.buyChannel.low) : '',
-      buyPrice: defaultBuyPrice,
+      buyPrice: buyPriceValue,
       buyOrderPrice: record.buyOrderPrice ? formatPrice(record.buyOrderPrice) : '',
-      buySlippage: record.buyPrice && record.buyOrderPrice ? formatAmount((record.buyPrice - record.buyOrderPrice) * record.buyQuantity) : '',
+      buySlippage: buySlippage !== null ? formatSlippage(buySlippage) : '-',
       tradeCommission: record.tradeCommission != null ? String(record.tradeCommission) : '',
       otherFees: record.otherFees != null ? String(record.otherFees) : '',
       buyStrategy: getStrategyName(record.buyStrategyId, 'buy'),
@@ -329,16 +349,28 @@ const TradeRecords = () => {
         sellOrderPriceValue = sellOrder.price
       }
     }
-    // 卖出价格和卖出成交价格都默认取股票卖出交易价格(record.sellPrice)
-    const defaultSellPrice = record.sellPrice ? formatPrice(record.sellPrice) : ''
+    // 卖出成交价格取交易结案弹窗的值(record.sellPrice)
+    const sellPriceValue = record.sellPrice ? formatPrice(record.sellPrice) : ''
+    // 计算卖出滑点：(卖出成交价格 - 卖出价格) × 卖出数量
+    // 成交价格 < 订单价格 = 亏钱（负数），成交价格 > 订单价格 = 赚钱（正数）
+    let sellSlippage = null
+    // 使用 sellOrderPriceValue（卖出订单价格）和 record.sellPrice（卖出成交价格）
+    const sellOrderPrice = sellOrderPriceValue || record.sellPrice
+    if (sellOrderPrice !== null && sellOrderPrice !== undefined &&
+        record.sellPrice !== null && record.sellPrice !== undefined &&
+        record.sellQuantity !== null && record.sellQuantity !== undefined) {
+      const priceDiff = parseFloat(record.sellPrice) - parseFloat(sellOrderPrice)
+      const quantity = parseFloat(record.sellQuantity)
+      sellSlippage = priceDiff * quantity
+    }
     const formData = {
       high: record.sellChannel?.high ? formatAmount(record.sellChannel.high) : '',
       low: record.sellChannel?.low ? formatAmount(record.sellChannel.low) : '',
-      sellPrice: defaultSellPrice,
-      sellOrderPrice: record.sellPrice ? formatPrice(record.sellPrice) : '',
-      sellSlippage: record.sellPrice && record.sellOrderPrice ? formatAmount((record.sellPrice - record.sellOrderPrice) * record.sellQuantity) : '',
-      tradeCommission: record.tradeCommission != null ? String(record.tradeCommission) : '',
-      otherFees: record.otherFees != null ? String(record.otherFees) : '',
+      sellPrice: sellPriceValue,
+      sellOrderPrice: sellOrderPriceValue ? formatPrice(sellOrderPriceValue) : '',
+      sellSlippage: sellSlippage !== null ? formatSlippage(sellSlippage) : '-',
+      tradeCommission: record.sellTradeCommission != null ? String(record.sellTradeCommission) : '',
+      otherFees: record.sellOtherFees != null ? String(record.sellOtherFees) : '',
       sellStrategy: getStrategyName(record.sellStrategyId, 'sell'),
       sellTime: formatDate(record.sellTime)
     }
@@ -398,6 +430,24 @@ const TradeRecords = () => {
   }
 
   const handleBuyDetailFormDataChange = (newFormData, clearError = null) => {
+    // 如果买价格或买入成交价格改变，重新计算买入滑点
+    if (newFormData.buyPrice !== undefined || newFormData.buyOrderPrice !== undefined) {
+      const buyPrice = parsePrice(newFormData.buyPrice !== undefined ? newFormData.buyPrice : buyDetailFormData.buyPrice)
+      const buyOrderPrice = parsePrice(newFormData.buyOrderPrice !== undefined ? newFormData.buyOrderPrice : buyDetailFormData.buyOrderPrice)
+      const buyQuantity = detailRecord?.buyQuantity || 0
+
+      if (buyPrice !== null && buyPrice !== undefined && !isNaN(buyPrice) &&
+          buyOrderPrice !== null && buyOrderPrice !== undefined && !isNaN(buyOrderPrice) &&
+          buyQuantity !== null && buyQuantity !== undefined && !isNaN(buyQuantity)) {
+        // 买入滑点：(买入价格 - 买入成交价格) × 买入数量
+        // 成交价格 > 订单价格 = 亏钱（负数），成交价格 < 订单价格 = 赚钱（正数）
+        const slippageValue = (buyOrderPrice - buyPrice) * buyQuantity
+        newFormData.buySlippage = formatSlippage(slippageValue)
+      } else {
+        newFormData.buySlippage = '-'
+      }
+    }
+
     setBuyDetailFormData(newFormData)
     if (clearError) {
       setBuyDetailFormErrors(prev => ({ ...prev, ...clearError }))
@@ -455,6 +505,24 @@ const TradeRecords = () => {
   }
 
   const handleSellDetailFormDataChange = (newFormData, clearError = null) => {
+    // 如果卖出价格或卖出成交价格改变，重新计算卖出滑点
+    if (newFormData.sellPrice !== undefined || newFormData.sellOrderPrice !== undefined) {
+      const sellPrice = parsePrice(newFormData.sellPrice !== undefined ? newFormData.sellPrice : sellDetailFormData.sellPrice)
+      const sellOrderPrice = parsePrice(newFormData.sellOrderPrice !== undefined ? newFormData.sellOrderPrice : sellDetailFormData.sellOrderPrice)
+      const sellQuantity = detailRecord?.sellQuantity || 0
+
+      if (sellPrice !== null && sellPrice !== undefined && !isNaN(sellPrice) &&
+          sellOrderPrice !== null && sellOrderPrice !== undefined && !isNaN(sellOrderPrice) &&
+          sellQuantity !== null && sellQuantity !== undefined && !isNaN(sellQuantity)) {
+        // 卖出滑点：(卖出成交价格 - 卖出价格) × 卖出数量
+        // 成交价格 < 订单价格 = 亏钱（负数），成交价格 > 订单价格 = 赚钱（正数）
+        const slippageValue = (sellPrice - sellOrderPrice) * sellQuantity
+        newFormData.sellSlippage = formatSlippage(slippageValue)
+      } else {
+        newFormData.sellSlippage = '-'
+      }
+    }
+
     setSellDetailFormData(newFormData)
     if (clearError) {
       setSellDetailFormErrors(prev => ({ ...prev, ...clearError }))
@@ -571,10 +639,8 @@ const TradeRecords = () => {
     {
       key: 'sellPrice',
       label: '卖出成交价格',
-      type: 'text',
-      inputType: 'number',
-      placeholder: '请输入',
-      required: true,
+      readonly: true,
+      notRequired: true,
       grid: true
     },
     {
@@ -587,17 +653,15 @@ const TradeRecords = () => {
     {
       key: 'tradeCommission',
       label: '卖出佣金',
-      type: 'text',
-      placeholder: '请输入',
-      required: true,
+      readonly: true,
+      notRequired: true,
       grid: true
     },
     {
       key: 'otherFees',
       label: '卖出其他费用',
-      type: 'text',
-      placeholder: '请输入',
-      required: true,
+      readonly: true,
+      notRequired: true,
       grid: true
     },
     {
@@ -641,10 +705,8 @@ const TradeRecords = () => {
     {
       key: 'buyPrice',
       label: '买入成交价格',
-      type: 'text',
-      inputType: 'number',
-      placeholder: '请输入',
-      required: true,
+      readonly: true,
+      notRequired: true,
       grid: true
     },
     {
@@ -657,17 +719,15 @@ const TradeRecords = () => {
     {
       key: 'tradeCommission',
       label: '买入佣金',
-      type: 'text',
-      placeholder: '请输入',
-      required: true,
+      readonly: true,
+      notRequired: true,
       grid: true
     },
     {
       key: 'otherFees',
       label: '买入其他费用',
-      type: 'text',
-      placeholder: '请输入',
-      required: true,
+      readonly: true,
+      notRequired: true,
       grid: true
     },
     {
@@ -1021,7 +1081,7 @@ const TradeRecords = () => {
         formData={summaryFormData}
         formErrors={summaryFormErrors}
         onFormDataChange={handleSummaryFormDataChange}
-        width="max-w-md"
+        width="max-w-2xl"
       />
 
       {/* 买入详情弹窗 */}
@@ -1034,7 +1094,8 @@ const TradeRecords = () => {
         formData={buyDetailFormData}
         formErrors={buyDetailFormErrors}
         onFormDataChange={handleBuyDetailFormDataChange}
-        width="max-w-md"
+        width="max-w-2xl"
+        hideButtons={true}
       />
 
       {/* 卖出详情弹窗 */}
@@ -1047,7 +1108,8 @@ const TradeRecords = () => {
         formData={sellDetailFormData}
         formErrors={sellDetailFormErrors}
         onFormDataChange={handleSellDetailFormDataChange}
-        width="max-w-md"
+        width="max-w-2xl"
+        hideButtons={true}
       />
 
       {/* 图表回顾弹窗 */}

@@ -23,14 +23,16 @@ const PsychologicalTest = () => {
   // 获取选中日期的测试结果
   const getTestResultForDate = (date) => {
     const dateStr = format(date, 'yyyy-MM-dd')
-    return psychologicalTests.find(test => {
+    const result = psychologicalTests.find(test => {
       if (!test.date) return false
       // test.date 现在是 DATE 类型（YYYY-MM-DD），直接比较
       return test.date === dateStr
     })
+    console.log('[PsychologicalTest] getTestResultForDate:', { date: dateStr, result })
+    return result
   }
 
-  // 初始化默认分数
+  // 初始化默认分数（页面加载时执行一次）
   useEffect(() => {
     const today = new Date()
     const testResult = getTestResultForDate(today)
@@ -42,23 +44,24 @@ const PsychologicalTest = () => {
       console.log('[PsychologicalTest] 初始化: 没有今天的测试记录')
       setTestScores({})
     }
-  }, [indicators])
+  }, []) // 移除 indicators 依赖，只在组件挂载时执行一次
 
-  // 监听 psychologicalTests 的变化，更新当前选中日期的 testScores
+  // 监听 psychologicalTests 和 selectedDate 的变化，更新当前选中日期的 testScores
   useEffect(() => {
-    if (psychologicalTests.length > 0) {
-      console.log('[PsychologicalTest] psychologicalTests 发生变化')
-      const currentTestResult = getTestResultForDate(selectedDate)
-      console.log('[PsychologicalTest] 当前选中日期的测试结果:', currentTestResult)
-      console.log('[PsychologicalTest] 更新前 testScores:', testScores)
-      // 自动同步选中日期的数据
-      if (currentTestResult) {
-        console.log('[PsychologicalTest] 同步数据:', currentTestResult.scores)
-        setTestScores(currentTestResult.scores)
-      } else {
-        console.log('[PsychologicalTest] 无数据，清空分数')
-        setTestScores({})
-      }
+    console.log('[PsychologicalTest] psychologicalTests 或 selectedDate 发生变化')
+    console.log('[PsychologicalTest] psychologicalTests:', psychologicalTests)
+    console.log('[PsychologicalTest] selectedDate:', format(selectedDate, 'yyyy-MM-dd'))
+    
+    const currentTestResult = getTestResultForDate(selectedDate)
+    console.log('[PsychologicalTest] 当前选中日期的测试结果:', currentTestResult)
+    
+    // 自动同步选中日期的数据
+    if (currentTestResult) {
+      console.log('[PsychologicalTest] 同步数据:', currentTestResult.scores)
+      setTestScores(currentTestResult.scores)
+    } else {
+      console.log('[PsychologicalTest] 无数据，清空分数')
+      setTestScores({})
     }
   }, [psychologicalTests, selectedDate])
 

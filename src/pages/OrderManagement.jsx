@@ -810,6 +810,7 @@ const OrderManagement = () => {
               { key: 'name', label: '股票名称', width: '150px' },
               { key: 'price', label: '交易价格', width: '120px' },
               { key: 'quantity', label: '交易数量', width: '100px' },
+              { key: 'tradeAmount', label: '交易金额', width: '120px' },
               { key: 'stopLossPrice', label: '止损价', width: '120px' },
               { key: 'takeProfitPrice', label: '止盈价', width: '120px' },
               { key: 'psychologicalScore', label: '心理测试', width: '100px' },
@@ -845,6 +846,15 @@ const OrderManagement = () => {
               if (field.key === 'strategyScore') {
                 // 显示策略评估分数（10分制）
                 return item.strategyScore !== undefined && item.strategyScore !== null ? item.strategyScore : '-'
+              }
+              if (field.key === 'tradeAmount') {
+                // 交易金额 = 交易价格 * 交易数量
+                const price = parseFloat(item.price) || 0
+                const quantity = parseFloat(item.quantity) || 0
+                if (price > 0 && quantity > 0) {
+                  return formatAmount(price * quantity)
+                }
+                return '-'
               }
               return null
             }}

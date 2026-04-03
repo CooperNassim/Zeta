@@ -223,24 +223,38 @@ const useStore = create(
             String(today.getMonth() + 1).padStart(2, '0') +
             String(today.getDate()).padStart(2, '0')
 
-          // 获取所有订单数据并筛选
+          // 获取所有数据
           const response = await fetch(`${API_BASE_URL}/api/sync/all`)
           const result = await response.json()
 
           let maxNumber = 0
-          if (result.success && result.data && result.data.trade_orders) {
-            // 筛选今天的订单
-            const todayOrders = result.data.trade_orders.filter(order =>
-              order.trade_number && order.trade_number.startsWith(dateStr) && !order.deleted
-            )
+          if (result.success && result.data) {
+            // 从 trade_orders 中查找今天最大编号
+            if (result.data.trade_orders) {
+              const todayOrders = result.data.trade_orders.filter(order =>
+                order.trade_number && order.trade_number.startsWith(dateStr) && !order.deleted
+              )
+              if (todayOrders.length > 0) {
+                const maxFromOrders = todayOrders.reduce((max, order) => {
+                  const num = parseInt(order.trade_number.slice(-3))
+                  return num > max ? num : max
+                }, 0)
+                maxNumber = Math.max(maxNumber, maxFromOrders)
+              }
+            }
 
-            if (todayOrders.length > 0) {
-              // 找出最大的编号
-              const maxTradeNumber = todayOrders.reduce((max, order) => {
-                const num = parseInt(order.trade_number.slice(-3))
-                return num > max ? num : max
-              }, 0)
-              maxNumber = maxTradeNumber
+            // 从 trade_records 中查找今天最大编号
+            if (result.data.trade_records) {
+              const todayRecords = result.data.trade_records.filter(record =>
+                record.trade_number && record.trade_number.startsWith(dateStr) && !record.deleted
+              )
+              if (todayRecords.length > 0) {
+                const maxFromRecords = todayRecords.reduce((max, record) => {
+                  const num = parseInt(record.trade_number.slice(-3))
+                  return num > max ? num : max
+                }, 0)
+                maxNumber = Math.max(maxNumber, maxFromRecords)
+              }
             }
           }
 
@@ -264,10 +278,11 @@ const useStore = create(
           String(today.getMonth() + 1).padStart(2, '0') +
           String(today.getDate()).padStart(2, '0')
 
+        let newTradeNumber
         set((state) => {
           const counter = state.tradeNumberCounter[dateStr] || 0
           const newCounter = counter + 1
-          const tradeNumber = dateStr + String(newCounter).padStart(3, '0')
+          newTradeNumber = dateStr + String(newCounter).padStart(3, '0')
 
           return {
             tradeNumberCounter: {
@@ -277,9 +292,8 @@ const useStore = create(
           }
         })
 
-        const state = get()
-        const counter = state.tradeNumberCounter[dateStr] || 0
-        return dateStr + String(counter).padStart(3, '0')
+        console.log('[Store] 生成交易编号:', newTradeNumber)
+        return newTradeNumber
       },
 
       // 账单明细（实盘）
@@ -1660,28 +1674,31 @@ const useStore = create(
       addTransaction: (transaction, accountType = 'real') => set((state) => {
         const newTransaction = { ...transaction, id: Date.now(), deleted: false, deletedAt: null }
 
-        // 构造数据库格式的数据（字段映射到数据库schema）
+        // 构造数据库格式的数据
         const now = new Date()
         const transactionDate = now.toISOString().split('T')[0] // YYYY-MM-DD
-        const transactionTime = now.toTimeString().split(' ')[0] // HH:mm:ss
+        const transactionTime = now.toTimeString().split(' ')[0].substring(0, 8) // HH:mm:ss
 
-        // 手动记账没有价格和数量，使用 amount 作为 total_price
+        // 兼容新旧数据库结构：
+        // - 旧结构需要：order_id, transaction_type, symbol, price, quantity, total_price
+        // - 新结构需要：transaction_type, symbol, name, description, amount, balance
         const dbTransaction = {
-          order_id: null, // 手动记账没有关联订单
-          transaction_type: transaction.type === '买入' ? 'buy' : (transaction.type === '卖出' ? 'sell' : (transaction.type === '入账' ? 'income' : 'expense')),
-          symbol: transaction.symbol || null,
-          price: transaction.price || Math.abs(transaction.amount), // 使用金额作为价格
-          quantity: transaction.quantity || 1, // 手动记账数量默认为1
-          total_price: transaction.amount,
+          // 新结构字段
+          transaction_type: transaction.type || '入账',
+          symbol: transaction.symbol || '',
+          name: transaction.name || null,
+          description: transaction.description || null,
+          amount: transaction.amount != null ? String(transaction.amount) : null,
+          balance: transaction.balance != null ? String(transaction.balance) : null,
           transaction_date: transactionDate,
           transaction_time: transactionTime,
+          // 旧结构兼容字段（当数据库还没迁移时使用）
+          order_id: 0,  // 手动记账没有关联订单，使用0
+          price: Math.abs(transaction.amount) || 0,
+          quantity: 1,
+          total_price: transaction.amount || 0,
           fee: 0,
-          profit: null,
-          description: transaction.description || null,
-          // 前端额外字段（不存入数据库，只用于本地显示）
-          name: transaction.name || null,
-          createdAt: newTransaction.createdAt,
-          localId: newTransaction.id // 本地ID，用于前端关联
+          profit: null
         }
 
         // 同步到数据库
@@ -1689,7 +1706,18 @@ const useStore = create(
           .then(result => {
             if (result.success && result.data) {
               console.log('[Store] 账单保存到数据库成功:', result.data)
-              // 可选：用数据库返回的ID更新本地记录（如果需要）
+              // 保存成功后延迟500ms重新获取数据，确保数据库已写入
+              setTimeout(async () => {
+                try {
+                  const syncResult = await apiCall('/api/transactions')
+                  if (syncResult.success && syncResult.data) {
+                    useStore.getState().importTransactions(syncResult.data)
+                    console.log('[Store] 重新同步账单数据成功')
+                  }
+                } catch (err) {
+                  console.error('[Store] 重新同步账单数据失败:', err)
+                }
+              }, 500)
             } else {
               console.warn('[Store] 账单保存到数据库返回格式异常:', result)
             }
@@ -2023,23 +2051,38 @@ const useStore = create(
         return { orders: newOrders }
       }),
 
-      // 批量导入账单（从数据库同步）- 合并到现有数据
+      // 批量导入账单（从数据库同步）- 直接使用数据库数据
       importTransactions: (transactions) => set((state) => {
+        // 格式化时间：年-月-日 时:分:秒
+        const formatDateTime = (dateStr) => {
+          if (!dateStr) return null
+          const date = new Date(dateStr)
+          if (isNaN(date.getTime())) return null
+          const year = date.getFullYear()
+          const month = String(date.getMonth() + 1).padStart(2, '0')
+          const day = String(date.getDate()).padStart(2, '0')
+          const hours = String(date.getHours()).padStart(2, '0')
+          const minutes = String(date.getMinutes()).padStart(2, '0')
+          const seconds = String(date.getSeconds()).padStart(2, '0')
+          return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+        }
+        
         const newTransactions = transactions.map(t => ({
-          ...t,
-          createdAt: t.created_at || t.createdAt || new Date().toISOString(),
+          id: t.id,
+          type: t.transaction_type || t.type || null,
+          symbol: t.symbol || null,
+          name: t.name || null,
+          description: t.description || null,
+          amount: t.amount != null ? parseFloat(t.amount) : (t.amount || null),
+          balance: t.balance != null ? parseFloat(t.balance) : (t.balance || null),
+          createdAt: formatDateTime(t.created_at) || formatDateTime(t.createdAt) || new Date().toISOString(),
           deleted: t.deleted || false,
           deletedAt: t.deleted_at || t.deletedAt || null
         }))
-        // 按 id 去重
-        const existingIds = new Set(state.transactions.map(t => t.id))
-        const mergedTransactions = [...state.transactions]
-        newTransactions.forEach(t => {
-          if (!existingIds.has(t.id)) {
-            mergedTransactions.push(t)
-          }
-        })
-        return { transactions: mergedTransactions }
+        // 直接使用数据库数据，不与本地合并
+        console.log('[Store] importTransactions - 使用数据库数据，不与本地合并')
+        console.log('[Store] importTransactions - 数据库账单数量:', newTransactions.length)
+        return { transactions: newTransactions }
       }),
 
       // 批量导入交易记录（从数据库同步）- 直接使用数据库数据，不合并本地数据
@@ -2088,7 +2131,9 @@ const useStore = create(
             tradeCommission: r.trade_commission != null ? r.trade_commission : (r.tradeCommission != null ? r.tradeCommission : null),
             otherFees: r.other_fees != null ? r.other_fees : (r.otherFees != null ? r.otherFees : null),
             sellTradeCommission: r.sell_trade_commission != null ? r.sell_trade_commission : (r.sellTradeCommission != null ? r.sellTradeCommission : null),
-            sellOtherFees: r.sell_other_fees != null ? r.sell_other_fees : (r.sellOtherFees != null ? r.sellOtherFees : null)
+            sellOtherFees: r.sell_other_fees != null ? r.sell_other_fees : (r.sellOtherFees != null ? r.sellOtherFees : null),
+            // 交易总结字段映射
+            tradeSummary: r.trade_summary || r.tradeSummary || null
           }
         })
         // 直接使用数据库数据，不与本地数据合并

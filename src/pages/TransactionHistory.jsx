@@ -169,7 +169,8 @@ const TransactionHistory = () => {
     const rows = filteredTransactions.map(data =>
       FIELDS.map(f => {
         if (f.key === 'createdAt') {
-          return format(new Date(data.createdAt), 'yyyy-MM-dd HH:mm:ss')
+          // createdAt 已经是格式化后的字符串
+          return data.createdAt || ''
         }
         if (f.key === 'amount') {
           return data.amount
@@ -237,7 +238,8 @@ const TransactionHistory = () => {
       const [startDate, endDate] = filterDateRange.split('~')
       if (startDate && endDate) {
         filtered = filtered.filter(t => {
-          const transactionDate = format(new Date(t.createdAt), 'yyyy-MM-dd')
+          // createdAt 格式为 "年-月-日 时:分:秒"，取日期部分比较
+          const transactionDate = t.createdAt ? t.createdAt.split(' ')[0] : ''
           return transactionDate >= startDate && transactionDate <= endDate
         })
       }
@@ -249,6 +251,15 @@ const TransactionHistory = () => {
   const totalPages = Math.ceil(filteredTransactions.length / pageSize)
   const paginatedData = filteredTransactions.slice().reverse().slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
+  // 解析日期字符串 "年-月-日 时:分:秒" 为 Date 对象
+  const parseDate = (dateStr) => {
+    if (!dateStr) return null
+    // 将 "2026-04-02 22:48:12" 转换为 "2026-04-02T22:48:12" 以便正确解析
+    const isoStr = dateStr.replace(' ', 'T')
+    const date = new Date(isoStr)
+    return isNaN(date.getTime()) ? null : date
+  }
+
   // 获取当前月份
   const now = new Date()
   const currentMonth = now.getMonth()
@@ -256,13 +267,13 @@ const TransactionHistory = () => {
 
   // 计算本月数据
   const monthIncome = currentTransactions.filter(t => {
-    const date = new Date(t.createdAt)
-    return !t.deleted && t.amount > 0 && date.getMonth() === currentMonth && date.getFullYear() === currentYear
+    const date = parseDate(t.createdAt)
+    return !t.deleted && t.amount > 0 && date && date.getMonth() === currentMonth && date.getFullYear() === currentYear
   }).reduce((sum, t) => sum + t.amount, 0)
 
   const monthExpense = currentTransactions.filter(t => {
-    const date = new Date(t.createdAt)
-    return !t.deleted && t.amount < 0 && date.getMonth() === currentMonth && date.getFullYear() === currentYear
+    const date = parseDate(t.createdAt)
+    return !t.deleted && t.amount < 0 && date && date.getMonth() === currentMonth && date.getFullYear() === currentYear
   }).reduce((sum, t) => sum + Math.abs(t.amount), 0)
 
   const monthBalance = monthIncome - monthExpense
@@ -277,14 +288,14 @@ const TransactionHistory = () => {
 
   // 计算上月收入
   const lastMonthIncome = currentTransactions.filter(t => {
-    const date = new Date(t.createdAt)
-    return !t.deleted && t.amount > 0 && date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear
+    const date = parseDate(t.createdAt)
+    return !t.deleted && t.amount > 0 && date && date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear
   }).reduce((sum, t) => sum + t.amount, 0)
 
   // 计算上月支出
   const lastMonthExpense = currentTransactions.filter(t => {
-    const date = new Date(t.createdAt)
-    return !t.deleted && t.amount < 0 && date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear
+    const date = parseDate(t.createdAt)
+    return !t.deleted && t.amount < 0 && date && date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear
   }).reduce((sum, t) => sum + Math.abs(t.amount), 0)
 
   // 计算上月盈亏
@@ -579,8 +590,8 @@ const TransactionHistory = () => {
             onSelectOne={handleSelectOne}
             renderCell={(field, item) => {
               if (field.key === 'createdAt') {
-                const date = item.createdAt ? new Date(item.createdAt) : null
-                return date && !isNaN(date.getTime()) ? format(date, 'yyyy-MM-dd HH:mm:ss') : '-'
+                // createdAt 已经是格式化后的字符串 "年-月-日 时:分:秒"
+                return item.createdAt || '-'
               }
               if (field.key === 'type') {
                 const typeMap = { '买入': '买入股票', '卖出': '卖出股票' }

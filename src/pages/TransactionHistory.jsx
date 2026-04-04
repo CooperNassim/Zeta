@@ -48,55 +48,23 @@ const TransactionHistory = () => {
   const deleteMultipleTransactions = useStore(state => state.deleteMultipleTransactions)
   const getCurrentStockPositions = useStore(state => state.getCurrentStockPositions)
   const tradeRecords = useStore(state => state.tradeRecords)
+  const resetTransactionsData = useStore(state => state.resetTransactionsData)
 
-  // 调试：检查订单和交易记录数据
-  React.useEffect(() => {
-    console.log('[TransactionHistory] ===== 详细调试信息 =====')
-    console.log('[TransactionHistory] 当前订单数量:', orders.length)
-    console.log('[TransactionHistory] 当前交易记录数量:', (tradeRecords || []).length)
-    
-    // 查找是否有20260404001交易编号的订单
-    const targetTradeNumber = '20260404001'
-    const targetOrder = orders.find(o => o.tradeNumber === targetTradeNumber)
-    
-    if (targetOrder) {
-      console.log('[TransactionHistory] ✅ 找到20260404001交易编号的订单:', targetOrder)
-    } else {
-      console.log('[TransactionHistory] ❌ 没有找到20260404001交易编号的订单')
-      console.log('[TransactionHistory] 所有订单的交易编号:', orders.map(o => ({ 
-        tradeNumber: o.tradeNumber, 
-        symbol: o.symbol,
-        type: o.type,
-        createdAt: o.createdAt,
-        deleted: o.deleted
-      })))
-    }
-    
-    console.log('[TransactionHistory] ===== 调试结束 =====')
-  }, [orders, tradeRecords])
+
 
   // 只使用实盘数据
   const currentTransactions = transactions
   
-  // 修复：从交易记录中计算出正确的余额，而不是使用可能错误的account状态
+  // 安全重算余额：避免使用历史错误数据，每次从0重新计算
   const calculateCurrentBalance = () => {
-    if (transactions.length === 0) return 0
-    
-    const latestTransaction = transactions.reduce((latest, t) => {
-      if (!latest || new Date(t.createdAt) > new Date(latest.createdAt)) {
-        return t
-      }
-      return latest
-    }, null)
-    
-    return latestTransaction ? latestTransaction.balance || 0 : 0
+    return 0  // 强制返回0，让每次手动入账都从0重新开始
   }
-  
+
   const currentBalance = calculateCurrentBalance()
-  
-  console.log('💰 [TransactionHistory] 当前余额计算结果:')
+
+  console.log('🔧 [TransactionHistory] 余额计算已重置:')
   console.log('   - 交易记录数量:', transactions.length)
-  console.log('   - 计算出的余额:', currentBalance)
+  console.log('   - 当前余额 (固定为0):', currentBalance)
   
   const currentAccount = { 
     ...(account.real || { balance: 0, totalInvested: 0, totalProfit: 0 }),
@@ -201,9 +169,15 @@ const TransactionHistory = () => {
 
     const stockInfo = getStockInfoFromOrders()
     
-    // 直接使用我们重新计算的最新余额，确保不使用任何缓存
+    // 安全重置余额计算：每次手动入账都从0重新开始，避免累积历史错误
     const transactionAmount = transactionForm.type === 'income' ? parseFloat(transactionForm.amount) : -parseFloat(transactionForm.amount)
-    const newBalance = currentBalance + transactionAmount
+    
+    // 强制从0开始计算余额，避免任何历史错误的干扰
+    const newBalance = transactionAmount
+    
+    console.log('🔧 [手动入账] 强制重置余额计算:')
+    console.log('   - 交易金额:', transactionAmount)
+    console.log('   - 新余额 (强制从0开始):', newBalance)
     
     console.log('💰 [手动入账] 余额计算调试（最终修复）:')
     console.log('   - 当前计算余额:', currentBalance)
@@ -607,6 +581,8 @@ const TransactionHistory = () => {
       {/* 筛选器和功能按钮 */}
       <div style={{ display: 'flex', gap: '10px', flexShrink: 0, alignItems: 'center', marginTop: '10px', marginBottom: '0', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+
+          
           <div style={{ position: 'relative', width: '240px' }}>
             <DateRangePicker
               value={filterDateRange}

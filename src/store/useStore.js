@@ -2495,6 +2495,16 @@ const useStore = create(
               isHolding: isHolding
             })
             
+            // 检查：对于有买入且没有卖出的股票交易，应该计入持仓市值
+            if (!isHolding && (parseFloat(r.sellAmount) || 0) === 0 && (parseFloat(r.buyAmount) || 0) > 0 && r.symbol) {
+              isHolding = true
+              console.log(`⚠️ [Debug getTotalAssets] 自动标记为持仓中 - 有买入无卖出:`, { 
+                tradeNumber: r.tradeNumber, 
+                symbol: r.symbol,
+                buyAmount: r.buyAmount
+              })
+            }
+            
             return isHolding
           })
           
@@ -2584,7 +2594,9 @@ const useStore = create(
         console.log('   - 实际计算总资产:', totalAssets)
         
         return totalAssets
-      }
+      },
+      
+
     }),
     {
       name: 'trading-system-storage',

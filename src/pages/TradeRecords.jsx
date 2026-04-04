@@ -337,15 +337,26 @@ const TradeRecords = () => {
       const allSuccess = responses.every(r => r.success)
 
       if (allSuccess) {
-        // 从数据库重新同步数据
-        await fetch('/api/sync/all')
-          .then(res => res.json())
-          .then(syncResponse => {
-            if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
-              const { trade_records } = syncResponse.data
-              useStore.getState().importTradeRecords(trade_records)
+        // 保存成功，直接更新本地状态避免数据同步覆盖
+        const store = useStore.getState()
+        const updatedRecords = store.tradeRecords.map(record => {
+          if (recordIds.includes(record.id)) {
+            return {
+              ...record,
+              // 更新结案相关字段
+              buyPrice: parsePrice(summaryFormData.buyPrice),
+              tradeCommission: summaryFormData.tradeCommission.trim(),
+              otherFees: summaryFormData.otherFees.trim(),
+              sellPrice: parsePrice(summaryFormData.sellPrice),
+              sellTradeCommission: summaryFormData.sellTradeCommission.trim(),
+              sellOtherFees: summaryFormData.sellOtherFees.trim(),
+              tradeSummary: summaryFormData.tradeSummary.trim()
             }
-          })
+          }
+          return record
+        })
+        store.importTradeRecords(updatedRecords)
+        
         showToast('保存成功', 'success')
         setShowSummaryModal(false)
         setEditingTradeId(null)

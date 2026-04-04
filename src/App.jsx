@@ -65,6 +65,14 @@ function DataSync() {
       return
     }
 
+    // 检查是否在重置过程中，如果是则跳过同步（避免被旧数据覆盖）
+    const isResetting = localStorage.getItem('is_resetting_transactions') === 'true'
+    if (isResetting) {
+      console.log('[DataSync] ⚠️ 检测到重置操作，跳过同步以防止旧数据覆盖')
+      localStorage.removeItem('is_resetting_transactions') // 清除重置标志
+      return
+    }
+
     // 等待后端就绪（最多等待5秒）
     let backendReady = await checkBackendReady()
     let readyAttempts = 0

@@ -18,13 +18,14 @@ import { useToast } from '../contexts/ToastContext'
 
 // 字段定义
 const FIELDS = [
-  { key: 'createdAt', label: '发生时间', type: 'datetime', width: '18%' },
-  { key: 'type', label: '记账类型', type: 'text', width: '13%' },
-  { key: 'symbol', label: '股票代码', type: 'text', width: '15%' },
-  { key: 'name', label: '股票名称', type: 'text', width: '17%' },
-  { key: 'description', label: '记账说明', type: 'text', width: '17%' },
-  { key: 'amount', label: '金额', type: 'text', width: '10%' },
-  { key: 'balance', label: '余额', type: 'text', width: '10%' }
+  { key: 'createdAt', label: '发生时间', type: 'datetime', width: '15%' },
+  { key: 'type', label: '记账类型', type: 'text', width: '10%' },
+  { key: 'tradeNumber', label: '交易编号', type: 'text', width: '10%' },
+  { key: 'symbol', label: '股票代码', type: 'text', width: '10%' },
+  { key: 'name', label: '股票名称', type: 'text', width: '13%' },
+  { key: 'description', label: '记账说明', type: 'text', width: '15%' },
+  { key: 'amount', label: '记账金额', type: 'text', width: '14%' },
+  { key: 'balance', label: '余额', type: 'text', width: '13%' }
 ]
 
 const TransactionHistory = () => {
@@ -37,20 +38,46 @@ const TransactionHistory = () => {
   const [selectedIds, setSelectedIds] = useState([])
   const [currentPage, setCurrentPage] = useState(1)
   const [exportFormat, setExportFormat] = useState('xlsx')
-  const [accountType, setAccountType] = useState('real')
   const pageSize = 20
 
   const transactions = useStore(state => state.transactions)
-  const virtualTransactions = useStore(state => state.virtualTransactions)
   const account = useStore(state => state.account)
-  const addTransaction = useStore(state => state.addTransaction)
-  const deleteMultipleTransactions = useStore(state => state.deleteMultipleTransactions)
   const orders = useStore(state => state.orders)
+  const addTransaction = useStore(state => state.addTransaction)
+  const deleteTransaction = useStore(state => state.deleteTransaction)
+  const deleteMultipleTransactions = useStore(state => state.deleteMultipleTransactions)
+  const getCurrentStockPositions = useStore(state => state.getCurrentStockPositions)
   const tradeRecords = useStore(state => state.tradeRecords)
 
-  // 根据账户类型获取对应的数据
-  const currentTransactions = accountType === 'real' ? transactions : virtualTransactions
-  const currentAccount = account[accountType] || { balance: 0, totalInvested: 0, totalProfit: 0 }
+  // 调试：检查订单和交易记录数据
+  React.useEffect(() => {
+    console.log('[TransactionHistory] ===== 详细调试信息 =====')
+    console.log('[TransactionHistory] 当前订单数量:', orders.length)
+    console.log('[TransactionHistory] 当前交易记录数量:', (tradeRecords || []).length)
+    
+    // 查找是否有20260404001交易编号的订单
+    const targetTradeNumber = '20260404001'
+    const targetOrder = orders.find(o => o.tradeNumber === targetTradeNumber)
+    
+    if (targetOrder) {
+      console.log('[TransactionHistory] ✅ 找到20260404001交易编号的订单:', targetOrder)
+    } else {
+      console.log('[TransactionHistory] ❌ 没有找到20260404001交易编号的订单')
+      console.log('[TransactionHistory] 所有订单的交易编号:', orders.map(o => ({ 
+        tradeNumber: o.tradeNumber, 
+        symbol: o.symbol,
+        type: o.type,
+        createdAt: o.createdAt,
+        deleted: o.deleted
+      })))
+    }
+    
+    console.log('[TransactionHistory] ===== 调试结束 =====')
+  }, [orders, tradeRecords])
+
+  // 只使用实盘数据
+  const currentTransactions = transactions
+  const currentAccount = account.real || { balance: 0, totalInvested: 0, totalProfit: 0 }
 
   const handleSelectAll = (ids) => {
     setSelectedIds(ids)
@@ -118,15 +145,13 @@ const TransactionHistory = () => {
       return
     }
 
-    console.log('确认删除, selectedIds:', selectedIds, 'accountType:', accountType)
-    console.log('当前实盘交易数:', transactions.length)
-    console.log('当前虚拟盘交易数:', virtualTransactions.length)
+    console.log('确认删除, selectedIds:', selectedIds)
+    console.log('当前交易数:', transactions.length)
 
-    deleteMultipleTransactions(selectedIds, accountType)
+    deleteMultipleTransactions(selectedIds)
 
     setTimeout(() => {
-      console.log('删除后 - 实盘交易数:', transactions.length)
-      console.log('删除后 - 虚拟盘交易数:', virtualTransactions.length)
+      console.log('删除后 - 交易数:', transactions.length)
     }, 100)
 
     setSelectedIds([])
@@ -159,7 +184,7 @@ const TransactionHistory = () => {
       description: transactionForm.description,
       balance: currentAccount.balance + (transactionForm.type === 'income' ? parseFloat(transactionForm.amount) : -parseFloat(transactionForm.amount)),
       createdAt: new Date().toISOString()
-    }, accountType)
+    }, 'real')
     setShowModal(false)
     setTransactionForm({ type: 'income', amount: '', description: '' })
     setFormErrors({ amount: false, description: false })
@@ -249,9 +274,6 @@ const TransactionHistory = () => {
     return filtered
   })()
 
-  const totalPages = Math.ceil(filteredTransactions.length / pageSize)
-  const paginatedData = filteredTransactions.slice().reverse().slice((currentPage - 1) * pageSize, currentPage * pageSize)
-
   // 解析日期字符串 "年-月-日 时:分:秒" 为 Date 对象
   const parseDate = (dateStr) => {
     if (!dateStr) return null
@@ -260,6 +282,22 @@ const TransactionHistory = () => {
     const date = new Date(isoStr)
     return isNaN(date.getTime()) ? null : date
   }
+
+  const totalPages = Math.ceil(filteredTransactions.length / pageSize)
+  
+  // 按发生时间降序排序，最新的在前
+  const sortedTransactions = filteredTransactions.slice().sort((a, b) => {
+    const dateA = parseDate(a.createdAt)
+    const dateB = parseDate(b.createdAt)
+    
+    if (!dateA && !dateB) return 0
+    if (!dateA) return 1  // a的时间缺失，排到后面
+    if (!dateB) return -1 // b的时间缺失，排到前面
+    
+    return dateB.getTime() - dateA.getTime() // 降序：最新的在前
+  })
+  
+  const paginatedData = sortedTransactions.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   // 获取当前月份
   const now = new Date()
@@ -284,39 +322,87 @@ const TransactionHistory = () => {
   const lastMonth = lastMonthDate.getMonth()
   const lastMonthYear = lastMonthDate.getFullYear()
 
-  // 计算上月最后一秒的总资产（当前余额减去本月收支）
-  const lastMonthBalance = currentAccount.balance - monthIncome + monthExpense
+  // 计算当前总资产：使用store的getTotalAssets方法确保数据同步
+  const getTotalAssets = useStore(state => state.getTotalAssets)
+  const currentTotalAssets = getTotalAssets('real')
+  
+  // 获取上月最后一天的日期（作为查询终点）
+  const lastMonthEnd = new Date(currentYear, currentMonth, 0, 23, 59, 59)
+  
+  // 找到上月最后一笔交易记录的余额作为上月总资产
+  const lastMonthTransactions = currentTransactions
+    .filter(t => {
+      const date = parseDate(t.createdAt)
+      return !t.deleted && date && date <= lastMonthEnd
+    })
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) // 按时间倒序，最新的在前
+  
+  // 使用上月最后一笔交易的余额作为上月总资产基准值
+  const lastMonthAssets = lastMonthTransactions.length > 0 
+    ? (lastMonthTransactions[0].balance || 100000)
+    : 100000
 
-  // 计算上月收入
-  const lastMonthIncome = currentTransactions.filter(t => {
+  // 获取上个月所有交易（按时间排序）
+  const lastMonthAllTransactions = currentTransactions
+    .filter(t => {
+      const date = parseDate(t.createdAt)
+      return !t.deleted && date && date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear
+    })
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)) // 按时间顺序排序
+    
+  // 获取上月最后一天的日期
+  const lastDayOfMonth = new Date(currentYear, currentMonth, 0) // 上月最后一天
+  
+  // 获取上月最后一天最后一笔交易的余额作为上月资产值
+  const lastDayTransactions = lastMonthAllTransactions.filter(t => {
     const date = parseDate(t.createdAt)
-    return !t.deleted && t.amount > 0 && date && date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear
-  }).reduce((sum, t) => sum + t.amount, 0)
-
-  // 计算上月支出
-  const lastMonthExpense = currentTransactions.filter(t => {
-    const date = parseDate(t.createdAt)
-    return !t.deleted && t.amount < 0 && date && date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear
-  }).reduce((sum, t) => sum + Math.abs(t.amount), 0)
+    return date && date.getDate() === lastDayOfMonth.getDate()
+  })
+  
+  // 上月最后一天的余额：使用最后一天的最后一笔交易余额，如果没有则使用默认值
+  const lastMonthBalanceLastDay = lastDayTransactions.length > 0 
+    ? (lastDayTransactions[lastDayTransactions.length - 1].balance || 100000)
+    : 100000
+  
+  // 上月最后一天的收入：当天所有收入之和
+  const lastMonthIncomeLastDay = lastDayTransactions
+    .filter(t => t.amount > 0)
+    .reduce((sum, t) => sum + t.amount, 0)
+  
+  // 上月最后一天的支出：当天所有支出之和
+  const lastMonthExpenseLastDay = lastDayTransactions
+    .filter(t => t.amount < 0)
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+  
+  // 上个月总的收入（整个月）
+  const lastMonthIncome = lastMonthAllTransactions
+    .filter(t => t.amount > 0)
+    .reduce((sum, t) => sum + t.amount, 0)
+  
+  // 上个月总的支出（整个月）
+  const lastMonthExpense = lastMonthAllTransactions
+    .filter(t => t.amount < 0)
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0)
 
   // 计算上月盈亏
   const lastMonthBalanceProfit = lastMonthIncome - lastMonthExpense
 
-  // 计算总资产差值和百分比
-  const balanceDiff = currentAccount.balance - lastMonthBalance
-  const balancePercent = lastMonthBalance > 0 ? ((balanceDiff / lastMonthBalance) * 100) : 0
+  // 计算总资产差值和百分比（对比上月最后一天的总资产）
+  const balanceDiff = currentTotalAssets - lastMonthAssets
+  const balancePercent = lastMonthAssets > 0 ? ((balanceDiff / lastMonthAssets) * 100) : 0
 
-  // 计算本月收入差值和百分比
-  const incomeDiff = monthIncome - lastMonthIncome
-  const incomePercent = lastMonthIncome > 0 ? ((incomeDiff / lastMonthIncome) * 100) : 0
+  // 计算本月收入差值和百分比（对比上月最后一天的收入）
+  const incomeDiff = monthIncome - (lastMonthIncomeLastDay || 0)
+  const incomePercent = (lastMonthIncomeLastDay || 0) > 0 ? ((incomeDiff / (lastMonthIncomeLastDay || 1)) * 100) : 0
 
-  // 计算本月支出差值和百分比
-  const expenseDiff = monthExpense - lastMonthExpense
-  const expensePercent = lastMonthExpense > 0 ? ((expenseDiff / lastMonthExpense) * 100) : 0
+  // 计算本月支出差值和百分比（对比上月最后一天的支出）
+  const expenseDiff = monthExpense - (lastMonthExpenseLastDay || 0)
+  const expensePercent = (lastMonthExpenseLastDay || 0) > 0 ? ((expenseDiff / (lastMonthExpenseLastDay || 1)) * 100) : 0
 
-  // 计算本月盈亏差值和百分比
-  const profitDiff = monthBalance - lastMonthBalanceProfit
-  const profitPercent = lastMonthBalanceProfit !== 0 ? ((profitDiff / Math.abs(lastMonthBalanceProfit)) * 100) : 0
+  // 计算本月盈亏差值和百分比（对比上月最后一天的盈亏）
+  const lastMonthBalanceProfitLastDay = (lastMonthIncomeLastDay || 0) - (lastMonthExpenseLastDay || 0)
+  const profitDiff = monthBalance - lastMonthBalanceProfitLastDay
+  const profitPercent = lastMonthBalanceProfitLastDay !== 0 ? ((profitDiff / Math.abs(lastMonthBalanceProfitLastDay)) * 100) : 0
 
   // 百分比格式化：整数时不显示小数点，有小数时显示2位（四舍五入）
   const formatPercent = (percent) => {
@@ -352,13 +438,13 @@ const TransactionHistory = () => {
           <div>
             <p className="text-sm mb-0" style={{ color: '#666' }}>总资产</p>
             <p className="text-2xl font-bold mb-2" style={{ color: '#0F1419' }}>
-              ¥{currentAccount.balance.toLocaleString()}
+              {currentTotalAssets.toLocaleString()}
             </p>
             <div style={{ borderBottom: '1px dashed #d1d5db', marginBottom: '8px' }}></div>
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '4px' }}>上月</p>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
-                ¥{lastMonthBalance.toLocaleString()}
+                {lastMonthAssets < 0 ? '-' : ''}{Math.abs(lastMonthAssets).toLocaleString()}
               </p>
               {balanceDiff >= 0 ? (
                 <span style={{ color: '#22c55e', fontSize: '14px', display: 'inline-block', marginRight: '4px' }}>▲</span>
@@ -387,13 +473,13 @@ const TransactionHistory = () => {
           <div>
             <p className="text-sm mb-0" style={{ color: '#666' }}>本月收入</p>
             <p className="text-2xl font-bold mb-2" style={{ color: '#0F1419' }}>
-              ¥{monthIncome.toLocaleString()}
+              {monthIncome.toLocaleString()}
             </p>
             <div style={{ borderBottom: '1px dashed #d1d5db', marginBottom: '8px' }}></div>
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '4px' }}>上月</p>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
-                ¥{lastMonthIncome.toLocaleString()}
+                {lastMonthIncomeLastDay < 0 ? '-' : ''}{Math.abs(lastMonthIncomeLastDay).toLocaleString()}
               </p>
               {incomeDiff >= 0 ? (
                 <span style={{ color: '#22c55e', fontSize: '14px', display: 'inline-block', marginRight: '4px' }}>▲</span>
@@ -422,13 +508,13 @@ const TransactionHistory = () => {
           <div>
             <p className="text-sm mb-0" style={{ color: '#666' }}>本月支出</p>
             <p className="text-2xl font-bold mb-2" style={{ color: '#0F1419' }}>
-              ¥{monthExpense.toLocaleString()}
+              {monthExpense.toLocaleString()}
             </p>
             <div style={{ borderBottom: '1px dashed #d1d5db', marginBottom: '8px' }}></div>
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '4px' }}>上月</p>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
-                ¥{lastMonthExpense.toLocaleString()}
+                {lastMonthExpenseLastDay < 0 ? '-' : ''}{Math.abs(lastMonthExpenseLastDay).toLocaleString()}
               </p>
               {expenseDiff >= 0 ? (
                 <span style={{ color: '#22c55e', fontSize: '14px', display: 'inline-block', marginRight: '4px' }}>▲</span>
@@ -457,13 +543,13 @@ const TransactionHistory = () => {
           <div>
             <p className="text-sm mb-0" style={{ color: '#666' }}>本月盈亏</p>
             <p className="text-2xl font-bold mb-2" style={{ color: '#0F1419' }}>
-              {monthBalance > 0 ? '+' : ''}{monthBalance < 0 ? '-' : ''}¥{Math.abs(monthBalance).toLocaleString()}
+              {monthBalance < 0 ? '-' : ''}{Math.abs(monthBalance).toLocaleString()}
             </p>
             <div style={{ borderBottom: '1px dashed #d1d5db', marginBottom: '8px' }}></div>
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '4px' }}>上月</p>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
-                {lastMonthBalanceProfit > 0 ? '+' : ''}{lastMonthBalanceProfit < 0 ? '-' : ''}¥{Math.abs(lastMonthBalanceProfit).toLocaleString()}
+                {lastMonthBalanceProfitLastDay < 0 ? '-' : ''}{Math.abs(lastMonthBalanceProfitLastDay).toLocaleString()}
               </p>
               {profitDiff >= 0 ? (
                 <span style={{ color: '#22c55e', fontSize: '14px', display: 'inline-block', marginRight: '4px' }}>▲</span>
@@ -511,13 +597,13 @@ const TransactionHistory = () => {
               placeholder="记账类型"
             />
           </div>
-          <motion.button
+        <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => setShowModal(true)}
-          className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2"
+          className="px-4 py-2 bg-[#0F1419] border-0 rounded text-white hover:opacity-90 transition-opacity text-sm flex items-center gap-2"
         >
-          <Plus className="w-4 h-4" />
+          <ArrowUpCircle className="w-4 h-4 text-white" />
           手动记账
         </motion.button>
         <motion.button
@@ -540,39 +626,6 @@ const TransactionHistory = () => {
           <Trash2 className="w-4 h-4" />
           删除
         </motion.button>
-        </div>
-        {/* 实盘/虚拟切换 */}
-        <div style={{ display: 'flex', gap: '0', background: '#f3f4f6', borderRadius: '99px', padding: '2px' }}>
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => setAccountType('real')}
-            className="px-4 py-2 rounded text-sm transition-all"
-            style={{
-              borderRadius: '99px 0 0 99px',
-              background: accountType === 'real' ? '#0F1419' : '#ffffff',
-              border: accountType === 'real' ? 'none' : '1px solid #000000',
-              color: accountType === 'real' ? '#ffffff' : '#000000',
-              fontWeight: accountType === 'real' ? '500' : '400'
-            }}
-          >
-            实盘
-          </motion.button>
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => setAccountType('virtual')}
-            className="px-4 py-2 rounded text-sm transition-all"
-            style={{
-              borderRadius: '0 99px 99px 0',
-              background: accountType === 'virtual' ? '#0F1419' : '#ffffff',
-              border: accountType === 'virtual' ? 'none' : '1px solid #000000',
-              color: accountType === 'virtual' ? '#ffffff' : '#000000',
-              fontWeight: accountType === 'virtual' ? '500' : '400'
-            }}
-          >
-            虚拟
-          </motion.button>
         </div>
       </div>
 
@@ -598,34 +651,158 @@ const TransactionHistory = () => {
                 const typeMap = { '买入': '买入股票', '卖出': '卖出股票' }
                 return <span style={{ color: '#000' }}>{typeMap[item.type] || item.type}</span>
               }
+              if (field.key === 'tradeNumber') {
+                // 交易编号显示逻辑：手动入账的空值，股票交易从订单中获取交易编号
+                if (item.type === '手动入账' || item.type === '手动出账') {
+                  // 手动记账类型留空
+                  return ''
+                } else if (item.type === '买入' || item.type === '卖出') {
+                  // 详细信息调试
+                  console.log('[TransactionHistory] 🎯 开始交易编号匹配:', {
+                    交易项目: {
+                      id: item.id,
+                      type: item.type,
+                      symbol: item.symbol,
+                      name: item.name,
+                      createdAt: item.createdAt,
+                      description: item.description
+                    },
+                    可用订单数量: orders.length
+                  })
+                  
+                  // 1. 首先检查订单数量和内容
+                  if (orders.length === 0) {
+                    console.log('[TransactionHistory] ❌ 订单列表为空，无法匹配')
+                    return '-'
+                  }
+                  
+                  // 2. 逐一检查所有订单的匹配情况
+                  console.log('[TransactionHistory] 逐一检查订单匹配:')
+                  let matchedOrder = null
+                  
+                  for (let i = 0; i < orders.length; i++) {
+                    const order = orders[i]
+                    console.log(`[TransactionHistory] 检查订单${i+1}:`, {
+                      id: order.id,
+                      tradeNumber: order.tradeNumber,
+                      symbol: order.symbol,
+                      name: order.name,
+                      type: order.type,
+                      createdAt: order.createdAt
+                    })
+                    
+                    // 检查基本匹配条件 - 增强符号匹配，处理可能的空格和编码问题
+                    const normalizeText = (text) => {
+                      if (!text) return ''
+                      return text.toString().trim().replace(/\s+/g, '')
+                    }
+                    
+                    const symbolMatch = normalizeText(order.symbol) === normalizeText(item.symbol)
+                    const nameMatch = order.name === item.name || 
+                                    (item.name && order.name && normalizeText(item.name).includes(normalizeText(order.name))) || 
+                                    (order.name && item.name && normalizeText(order.name).includes(normalizeText(item.name)))
+                    const typeMatch = order.type === (item.type === '买入' ? 'buy' : 'sell')
+                    
+                    console.log(`[TransactionHistory]   匹配结果: 符号=${symbolMatch}, 名称=${nameMatch}, 类型=${typeMatch}`)
+                    
+                    if (typeMatch) {
+                      // 如果类型匹配，优先使用符号匹配，其次使用名称匹配
+                      if (symbolMatch) {
+                        matchedOrder = order
+                        console.log(`[TransactionHistory] ✅ 符号匹配成功: ${order.tradeNumber}`)
+                        break
+                      } else if (nameMatch) {
+                        matchedOrder = order
+                        console.log(`[TransactionHistory] ✅ 名称匹配成功: ${order.tradeNumber}`)
+                        break
+                      }
+                    }
+                  }
+                  
+                  if (matchedOrder) {
+                    return matchedOrder.tradeNumber
+                  }
+                  
+                  // 3. 如果没找到精确匹配，尝试宽松匹配：只匹配类型
+                  console.log('[TransactionHistory] 尝试类型宽松匹配...')
+                  const typeMatchedOrders = orders.filter(o => 
+                    o.type === (item.type === '买入' ? 'buy' : 'sell')
+                  )
+                  
+                  if (typeMatchedOrders.length > 0) {
+                    console.log('[TransactionHistory] 找到类型匹配的订单:', typeMatchedOrders.length)
+                    typeMatchedOrders.forEach((order, idx) => {
+                      console.log(`[TransactionHistory]   类型匹配订单${idx+1}: ${order.tradeNumber} (${order.symbol})`)
+                    })
+                    return typeMatchedOrders[0].tradeNumber
+                  }
+                  
+                  console.log('[TransactionHistory] ❌ 最终：没有找到匹配的订单')
+                  return '-'
+                }
+                // 其他情况显示原值或横线
+                return item.tradeNumber || '-'
+              }
               if (field.key === 'amount') {
-                const isNegative = item.type === '买入' || item.type === '手动出账'
-                return <span style={{ color: isNegative ? '#ef4444' : '#22c55e' }}>{isNegative ? '-' : '+'}¥{Math.abs(item.amount).toLocaleString()}</span>
+                // 格式化金额：正数取整，有小数点取小数点2位四舍五入，千位分隔符
+                const formattedAmount = () => {
+                  const amount = parseFloat(item.amount)
+                  if (isNaN(amount)) return '0'
+                  
+                  if (Number.isInteger(amount)) {
+                    // 整数：直接使用toLocaleString添加千位分隔符
+                    return amount.toLocaleString('zh-CN')
+                  } else {
+                    // 有小数：四舍五入到2位小数，然后添加千位分隔符
+                    const roundedAmount = Math.round(amount * 100) / 100
+                    return roundedAmount.toLocaleString('zh-CN', { 
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2 
+                    })
+                  }
+                }
+                
+                return <span>{formattedAmount()}</span>
               }
               if (field.key === 'balance') {
-                return `¥${(item.balance || currentAccount.balance).toLocaleString()}`
+                const balance = item.balance || currentAccount.balance
+                // 整数取整，有小数点取小数点2位四舍五入
+                if (Number.isInteger(balance)) {
+                  // 整数：直接使用toLocaleString添加千位分隔符
+                  return balance.toLocaleString('zh-CN')
+                } else {
+                  // 有小数：四舍五入到2位小数，然后添加千位分隔符
+                  const roundedBalance = Math.round(balance * 100) / 100
+                  return roundedBalance.toLocaleString('zh-CN', { 
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2 
+                  })
+                }
               }
               if (field.key === 'description') {
+                // 股票交易类型：格式化显示为 "买入xxx股" 或 "卖出xxx股"
+                if (item.type === '买入' || item.type === '卖出') {
+                  // 直接尝试从原始描述中提取数量
+                  let quantity = 0
+                  
+                  // 首先检查是否有现成的数量字段
+                  if (item.quantity) {
+                    quantity = item.quantity
+                  } else {
+                    // 从描述中提取股数信息
+                    const descMatch = item.description && item.description.match(/(\d+)股/)
+                    if (descMatch) {
+                      quantity = parseInt(descMatch[1])
+                    }
+                  }
+                  
+                  const formattedQuantity = quantity.toLocaleString('zh-CN')
+                  return `${item.type}${formattedQuantity}股`
+                }
+                
                 // 手动记账类型：使用原有的描述
                 if (item.type === '手动入账' || item.type === '手动出账') {
                   return item.description || '-';
-                }
-                
-                // 股票交易类型：拼接交易数量和类型
-                if (item.type === '买入' || item.type === '卖出') {
-                  // 通过trade_number找到对应的交易记录
-                  const tradeRecord = tradeRecords.find(tr => tr.tradeNumber === item.tradeNumber);
-                  if (tradeRecord) {
-                    const quantity = item.type === '买入' ? tradeRecord.buyQuantity : tradeRecord.sellQuantity;
-                    // 使用千位分隔符格式化数量
-                    const formattedQuantity = quantity ? quantity.toLocaleString() : '0';
-                    return `${item.type}${formattedQuantity}股`;
-                  } else {
-                    // 如果找不到交易记录，使用默认拼接
-                    const quantity = item.type === '买入' ? item.buyQuantity : item.sellQuantity;
-                    const formattedQuantity = quantity ? quantity.toLocaleString() : '0';
-                    return `${item.type}${formattedQuantity}股`;
-                  }
                 }
                 
                 // 其他情况返回原描述
@@ -720,7 +897,7 @@ const TransactionHistory = () => {
             </div>
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-2"><span className="text-red-500">*</span> 金额 (¥)</label>
+            <label className="block text-sm text-gray-600 mb-2"><span className="text-red-500">*</span> 记账金额</label>
             <CustomInput
               type="number"
               step="0.01"

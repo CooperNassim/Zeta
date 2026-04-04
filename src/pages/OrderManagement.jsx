@@ -78,8 +78,7 @@ const OrderManagement = () => {
     strategyId: '',
     riskModelId: '',
     strategyScores: {},
-    psychologicalScores: {},
-    isVirtual: false
+    psychologicalScores: {}
   })
 
   const handleAddOrder = (type) => {
@@ -100,7 +99,6 @@ const OrderManagement = () => {
       strategyId: '',
       riskModelId: '',
       psychologicalScores: {},
-      isVirtual: false,
       buyOrderId: null,
       tradeNumber: ''
     }
@@ -448,7 +446,16 @@ const OrderManagement = () => {
     let buyQuantity = 0
     let soldQuantity = 0
 
-    console.log('[calculateAvailableQuantity] orderForm:', { buyOrderId: orderForm.buyOrderId, tradeNumber: orderForm.tradeNumber })
+    console.log('[calculateAvailableQuantity] DEBUG - 开始计算可卖出数量')
+    console.log('[calculateAvailableQuantity] orderForm:', { 
+      buyOrderId: orderForm.buyOrderId, 
+      tradeNumber: orderForm.tradeNumber,
+      symbol: orderForm.symbol,
+      type: orderType
+    })
+    console.log('[calculateAvailableQuantity] 订单总数:', orders.length)
+    console.log('[calculateAvailableQuantity] 买入订单数量:', orders.filter(o => !o.deleted && o.type === 'buy').length)
+    console.log('[calculateAvailableQuantity] 卖出订单数量:', orders.filter(o => !o.deleted && o.type === 'sell').length)
 
     if (orderForm.buyOrderId) {
       // 方式1：通过 buyOrderId 关联（精确匹配某个买入订单）
@@ -471,11 +478,13 @@ const OrderManagement = () => {
         !o.deleted &&
         o.tradeNumber === orderForm.tradeNumber
       )
+      console.log('[calculateAvailableQuantity] 通过tradeNumber关联的订单:', sameTradeOrders)
 
       // 买入数量：只统计未删除的买入订单
       buyQuantity = sameTradeOrders
         .filter(o => o.type === 'buy')
         .reduce((sum, o) => sum + (o.quantity || 0), 0)
+      console.log('[calculateAvailableQuantity] 买入数量:', buyQuantity)
 
       // 卖出数量：只统计关联到未删除买入订单的卖出订单
       // 修复：如果卖出订单关联的买入订单已被删除,则不计入
@@ -493,7 +502,9 @@ const OrderManagement = () => {
         .reduce((sum, o) => sum + (o.quantity || 0), 0)
     }
 
-    return Math.max(0, buyQuantity - soldQuantity)
+    const result = Math.max(0, buyQuantity - soldQuantity)
+    console.log('[calculateAvailableQuantity] 最终计算结果:', { buyQuantity, soldQuantity, result })
+    return result
   }
 
   const handleSubmitOrder = (e) => {
@@ -582,8 +593,7 @@ const OrderManagement = () => {
       riskScore: riskScore10,
       overallScore: parseFloat(overallScore),
       buyOrderId,  // 卖出订单关联的买入订单ID
-      evaluationResults,
-      isVirtual: orderForm.isVirtual || false  // 虚拟盘标记
+      evaluationResults
     }).then(result => {
       setShowModal(false)
       if (result.success) {
@@ -660,6 +670,7 @@ const OrderManagement = () => {
   // 当卖出交易的选择变化时,重新计算可卖出数量并填充（仅初始化或刚打开弹窗时）
   useEffect(() => {
     console.log('[useEffect] 触发计算可卖出数量:', { orderType, tradeNumber: orderForm.tradeNumber, buyOrderId: orderForm.buyOrderId, selectedIds })
+    console.log('[useEffect] 订单数据详情:', { ordersLength: orders.length, ordersSample: orders.slice(0, 3) })
     if (orderType === 'sell' && (orderForm.tradeNumber || orderForm.buyOrderId)) {
       // 只有当quantity为空或刚打开弹窗时才自动填充，避免覆盖用户输入
       if (orderForm.quantity === '' || orderForm.quantity === undefined || orderForm.quantity === null) {
@@ -1342,22 +1353,8 @@ const OrderManagement = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between" style={{ marginTop: '8px' }}>
-                    {/* 虚拟盘勾选 */}
-                    <div>
-                      <label className="flex items-center gap-1 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={orderForm.isVirtual || false}
-                          onChange={(e) => setOrderForm({ ...orderForm, isVirtual: e.target.checked })}
-                          className="w-4 h-4 text-[#0F1419] border-gray-300 rounded focus:ring-[#0F1419]"
-                        />
-                        <span className="text-xs font-medium text-gray-700">虚拟盘</span>
-                      </label>
-                      <p className="text-xs text-gray-500 mt-0.5">勾选后记录到虚拟账单</p>
-                    </div>
-                    
-                    <div className="flex gap-2">
+                  <div className="flex items-center" style={{ marginTop: '8px' }}>
+                    <div className="flex gap-2 ml-auto">
                       <button
                         type="button"
                         onClick={() => setEvaluationStep(2)}

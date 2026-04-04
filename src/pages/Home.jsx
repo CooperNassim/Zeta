@@ -74,9 +74,9 @@ const Home = () => {
   }, 0)
 
   const stats = [
-    { label: '交易金额', value: tradeAmount, prefix: '¥' },
-    { label: '盈亏额', value: profitLoss, prefix: '¥' },
-    { label: '手续费', value: totalFee, prefix: '¥' },
+    { label: '交易金额', value: tradeAmount, prefix: '' },
+    { label: '盈亏额', value: profitLoss, prefix: '' },
+    { label: '手续费', value: totalFee, prefix: '' },
     { label: '交易记录', value: tradeRecords.length },
   ]
 

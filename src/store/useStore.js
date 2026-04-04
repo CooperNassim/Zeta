@@ -157,8 +157,7 @@ const useStore = create(
     (set, get) => ({
       // 账户信息
       account: {
-        real: { balance: 0, totalInvested: 0, totalProfit: 0 },
-        virtual: { balance: 0, totalInvested: 0, totalProfit: 0 }
+        real: { balance: 100000, totalInvested: 0, totalProfit: 0 }
       },
 
       // 每日功课数据（26个字段）
@@ -175,8 +174,7 @@ const useStore = create(
 
       // 风险配置（从数据库同步）
       riskConfig: {
-        real: { totalRiskPercent: 6, singleRiskPercent: 2 },
-        virtual: { totalRiskPercent: 6, singleRiskPercent: 2 }
+        real: { totalRiskPercent: 6, singleRiskPercent: 2 }
       },
 
       // 实时风控数据（实时计算，不存储）
@@ -296,11 +294,8 @@ const useStore = create(
         return newTradeNumber
       },
 
-      // 账单明细（实盘）
+      // 账单明细
       transactions: [],
-
-      // 虚拟盘账单明细
-      virtualTransactions: [],
 
       // 交易记录
       tradeRecords: [],
@@ -1278,7 +1273,7 @@ const useStore = create(
           overall_score: newOrder.overallScore,
           order_date: new Date().toISOString().split('T')[0],
           order_time: new Date().toISOString(), // 发送完整的ISO时间戳，触发器会自动处理
-          status: 'completed',
+          status: 'executed',
           is_virtual: newOrder.isVirtual || false,
           buy_order_id: newOrder.buyOrderId || null,
           notes: null,
@@ -1325,8 +1320,9 @@ const useStore = create(
             symbol: newOrder.symbol,
             name: newOrder.name,
             amount: amount,
+            quantity: newOrder.quantity,
             balance: newBalance,  // 设置实际的余额值
-            description: `${transactionType} ${newOrder.symbol} ${newOrder.quantity}股 @ ¥${newOrder.price}`,
+            description: `${transactionType.replace('股票', '')}${newOrder.quantity}股`,
             tradeNumber: tradeNumber // 添加关联的交易编号
           }
           
@@ -1420,6 +1416,29 @@ const useStore = create(
 
       // 批量删除预约单
       deleteMultipleOrders: (ids) => set((state) => {
+        // 查找所有要删除的订单的交易编号
+        const ordersToDelete = state.orders.filter(o => ids.includes(o.id))
+        const tradeNumbers = [...new Set(ordersToDelete.map(o => o.tradeNumber).filter(Boolean))]
+        
+        // 删除关联的账单明细
+        if (tradeNumbers.length > 0) {
+          tradeNumbers.forEach(tradeNumber => {
+            apiCall(`/api/transactions?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET')
+              .then(result => {
+                if (result.success && result.data) {
+                  const matchedTransactions = result.data.filter(t => t.trade_number === tradeNumber)
+                  if (matchedTransactions.length > 0) {
+                    const transactionIds = matchedTransactions.map(t => t.id)
+                    apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
+                      .then(() => console.log(`[Store] 删除对应账单明细成功: ${tradeNumber} -> ${transactionIds.length}条`))
+                      .catch(err => console.error('[Store] 删除账单明细失败:', err))
+                  }
+                }
+              })
+              .catch(err => console.error('[Store] 查找账单明细失败:', err))
+          })
+        }
+        
         // 同步到数据库
         apiCall(`/api/trade_orders/bulk/delete`, 'POST', { ids })
           .then(result => console.log('[Store] 删除订单成功:', result))
@@ -1592,213 +1611,116 @@ const useStore = create(
           .catch(err => console.error('[Store] 同步账单到数据库失败:', err))
 
         return {
-          transactions: accountType === 'real'
-            ? [...state.transactions, newTransaction]
-            : state.transactions,
-          virtualTransactions: accountType === 'virtual'
-            ? [...state.virtualTransactions, newTransaction]
-            : state.virtualTransactions,
+          transactions: [...state.transactions, newTransaction],
           account: {
             ...state.account,
-            [accountType]: {
-              ...state.account[accountType],
-              balance: state.account[accountType].balance + transaction.amount
+            real: {
+              ...state.account.real,
+              balance: state.account.real.balance + transaction.amount
             }
           }
         }
       }),
 
       // 删除账单
-      deleteTransaction: (id, accountType = 'real') => set((state) => {
+      deleteTransaction: (id) => set((state) => {
         apiCall(`/api/transactions/${id}`, 'DELETE')
-        if (accountType === 'real') {
-          const transaction = state.transactions.find(t => t.id === id)
-          const realBalance = (state.account.real && state.account.real.balance) || 0
-          return {
-            transactions: state.transactions.map(t =>
-              t.id === id ? { ...t, deleted: true, deletedAt: new Date().toISOString() } : t
-            ),
-            account: {
-              ...state.account,
-              real: {
-                ...(state.account.real || {}),
-                balance: transaction
-                  ? realBalance - transaction.amount
-                  : realBalance
-              }
-            }
-          }
-        } else {
-          const transaction = state.virtualTransactions.find(t => t.id === id)
-          const virtualBalance = (state.account.virtual && state.account.virtual.balance) || 0
-          return {
-            virtualTransactions: state.virtualTransactions.map(t =>
-              t.id === id ? { ...t, deleted: true, deletedAt: new Date().toISOString() } : t
-            ),
-            account: {
-              ...state.account,
-              virtual: {
-                ...(state.account.virtual || {}),
-                balance: transaction
-                  ? virtualBalance - transaction.amount
-                  : virtualBalance
-              }
+        const transaction = state.transactions.find(t => t.id === id)
+        const realBalance = (state.account.real && state.account.real.balance) || 0
+        return {
+          transactions: state.transactions.map(t =>
+            t.id === id ? { ...t, deleted: true, deletedAt: new Date().toISOString() } : t
+          ),
+          account: {
+            ...state.account,
+            real: {
+              ...(state.account.real || {}),
+              balance: transaction
+                ? realBalance - transaction.amount
+                : realBalance
             }
           }
         }
       }),
 
       // 批量删除账单
-      deleteMultipleTransactions: (ids, accountType = 'real') => set((state) => {
+      deleteMultipleTransactions: (ids) => set((state) => {
         apiCall(`/api/transactions/bulk/delete`, 'POST', { ids })
         console.log('[Store] deleteMultipleTransactions 被调用')
         console.log('[Store] ids:', ids)
-        console.log('[Store] accountType:', accountType)
-        console.log('[Store] 删除前实盘交易数:', state.transactions.length)
-        console.log('[Store] 删除前虚拟盘交易数:', state.virtualTransactions.length)
+        console.log('[Store] 删除前交易数:', state.transactions.length)
         console.log('[Store] account:', state.account)
 
-        if (accountType === 'real') {
-          const transactionsToDelete = state.transactions.filter(t => ids.includes(t.id))
-          const totalAmount = transactionsToDelete.reduce((sum, t) => sum + t.amount, 0)
+        const transactionsToDelete = state.transactions.filter(t => ids.includes(t.id))
+        const totalAmount = transactionsToDelete.reduce((sum, t) => sum + t.amount, 0)
 
-          console.log('[Store] 实盘 - 删除的交易数:', transactionsToDelete.length)
-          console.log('[Store] 实盘 - 总金额:', totalAmount)
-          console.log('[Store] 实盘 - state.account.real:', state.account.real)
+        console.log('[Store] 删除的交易数:', transactionsToDelete.length)
+        console.log('[Store] 总金额:', totalAmount)
+        console.log('[Store] state.account.real:', state.account.real)
 
-          const realBalance = (state.account.real && state.account.real.balance) || 0
-          console.log('[Store] 实盘 - 原余额:', realBalance)
+        const realBalance = (state.account.real && state.account.real.balance) || 0
+        console.log('[Store] 原余额:', realBalance)
 
-          const newState = {
-            transactions: state.transactions.map(t =>
-              ids.includes(t.id) ? { ...t, deleted: true, deletedAt: new Date().toISOString() } : t
-            ),
-            account: {
-              ...state.account,
-              real: {
-                ...(state.account.real || {}),
-                balance: realBalance - totalAmount
-              }
+        const newState = {
+          transactions: state.transactions.map(t =>
+            ids.includes(t.id) ? { ...t, deleted: true, deletedAt: new Date().toISOString() } : t
+          ),
+          account: {
+            ...state.account,
+            real: {
+              ...(state.account.real || {}),
+              balance: realBalance - totalAmount
             }
           }
-
-          console.log('[Store] 实盘 - 新余额:', newState.account.real.balance)
-          console.log('[Store] 实盘 - 删除后交易数:', newState.transactions.length)
-
-          return newState
-        } else {
-          const transactionsToDelete = state.virtualTransactions.filter(t => ids.includes(t.id))
-          const totalAmount = transactionsToDelete.reduce((sum, t) => sum + t.amount, 0)
-
-          console.log('[Store] 虚拟盘 - 删除的交易数:', transactionsToDelete.length)
-          console.log('[Store] 虚拟盘 - 总金额:', totalAmount)
-          console.log('[Store] 虚拟盘 - state.account.virtual:', state.account.virtual)
-
-          const virtualBalance = (state.account.virtual && state.account.virtual.balance) || 0
-          console.log('[Store] 虚拟盘 - 原余额:', virtualBalance)
-
-          const newState = {
-            virtualTransactions: state.virtualTransactions.map(t =>
-              ids.includes(t.id) ? { ...t, deleted: true, deletedAt: new Date().toISOString() } : t
-            ),
-            account: {
-              ...state.account,
-              virtual: {
-                ...(state.account.virtual || {}),
-                balance: virtualBalance - totalAmount
-              }
-            }
-          }
-
-          console.log('[Store] 虚拟盘 - 新余额:', newState.account.virtual.balance)
-          console.log('[Store] 虚拟盘 - 删除后交易数:', newState.virtualTransactions.length)
-
-          return newState
         }
+
+        console.log('[Store] 新余额:', newState.account.real.balance)
+        console.log('[Store] 删除后交易数:', newState.transactions.length)
+
+        return newState
       }),
 
       // 恢复账单
-      restoreTransaction: (id, accountType = 'real') => set((state) => {
+      restoreTransaction: (id) => set((state) => {
         apiCall(`/api/transactions/${id}/restore`, 'PATCH')
-        if (accountType === 'real') {
-          const transaction = state.transactions.find(t => t.id === id && t.deleted === true)
-          const realBalance = (state.account.real && state.account.real.balance) || 0
-          return {
-            transactions: state.transactions.map(t =>
-              t.id === id ? { ...t, deleted: false, deletedAt: null } : t
-            ),
-            account: {
-              ...state.account,
-              real: {
-                ...(state.account.real || {}),
-                balance: transaction ? realBalance + transaction.amount : realBalance
-              }
-            }
-          }
-        } else {
-          const transaction = state.virtualTransactions.find(t => t.id === id && t.deleted === true)
-          const virtualBalance = (state.account.virtual && state.account.virtual.balance) || 0
-          return {
-            virtualTransactions: state.virtualTransactions.map(t =>
-              t.id === id ? { ...t, deleted: false, deletedAt: null } : t
-            ),
-            account: {
-              ...state.account,
-              virtual: {
-                ...(state.account.virtual || {}),
-                balance: transaction ? virtualBalance + transaction.amount : virtualBalance
-              }
+        const transaction = state.transactions.find(t => t.id === id && t.deleted === true)
+        const realBalance = (state.account.real && state.account.real.balance) || 0
+        return {
+          transactions: state.transactions.map(t =>
+            t.id === id ? { ...t, deleted: false, deletedAt: null } : t
+          ),
+          account: {
+            ...state.account,
+            real: {
+              ...(state.account.real || {}),
+              balance: transaction ? realBalance + transaction.amount : realBalance
             }
           }
         }
       }),
 
       // 永久删除账单
-      permanentDeleteTransaction: (id, accountType = 'real') => set((state) => {
+      permanentDeleteTransaction: (id) => set((state) => {
         apiCall(`/api/transactions/${id}/permanent`, 'DELETE')
-        if (accountType === 'real') {
-          return {
-            transactions: state.transactions.filter(t => t.id !== id)
-          }
-        } else {
-          return {
-            virtualTransactions: state.virtualTransactions.filter(t => t.id !== id)
-          }
+        return {
+          transactions: state.transactions.filter(t => t.id !== id)
         }
       }),
 
       // 批量恢复账单
-      restoreMultipleTransactions: (ids, accountType = 'real') => set((state) => {
-        if (accountType === 'real') {
-          const transactionsToRestore = state.transactions.filter(t => ids.includes(t.id) && t.deleted === true)
-          const totalAmount = transactionsToRestore.reduce((sum, t) => sum + t.amount, 0)
-          const realBalance = (state.account.real && state.account.real.balance) || 0
-          return {
-            transactions: state.transactions.map(t =>
-              ids.includes(t.id) ? { ...t, deleted: false, deletedAt: null } : t
-            ),
-            account: {
-              ...state.account,
-              real: {
-                ...(state.account.real || {}),
-                balance: realBalance + totalAmount
-              }
-            }
-          }
-        } else {
-          const transactionsToRestore = state.virtualTransactions.filter(t => ids.includes(t.id) && t.deleted === true)
-          const totalAmount = transactionsToRestore.reduce((sum, t) => sum + t.amount, 0)
-          const virtualBalance = (state.account.virtual && state.account.virtual.balance) || 0
-          return {
-            virtualTransactions: state.virtualTransactions.map(t =>
-              ids.includes(t.id) ? { ...t, deleted: false, deletedAt: null } : t
-            ),
-            account: {
-              ...state.account,
-              virtual: {
-                ...(state.account.virtual || {}),
-                balance: virtualBalance + totalAmount
-              }
+      restoreMultipleTransactions: (ids) => set((state) => {
+        const transactionsToRestore = state.transactions.filter(t => ids.includes(t.id) && t.deleted === true)
+        const totalAmount = transactionsToRestore.reduce((sum, t) => sum + t.amount, 0)
+        const realBalance = (state.account.real && state.account.real.balance) || 0
+        return {
+          transactions: state.transactions.map(t =>
+            ids.includes(t.id) ? { ...t, deleted: false, deletedAt: null } : t
+          ),
+          account: {
+            ...state.account,
+            real: {
+              ...(state.account.real || {}),
+              balance: realBalance + totalAmount
             }
           }
         }
@@ -1944,7 +1866,9 @@ const useStore = create(
           balance: t.balance != null ? parseFloat(t.balance) : (t.balance || null),
           createdAt: formatDateTime(t.created_at) || formatDateTime(t.createdAt) || new Date().toISOString(),
           deleted: t.deleted || false,
-          deletedAt: t.deleted_at || t.deletedAt || null
+          deletedAt: t.deleted_at || t.deletedAt || null,
+          // 添加交易状态字段映射 - 尝试不同的字段名
+          status: t.交易状态 || t.trade_status || t.tradeStatus || t.status || null
         }))
         // 直接使用数据库数据，不与本地合并
         console.log('[Store] importTransactions - 使用数据库数据，不与本地合并')
@@ -2328,7 +2252,177 @@ const useStore = create(
         return {
           tradeRecords: [...state.tradeRecords, { ...tradeRecord, id: Date.now(), createdAt: new Date().toISOString() }]
         }
-      })
+      }),
+
+      // 计算当前持仓股票资产 - 从交易记录中获取持仓中的买入交易
+      getCurrentStockPositions: () => {
+        const state = useStore.getState()
+        
+        console.log('[Debug getCurrentStockPositions] 函数启动，检查交易记录表数据:')
+        console.log('[Debug getCurrentStockPositions] state.tradeRecords:', state.tradeRecords)
+        console.log('[Debug getCurrentStockPositions] state.tradeRecords 长度:', state.tradeRecords?.length || 0)
+        
+        // 从交易记录表中获取所有未删除的记录
+        const allTradeRecords = state.tradeRecords.filter(r => !r.deleted)
+        console.log('[Debug getCurrentStockPositions] 未删除的交易记录数量:', allTradeRecords.length)
+        
+        if (allTradeRecords.length > 0) {
+          console.log('[Debug getCurrentStockPositions] 交易记录表字段样例:', Object.keys(allTradeRecords[0]))
+          
+          // 显示前3条交易记录的关键字段
+          allTradeRecords.slice(0, 3).forEach((r, index) => {
+            console.log(`[Debug getCurrentStockPositions] 交易记录${index+1}关键信息:`, {
+              id: r.id,
+              tradeNumber: r.tradeNumber,
+              symbol: r.symbol,
+              buyQuantity: r.buyQuantity,
+              sellQuantity: r.sellQuantity,
+              buyAmount: r.buyAmount,
+              sellAmount: r.sellAmount
+            })
+          })
+        }
+        
+        // 筛选持仓中的交易记录（根据 sellQuantity < buyQuantity 判断）
+        const holdingRecords = allTradeRecords.filter(r => {
+          const sellQty = r.sellQuantity || 0
+          const buyQty = r.buyQuantity || 0
+          const isHolding = sellQty < buyQty
+          
+          console.log(`[Debug getCurrentStockPositions] 交易记录 ${r.id} 状态检查:`, {
+            股票: r.symbol,
+            买入数量: buyQty,
+            卖出数量: sellQty,
+            是否持仓中: isHolding,
+            买入金额: r.buyAmount
+          })
+          
+          return isHolding
+        })
+        
+        console.log('[Debug getCurrentStockPositions] 持仓中的交易记录数量:', holdingRecords.length)
+        console.log('[Debug getCurrentStockPositions] 持仓中的交易记录详情:', holdingRecords.map(r => ({
+          id: r.id,
+          symbol: r.symbol,
+          buyQuantity: r.buyQuantity,
+          sellQuantity: r.sellQuantity,
+          buyAmount: r.buyAmount
+        })))
+        
+        // 计算总持仓金额（使用买入金额）
+        const totalHoldAmount = holdingRecords.reduce((sum, r) => {
+          const buyAmount = parseFloat(r.buyAmount) || 0
+          return sum + buyAmount
+        }, 0)
+        
+        console.log('[Debug getCurrentStockPositions] 总持仓金额:', totalHoldAmount)
+        
+        return totalHoldAmount
+      },
+
+      // 计算总资产（股票持仓市值 + 最新交易记录余额）
+      getTotalAssets: (accountType = 'real') => {
+        const state = useStore.getState()
+        console.log('[Debug getTotalAssets] 开始计算总资产')
+        
+        // 先计算持仓市值
+        let positionValue = 0
+        try {
+          positionValue = state.getCurrentStockPositions()
+          console.log('[Debug getTotalAssets] 计算得到的持仓市值:', positionValue)
+        } catch (error) {
+          console.log('[Debug getTotalAssets] 持仓市值计算出错:', error)
+        }
+        
+        // 获取交易记录数据 - 从正确的数据源中获取
+        const transactions = state.transactions || []
+        
+        console.log('[Debug getTotalAssets] 交易记录总数:', transactions.length)
+        console.log('[Debug getTotalAssets] 各交易记录的余额情况:', transactions.map(t => ({ 
+          id: t.id, 
+          accountType: t.accountType, 
+          balance: t.balance, 
+          createdAt: t.createdAt
+        })))
+        
+        // 获取最新的交易记录余额
+        const validTransactions = transactions.filter(t => !t.deleted && (!t.accountType || t.accountType === 'real' || t.accountType === accountType))
+        // 获取最新的有效余额记录
+        // 策略：优先选择余额为正的股票交易记录，避免选择负数余额的中间过程记录
+        const validBalanceTransactions = validTransactions.filter(t => {
+          // 选择股票交易记录
+          const isStockTransaction = t.type === '买入' || t.type === '卖出'
+          // 选择余额为正的大额记录，同时排除手动记账的小额记录
+          const isPositiveBalance = t.balance > 1000
+          
+          return isStockTransaction && isPositiveBalance
+        })
+        
+        console.log('[Debug getTotalAssets] 所有交易记录数量:', validTransactions.length)
+        console.log('[Debug getTotalAssets] 优选股票交易记录数量:', validBalanceTransactions.length)
+        
+        // 获取最新交易记录
+        let latestTransaction
+        
+        if (validBalanceTransactions.length > 0) {
+          // 优先使用股票交易记录的余额
+          validBalanceTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          latestTransaction = validBalanceTransactions[0]
+          console.log('[Debug getTotalAssets] 使用优选股票交易记录作为最新余额')
+        } else if (validTransactions.length > 0) {
+          // 回退到所有记录中的最新一条
+          validTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          latestTransaction = validTransactions[0]
+          console.log('[Debug getTotalAssets] 回退到所有记录的最新一条')
+        }
+        
+        // 显示选择过程
+        if (latestTransaction) {
+          console.log('[Debug getTotalAssets] 最新交易记录详情:', { 
+            id: latestTransaction.id, 
+            balance: latestTransaction.balance, 
+            createdAt: latestTransaction.createdAt,
+            type: latestTransaction.type
+          })
+        }
+        
+        // 额外调试：显示所有记录的前5条（按时间倒序）
+        console.log('[Debug getTotalAssets] 所有记录最新5条:')
+        const allTransactionsSorted = [...validTransactions].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        allTransactionsSorted.slice(0, 5).forEach(t => 
+          console.log(`  记录${t.id}: 余额=${t.balance}, 类型=${t.type}, 日期=${t.createdAt}`)
+        )
+        
+        // 获取余额：优先使用最新的有效余额记录
+        let currentBalance
+        if (latestTransaction && latestTransaction.balance !== undefined) {
+          currentBalance = latestTransaction.balance
+        } else if (state.account?.real?.balance) {
+          // 如果交易记录中没有有效余额，使用账户余额
+          currentBalance = state.account.real.balance
+        } else {
+          currentBalance = 0
+        }
+        
+        console.log('[Debug getTotalAssets] 最新交易记录余额:', currentBalance)
+        console.log('[Debug getTotalAssets] 持仓市值:', positionValue)
+        
+        // 调试：验证公式是否正确
+        const totalAssetsBeforeValidation = positionValue + currentBalance
+        console.log('[Debug getTotalAssets] 计算公式验证: positionValue + currentBalance =', totalAssetsBeforeValidation)
+        
+        // 现在检查是否有重复计算的bug
+        // 如果计算结果异常，可能需要检查数据源是否有问题
+        if (transactions.length > 0) {
+          console.log('[Debug getTotalAssets] 检查余额数据重复计算问题:')
+          transactions.forEach(t => console.log(`记录 ${t.id}: 余额=${t.balance}, 日期=${t.createdAt}`))
+        }
+        
+        const totalAssets = positionValue + currentBalance
+        console.log('[Debug getTotalAssets] 最终总资产:', totalAssets)
+        
+        return totalAssets
+      }
     }),
     {
       name: 'trading-system-storage',

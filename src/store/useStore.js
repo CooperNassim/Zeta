@@ -1310,10 +1310,25 @@ const useStore = create(
           const amount = isBuy ? -(newOrder.price * newOrder.quantity) : (newOrder.price * newOrder.quantity)
           const transactionType = isBuy ? '股票买入' : '股票卖出'
           
-          // 计算账户余额 - 使用当前账户余额加上本次交易金额
+          // 修复余额计算：使用最新交易记录的余额加上本次交易金额
           const accountType = newOrder.isVirtual ? 'virtual' : 'real'
-          const currentBalance = useStore.getState().account[accountType]?.balance || 0
-          const newBalance = currentBalance + amount
+          
+          // 获取最新的交易记录余额（避免使用可能错误的账户状态）
+          const transactions = useStore.getState().transactions
+          const latestTransaction = transactions.reduce((latest, t) => {
+            if (!latest || new Date(t.createdAt) > new Date(latest.createdAt)) {
+              return t
+            }
+            return latest
+          }, null)
+          
+          const latestBalance = latestTransaction ? latestTransaction.balance || 0 : 0
+          const newBalance = latestBalance + amount
+          
+          console.log('💰 [订单创建] 余额计算调试:')
+          console.log('   - 最新交易余额:', latestBalance)
+          console.log('   - 当前交易金额:', amount)
+          console.log('   - 新余额:', newBalance)
           
           const transactionData = {
             type: transactionType,
@@ -1321,7 +1336,7 @@ const useStore = create(
             name: newOrder.name,
             amount: amount,
             quantity: newOrder.quantity,
-            balance: newBalance,  // 设置实际的余额值
+            balance: newBalance,  // 使用正确的余额值
             description: `${transactionType.replace('股票', '')}${newOrder.quantity}股`,
             tradeNumber: tradeNumber // 添加关联的交易编号
           }
@@ -1557,7 +1572,17 @@ const useStore = create(
 
       // 添加账单
       addTransaction: (transaction, accountType = 'real') => set((state) => {
-        const newTransaction = { ...transaction, id: Date.now(), deleted: false, deletedAt: null }
+        // 关键修复：使用传入的balance字段作为新余额，而不是错误计算
+        // 每个交易的balance字段来自数据库，是该交易后的实际余额
+        const newBalance = transaction.balance != null ? parseFloat(transaction.balance) : null
+        
+        const newTransaction = { 
+          ...transaction, 
+          id: Date.now(), 
+          balance: newBalance, // 确保balance字段也被存储
+          deleted: false, 
+          deletedAt: null 
+        }
 
         // 构造数据库格式的数据
         const now = new Date()
@@ -1610,13 +1635,18 @@ const useStore = create(
           })
           .catch(err => console.error('[Store] 同步账单到数据库失败:', err))
 
+        // 修正余额计算：使用传入的balance字段作为新的账户余额
+        console.log('💰 [addTransaction] 余额计算调试（修复后）:')
+        console.log('   - 传入的balance:', transaction.balance)
+        console.log('   - 新的余额:', newBalance)
+        
         return {
           transactions: [...state.transactions, newTransaction],
           account: {
             ...state.account,
             real: {
               ...state.account.real,
-              balance: state.account.real.balance + transaction.amount
+              balance: newBalance || state.account.real.balance // 如果新余额为空，保持原余额
             }
           }
         }
@@ -1625,8 +1655,24 @@ const useStore = create(
       // 删除账单
       deleteTransaction: (id) => set((state) => {
         apiCall(`/api/transactions/${id}`, 'DELETE')
-        const transaction = state.transactions.find(t => t.id === id)
-        const realBalance = (state.account.real && state.account.real.balance) || 0
+        
+        // 修正余额计算：删除交易后，取最新的未删除交易的余额
+        const remainingTransactions = state.transactions.filter(t => t.id !== id && !t.deleted)
+        const latestTransaction = remainingTransactions.reduce((latest, t) => {
+          if (!latest || new Date(t.createdAt) > new Date(latest.createdAt)) {
+            return t
+          }
+          return latest
+        }, null)
+        
+        // 使用最新交易的余额，如果没有交易则余额为0
+        const newBalance = latestTransaction ? latestTransaction.balance || 0 : 0
+        
+        console.log('💰 [deleteTransaction] 余额计算调试（修复后）:')
+        console.log('   - 删除的交易ID:', id)
+        console.log('   - 剩余交易数量:', remainingTransactions.length)
+        console.log('   - 最新交易余额:', newBalance)
+        
         return {
           transactions: state.transactions.map(t =>
             t.id === id ? { ...t, deleted: true, deletedAt: new Date().toISOString() } : t
@@ -1635,9 +1681,7 @@ const useStore = create(
             ...state.account,
             real: {
               ...(state.account.real || {}),
-              balance: transaction
-                ? realBalance - transaction.amount
-                : realBalance
+              balance: newBalance
             }
           }
         }
@@ -1867,13 +1911,37 @@ const useStore = create(
           createdAt: formatDateTime(t.created_at) || formatDateTime(t.createdAt) || new Date().toISOString(),
           deleted: t.deleted || false,
           deletedAt: t.deleted_at || t.deletedAt || null,
+          // 关键修复：添加交易编号字段映射
+          tradeNumber: t.trade_number || t.tradeNumber || null,
           // 添加交易状态字段映射 - 尝试不同的字段名
           status: t.交易状态 || t.trade_status || t.tradeStatus || t.status || null
         }))
-        // 直接使用数据库数据，不与本地合并
+        
+        // 关键修复：导入数据时需要更新最新的账户余额
+        // 找到最新时间的交易记录，使用它的余额作为当前账户余额
+        const latestTransaction = newTransactions.reduce((latest, t) => {
+          if (!latest || new Date(t.createdAt) > new Date(latest.createdAt)) {
+            return t
+          }
+          return latest
+        }, null)
+        
+        const latestBalance = latestTransaction ? latestTransaction.balance || 0 : 0
+        
         console.log('[Store] importTransactions - 使用数据库数据，不与本地合并')
         console.log('[Store] importTransactions - 数据库账单数量:', newTransactions.length)
-        return { transactions: newTransactions }
+        console.log('[Store] importTransactions - 最新余额:', latestBalance)
+        
+        return { 
+          transactions: newTransactions,
+          account: {
+            ...state.account,
+            real: {
+              ...(state.account.real || {}),
+              balance: latestBalance
+            }
+          }
+        }
       }),
 
       // 批量导入交易记录（从数据库同步）- 直接使用数据库数据，不合并本地数据
@@ -1927,10 +1995,29 @@ const useStore = create(
             tradeSummary: r.trade_summary || r.tradeSummary || null
           }
         })
-        // 直接使用数据库数据，不与本地数据合并
+        // 对交易记录进行去重（按交易编号+创建时间），防止数据重复
+        const uniqueRecords = newRecords.reduce((acc, record) => {
+          const key = `${record.tradeNumber}_${record.createdAt}`
+          if (!acc[key]) {
+            acc[key] = record
+          } else {
+            console.log('[Store] importTradeRecords - 发现重复记录，已去重:', record.tradeNumber)
+          }
+          return acc
+        }, {})
+        
+        const finalRecords = Object.values(uniqueRecords)
+        
         console.log('[Store] importTradeRecords - 使用数据库数据，不与本地合并')
         console.log('[Store] importTradeRecords - 数据库交易记录数量:', newRecords.length)
-        return { tradeRecords: newRecords }
+        console.log('[Store] importTradeRecords - 去重后记录数量:', finalRecords.length)
+        
+        // 如果去重后数量有差异，说明存在重复数据
+        if (newRecords.length !== finalRecords.length) {
+          console.warn('[Store] importTradeRecords - 警告：检测到重复交易记录，已自动去重')
+        }
+        
+        return { tradeRecords: finalRecords }
       }),
 
       // 批量导入股票（从数据库同步）- 合并到现有数据
@@ -2320,106 +2407,181 @@ const useStore = create(
         return totalHoldAmount
       },
 
-      // 计算总资产（股票持仓市值 + 最新交易记录余额）
+      // 计算总资产（根据新的规则：持仓市值 + 最新账单明细余额）
       getTotalAssets: (accountType = 'real') => {
         const state = useStore.getState()
-        console.log('[Debug getTotalAssets] 开始计算总资产')
+        console.log('🚀 [Debug getTotalAssets] 开始计算总资产 - 精确调试')
         
-        // 先计算持仓市值
-        let positionValue = 0
+        // 1. 计算持仓市值：交易记录表中交易状态=持仓中的数据，Σ买入金额 - Σ卖出金额
+        let holdingMarketValue = 0
+        let buyAmountSum = 0
+        let sellAmountSum = 0
+        
         try {
-          positionValue = state.getCurrentStockPositions()
-          console.log('[Debug getTotalAssets] 计算得到的持仓市值:', positionValue)
-        } catch (error) {
-          console.log('[Debug getTotalAssets] 持仓市值计算出错:', error)
-        }
-        
-        // 获取交易记录数据 - 从正确的数据源中获取
-        const transactions = state.transactions || []
-        
-        console.log('[Debug getTotalAssets] 交易记录总数:', transactions.length)
-        console.log('[Debug getTotalAssets] 各交易记录的余额情况:', transactions.map(t => ({ 
-          id: t.id, 
-          accountType: t.accountType, 
-          balance: t.balance, 
-          createdAt: t.createdAt
-        })))
-        
-        // 获取最新的交易记录余额
-        const validTransactions = transactions.filter(t => !t.deleted && (!t.accountType || t.accountType === 'real' || t.accountType === accountType))
-        // 获取最新的有效余额记录
-        // 策略：优先选择余额为正的股票交易记录，避免选择负数余额的中间过程记录
-        const validBalanceTransactions = validTransactions.filter(t => {
-          // 选择股票交易记录
-          const isStockTransaction = t.type === '买入' || t.type === '卖出'
-          // 选择余额为正的大额记录，同时排除手动记账的小额记录
-          const isPositiveBalance = t.balance > 1000
+          const allTradeRecords = (state.tradeRecords || []).filter(r => !r.deleted)
           
-          return isStockTransaction && isPositiveBalance
-        })
-        
-        console.log('[Debug getTotalAssets] 所有交易记录数量:', validTransactions.length)
-        console.log('[Debug getTotalAssets] 优选股票交易记录数量:', validBalanceTransactions.length)
-        
-        // 获取最新交易记录
-        let latestTransaction
-        
-        if (validBalanceTransactions.length > 0) {
-          // 优先使用股票交易记录的余额
-          validBalanceTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          latestTransaction = validBalanceTransactions[0]
-          console.log('[Debug getTotalAssets] 使用优选股票交易记录作为最新余额')
-        } else if (validTransactions.length > 0) {
-          // 回退到所有记录中的最新一条
-          validTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          latestTransaction = validTransactions[0]
-          console.log('[Debug getTotalAssets] 回退到所有记录的最新一条')
-        }
-        
-        // 显示选择过程
-        if (latestTransaction) {
-          console.log('[Debug getTotalAssets] 最新交易记录详情:', { 
-            id: latestTransaction.id, 
-            balance: latestTransaction.balance, 
-            createdAt: latestTransaction.createdAt,
-            type: latestTransaction.type
+          console.log('📊 [Debug getTotalAssets] 交易记录总数:', allTradeRecords.length)
+          
+          // 调试：显示所有交易记录的详细信息
+          console.log('🔍 [Debug getTotalAssets] 所有交易记录详细信息:')
+          allTradeRecords.forEach((r, index) => {
+            console.log(`   记录${index+1}:`, {
+              id: r.id,
+              symbol: r.symbol,
+              tradeNumber: r.tradeNumber,
+              buyQty: r.buyQuantity,
+              sellQty: r.sellQuantity,
+              buyAmount: r.buyAmount,
+              sellAmount: r.sellAmount,
+              status: r.status || r.tradeStatus || '未知'
+            })
           })
+          
+          // 筛选持仓中的交易记录：优先按交易编号去重，然后判断持仓状态
+          const uniqueRecords = []
+          const tradeNumberSet = new Set()
+          
+          // 先按交易编号去重，保留最新的记录
+          const sortedRecords = allTradeRecords.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          sortedRecords.forEach(r => {
+            const tradeNum = r.tradeNumber || r.trade_number
+            if (tradeNum && !tradeNumberSet.has(tradeNum)) {
+              tradeNumberSet.add(tradeNum)
+              uniqueRecords.push(r)
+            } else if (!tradeNum) {
+              // 没有交易编号的记录也保留
+              uniqueRecords.push(r)
+            }
+          })
+          
+          console.log('🔍 [Debug getTotalAssets] 去重后的交易记录 (按交易编号):', uniqueRecords.length)
+          uniqueRecords.forEach((r, index) => {
+            console.log(`   记录${index+1}:`, {
+              id: r.id,
+              tradeNumber: r.tradeNumber || r.trade_number,
+              symbol: r.symbol,
+              buyQuantity: r.buyQuantity,
+              sellQuantity: r.sellQuantity,
+              buyAmount: r.buyAmount,
+              sellAmount: r.sellAmount,
+              status: r.status || r.tradeStatus || '未知'
+            })
+          })
+          
+          // 筛选持仓中的交易记录
+          const holdingRecords = uniqueRecords.filter(r => {
+            // 优先使用交易状态字段（中文）
+            const tradeStatus = (r.status || r.tradeStatus || '').toString()
+            const sellQty = parseFloat(r.sellQuantity) || 0
+            const buyQty = parseFloat(r.buyQuantity) || 0
+            
+            // 判断是否为持仓中的交易
+            let isHolding = false
+            if (tradeStatus.includes('持仓中') || tradeStatus === '持仓中') {
+              isHolding = true
+            } else if (sellQty < buyQty) {
+              isHolding = true
+            }
+            
+          console.log(`📈 [Debug getTotalAssets] 单条记录持仓判断:`, {
+              tradeNumber: r.tradeNumber || r.trade_number,
+              symbol: r.symbol,
+              status: tradeStatus,
+              buyAmount: r.buyAmount,
+              sellAmount: r.sellAmount,
+              buyQuantity: r.buyQuantity,
+              sellQuantity: r.sellQuantity,
+              residualAmount: (parseFloat(r.buyAmount) || 0) - (parseFloat(r.sellAmount) || 0),
+              isHolding: isHolding
+            })
+            
+            return isHolding
+          })
+          
+          console.log('✅ [Debug getTotalAssets] 持仓中的交易记录数量:', holdingRecords.length)
+          
+          // 精确计算持仓市值 = Σ买入金额 - Σ卖出金额
+          if (holdingRecords.length > 0) {
+            buyAmountSum = holdingRecords.reduce((sum, r) => {
+              return sum + (parseFloat(r.buyAmount) || 0)
+            }, 0)
+            
+            sellAmountSum = holdingRecords.reduce((sum, r) => {
+              return sum + (parseFloat(r.sellAmount) || 0)
+            }, 0)
+            
+            holdingMarketValue = buyAmountSum - sellAmountSum
+          }
+          
+          console.log('🧮 [Debug getTotalAssets] 精确计算明细:')
+          console.log('   - Σ买入金额:', buyAmountSum)
+          console.log('   - Σ卖出金额:', sellAmountSum)
+          console.log('   - 持仓市值 (Σ买入 - Σ卖出):', holdingMarketValue)
+          
+        } catch (error) {
+          console.log('❌ [Debug getTotalAssets] 持仓市值计算出错:', error)
         }
         
-        // 额外调试：显示所有记录的前5条（按时间倒序）
-        console.log('[Debug getTotalAssets] 所有记录最新5条:')
-        const allTransactionsSorted = [...validTransactions].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        allTransactionsSorted.slice(0, 5).forEach(t => 
-          console.log(`  记录${t.id}: 余额=${t.balance}, 类型=${t.type}, 日期=${t.createdAt}`)
-        )
-        
-        // 获取余额：优先使用最新的有效余额记录
-        let currentBalance
-        if (latestTransaction && latestTransaction.balance !== undefined) {
-          currentBalance = latestTransaction.balance
-        } else if (state.account?.real?.balance) {
-          // 如果交易记录中没有有效余额，使用账户余额
-          currentBalance = state.account.real.balance
-        } else {
-          currentBalance = 0
+        // 2. 获取余额：账单明细数据库表中发生时间最新的那条数据的余额字段
+        let currentBalance = 0
+        try {
+          const transactions = state.transactions || []
+          
+          console.log('📋 [Debug getTotalAssets] 账单明细总数:', transactions.length)
+          
+          if (transactions.length > 0) {
+            // 筛选有效交易记录并排序
+            const validTransactions = transactions
+              .filter(t => !t.deleted)
+              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+            
+            console.log('📅 [Debug getTotalAssets] 按时间排序的前5条记录:')
+            validTransactions.slice(0, 5).forEach((t, index) => {
+              console.log(`   记录${index+1}: 余额=${t.balance}, 类型=${t.type}, 时间=${t.createdAt}`)
+            })
+            
+            // 取最新的一条记录的余额
+            if (validTransactions.length > 0) {
+              currentBalance = parseFloat(validTransactions[0].balance) || 0
+              console.log('💰 [Debug getTotalAssets] 最新账单明细余额记录:', {
+                id: validTransactions[0].id,
+                createdAt: validTransactions[0].createdAt,
+                type: validTransactions[0].type,
+                balance: currentBalance
+              })
+            }
+          } else {
+            console.log('⚠️ [Debug getTotalAssets] 账单明细为空')
+          }
+          
+          console.log('✅ [Debug getTotalAssets] 提取的最新余额:', currentBalance)
+          
+        } catch (error) {
+          console.log('❌ [Debug getTotalAssets] 余额提取出错:', error)
         }
         
-        console.log('[Debug getTotalAssets] 最新交易记录余额:', currentBalance)
-        console.log('[Debug getTotalAssets] 持仓市值:', positionValue)
+        // 3. 计算总资产 = 持仓市值 + 余额
+        const totalAssets = holdingMarketValue + currentBalance
         
-        // 调试：验证公式是否正确
-        const totalAssetsBeforeValidation = positionValue + currentBalance
-        console.log('[Debug getTotalAssets] 计算公式验证: positionValue + currentBalance =', totalAssetsBeforeValidation)
+        console.log('🔢 [Debug getTotalAssets] 最终计算结果验证:')
+        console.log('   - 持仓市值:', holdingMarketValue)
+        console.log('   - 最新余额:', currentBalance)
+        console.log('   - 总资产 (持仓市值 + 余额):', totalAssets)
         
-        // 现在检查是否有重复计算的bug
-        // 如果计算结果异常，可能需要检查数据源是否有问题
-        if (transactions.length > 0) {
-          console.log('[Debug getTotalAssets] 检查余额数据重复计算问题:')
-          transactions.forEach(t => console.log(`记录 ${t.id}: 余额=${t.balance}, 日期=${t.createdAt}`))
-        }
+        // 预期验证：553600 - 77200 = 476400（基于用户提供的实际情况）
+        const expectedHoldingValueDebug = 564600 - 11000  // 买入564,600 - 卖出11,000 = 553,600
+        const expectedBalanceDebug = -77200  // 实际余额为负数
+        const expectedValue = expectedHoldingValueDebug + expectedBalanceDebug
+        console.log('🎯 [Debug getTotalAssets] 预期值验证（基于用户数据）:')
+        console.log('   - 持仓市值: 188,200×3-11,000 =', expectedHoldingValueDebug)
+        console.log('   - 余额:', expectedBalanceDebug)
+        console.log('   - 总资产:', expectedHoldingValueDebug, '+', expectedBalanceDebug, '=', expectedValue)
+        console.log('🔍 [Debug getTotalAssets] 计算偏差:', totalAssets - expectedValue)
         
-        const totalAssets = positionValue + currentBalance
-        console.log('[Debug getTotalAssets] 最终总资产:', totalAssets)
+        console.log('🔧 [Debug getTotalAssets] 验证结果:')
+        console.log('   - 实际计算持仓市值:', holdingMarketValue)
+        console.log('   - 实际计算余额:', currentBalance)
+        console.log('   - 实际计算总资产:', totalAssets)
         
         return totalAssets
       }

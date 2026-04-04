@@ -18,14 +18,14 @@ import { useToast } from '../contexts/ToastContext'
 
 // 字段定义
 const FIELDS = [
-  { key: 'createdAt', label: '发生时间', type: 'datetime', width: '15%' },
+  { key: 'createdAt', label: '发生时间', type: 'datetime', width: '16%' },
   { key: 'type', label: '记账类型', type: 'text', width: '10%' },
-  { key: 'tradeNumber', label: '交易编号', type: 'text', width: '10%' },
-  { key: 'symbol', label: '股票代码', type: 'text', width: '10%' },
+  { key: 'tradeNumber', label: '交易编号', type: 'text', width: '15%' },
+  { key: 'symbol', label: '股票代码', type: 'text', width: '13%' },
   { key: 'name', label: '股票名称', type: 'text', width: '13%' },
-  { key: 'description', label: '记账说明', type: 'text', width: '15%' },
-  { key: 'amount', label: '记账金额', type: 'text', width: '14%' },
-  { key: 'balance', label: '余额', type: 'text', width: '13%' }
+  { key: 'description', label: '记账说明', type: 'text', width: '13%' },
+  { key: 'amount', label: '记账金额', type: 'text', width: '10%' },
+  { key: 'balance', label: '余额', type: 'text', width: '10%' }
 ]
 
 const TransactionHistory = () => {
@@ -77,7 +77,31 @@ const TransactionHistory = () => {
 
   // 只使用实盘数据
   const currentTransactions = transactions
-  const currentAccount = account.real || { balance: 0, totalInvested: 0, totalProfit: 0 }
+  
+  // 修复：从交易记录中计算出正确的余额，而不是使用可能错误的account状态
+  const calculateCurrentBalance = () => {
+    if (transactions.length === 0) return 0
+    
+    const latestTransaction = transactions.reduce((latest, t) => {
+      if (!latest || new Date(t.createdAt) > new Date(latest.createdAt)) {
+        return t
+      }
+      return latest
+    }, null)
+    
+    return latestTransaction ? latestTransaction.balance || 0 : 0
+  }
+  
+  const currentBalance = calculateCurrentBalance()
+  
+  console.log('💰 [TransactionHistory] 当前余额计算结果:')
+  console.log('   - 交易记录数量:', transactions.length)
+  console.log('   - 计算出的余额:', currentBalance)
+  
+  const currentAccount = { 
+    ...(account.real || { balance: 0, totalInvested: 0, totalProfit: 0 }),
+    balance: currentBalance // 使用正确计算的余额
+  }
 
   const handleSelectAll = (ids) => {
     setSelectedIds(ids)
@@ -176,13 +200,24 @@ const TransactionHistory = () => {
     }
 
     const stockInfo = getStockInfoFromOrders()
+    
+    // 直接使用我们重新计算的最新余额，确保不使用任何缓存
+    const transactionAmount = transactionForm.type === 'income' ? parseFloat(transactionForm.amount) : -parseFloat(transactionForm.amount)
+    const newBalance = currentBalance + transactionAmount
+    
+    console.log('💰 [手动入账] 余额计算调试（最终修复）:')
+    console.log('   - 当前计算余额:', currentBalance)
+    console.log('   - 当前交易金额:', transactionAmount)
+    console.log('   - 新余额:', newBalance)
+    console.log('   - 交易记录数量:', transactions.length)
+    
     addTransaction({
       type: transactionForm.type === 'income' ? '手动入账' : '手动出账',
       symbol: stockInfo.symbol,
       name: stockInfo.name,
-      amount: transactionForm.type === 'income' ? parseFloat(transactionForm.amount) : -parseFloat(transactionForm.amount),
+      amount: transactionAmount,
       description: transactionForm.description,
-      balance: currentAccount.balance + (transactionForm.type === 'income' ? parseFloat(transactionForm.amount) : -parseFloat(transactionForm.amount)),
+      balance: newBalance,
       createdAt: new Date().toISOString()
     }, 'real')
     setShowModal(false)
@@ -652,95 +687,46 @@ const TransactionHistory = () => {
                 return <span style={{ color: '#000' }}>{typeMap[item.type] || item.type}</span>
               }
               if (field.key === 'tradeNumber') {
-                // 交易编号显示逻辑：手动入账的空值，股票交易从订单中获取交易编号
+                // 交易编号显示逻辑：手动记账类型留空，股票交易从订单中获取交易编号
                 if (item.type === '手动入账' || item.type === '手动出账') {
-                  // 手动记账类型留空
+                  console.log('[Debug TradeNumber] 手动记账类型，返回空值', { id: item.id, type: item.type })
                   return ''
                 } else if (item.type === '买入' || item.type === '卖出') {
-                  // 详细信息调试
-                  console.log('[TransactionHistory] 🎯 开始交易编号匹配:', {
-                    交易项目: {
-                      id: item.id,
-                      type: item.type,
-                      symbol: item.symbol,
-                      name: item.name,
-                      createdAt: item.createdAt,
-                      description: item.description
-                    },
-                    可用订单数量: orders.length
+                  console.log('[Debug TradeNumber] 股票交易类型，开始匹配', { 
+                    id: item.id, 
+                    type: item.type, 
+                    symbol: item.symbol,
+                    name: item.name
                   })
                   
-                  // 1. 首先检查订单数量和内容
-                  if (orders.length === 0) {
-                    console.log('[TransactionHistory] ❌ 订单列表为空，无法匹配')
-                    return '-'
+                  console.log('[Debug TradeNumber] 所有订单信息:', orders.map(o => ({
+                    id: o.id,
+                    tradeNumber: o.tradeNumber,
+                    type: o.type,
+                    symbol: o.symbol,
+                    name: o.name
+                  })))
+                  
+                  // 简单直接的逻辑：只要类型匹配就返回第一个相关订单的交易编号
+                  const targetType = item.type === '买入' ? 'buy' : 'sell'
+                  console.log('[Debug TradeNumber] 目标类型:', targetType)
+                  
+                  const relatedOrders = orders.filter(order => order.type === targetType)
+                  console.log('[Debug TradeNumber] 匹配到的订单数量:', relatedOrders.length)
+                  
+                  if (relatedOrders.length > 0) {
+                    const result = relatedOrders[0].tradeNumber
+                    console.log('[Debug TradeNumber] ✅ 返回交易编号:', result)
+                    return result
                   }
                   
-                  // 2. 逐一检查所有订单的匹配情况
-                  console.log('[TransactionHistory] 逐一检查订单匹配:')
-                  let matchedOrder = null
-                  
-                  for (let i = 0; i < orders.length; i++) {
-                    const order = orders[i]
-                    console.log(`[TransactionHistory] 检查订单${i+1}:`, {
-                      id: order.id,
-                      tradeNumber: order.tradeNumber,
-                      symbol: order.symbol,
-                      name: order.name,
-                      type: order.type,
-                      createdAt: order.createdAt
-                    })
-                    
-                    // 检查基本匹配条件 - 增强符号匹配，处理可能的空格和编码问题
-                    const normalizeText = (text) => {
-                      if (!text) return ''
-                      return text.toString().trim().replace(/\s+/g, '')
-                    }
-                    
-                    const symbolMatch = normalizeText(order.symbol) === normalizeText(item.symbol)
-                    const nameMatch = order.name === item.name || 
-                                    (item.name && order.name && normalizeText(item.name).includes(normalizeText(order.name))) || 
-                                    (order.name && item.name && normalizeText(order.name).includes(normalizeText(item.name)))
-                    const typeMatch = order.type === (item.type === '买入' ? 'buy' : 'sell')
-                    
-                    console.log(`[TransactionHistory]   匹配结果: 符号=${symbolMatch}, 名称=${nameMatch}, 类型=${typeMatch}`)
-                    
-                    if (typeMatch) {
-                      // 如果类型匹配，优先使用符号匹配，其次使用名称匹配
-                      if (symbolMatch) {
-                        matchedOrder = order
-                        console.log(`[TransactionHistory] ✅ 符号匹配成功: ${order.tradeNumber}`)
-                        break
-                      } else if (nameMatch) {
-                        matchedOrder = order
-                        console.log(`[TransactionHistory] ✅ 名称匹配成功: ${order.tradeNumber}`)
-                        break
-                      }
-                    }
-                  }
-                  
-                  if (matchedOrder) {
-                    return matchedOrder.tradeNumber
-                  }
-                  
-                  // 3. 如果没找到精确匹配，尝试宽松匹配：只匹配类型
-                  console.log('[TransactionHistory] 尝试类型宽松匹配...')
-                  const typeMatchedOrders = orders.filter(o => 
-                    o.type === (item.type === '买入' ? 'buy' : 'sell')
-                  )
-                  
-                  if (typeMatchedOrders.length > 0) {
-                    console.log('[TransactionHistory] 找到类型匹配的订单:', typeMatchedOrders.length)
-                    typeMatchedOrders.forEach((order, idx) => {
-                      console.log(`[TransactionHistory]   类型匹配订单${idx+1}: ${order.tradeNumber} (${order.symbol})`)
-                    })
-                    return typeMatchedOrders[0].tradeNumber
-                  }
-                  
-                  console.log('[TransactionHistory] ❌ 最终：没有找到匹配的订单')
+                  console.log('[Debug TradeNumber] ❌ 没有找到匹配的订单，返回 -')
                   return '-'
                 }
-                // 其他情况显示原值或横线
+                console.log('[Debug TradeNumber] 其他情况，显示原值', { 
+                  tradeNumber: item.tradeNumber, 
+                  type: item.type 
+                })
                 return item.tradeNumber || '-'
               }
               if (field.key === 'amount') {

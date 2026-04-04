@@ -24,10 +24,22 @@ const CustomInput = ({ value, onChange, placeholder = '请输入', className = '
 
   // 处理失焦，格式化数字
   const handleBlur = () => {
+    if (inputValue === '' || inputValue === null || inputValue === undefined) {
+      return // 空值不处理
+    }
+    
     if (type === 'number') {
-      const formattedValue = formatNumber(inputValue)
-      setInputValue(formattedValue)
-      onChange(formattedValue)
+      // 检查是否为有效数字
+      const numValue = parseFloat(inputValue.toString().replace(/,/g, ''))
+      if (isNaN(numValue)) {
+        // 如果是无效数字，清空输入框
+        setInputValue('')
+        onChange('')
+      } else {
+        // 如果是有效数字，直接使用原值，不进行格式化
+        setInputValue(inputValue)
+        onChange(inputValue)
+      }
     }
   }
 

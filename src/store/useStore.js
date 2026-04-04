@@ -1310,6 +1310,36 @@ const useStore = create(
             return { orders: updatedOrders }
           })
 
+          // 同步创建账单明细记录
+          const isBuy = order.type === 'buy'
+          const amount = isBuy ? -(newOrder.price * newOrder.quantity) : (newOrder.price * newOrder.quantity)
+          const transactionType = isBuy ? '股票买入' : '股票卖出'
+          
+          // 计算账户余额 - 使用当前账户余额加上本次交易金额
+          const accountType = newOrder.isVirtual ? 'virtual' : 'real'
+          const currentBalance = useStore.getState().account[accountType]?.balance || 0
+          const newBalance = currentBalance + amount
+          
+          const transactionData = {
+            type: transactionType,
+            symbol: newOrder.symbol,
+            name: newOrder.name,
+            amount: amount,
+            balance: newBalance,  // 设置实际的余额值
+            description: `${transactionType} ${newOrder.symbol} ${newOrder.quantity}股 @ ¥${newOrder.price}`,
+            tradeNumber: tradeNumber // 添加关联的交易编号
+          }
+          
+          console.log('[Store] 创建账单明细记录:', transactionData)
+          console.log('[Store] 订单类型:', order.type, '交易编号:', tradeNumber, '金额:', amount)
+          
+          try {
+            await useStore.getState().addTransaction(transactionData, newOrder.isVirtual ? 'virtual' : 'real')
+            console.log('[Store] 账单明细创建成功')
+          } catch (err) {
+            console.error('[Store] 账单明细创建失败:', err)
+          }
+
           // 然后从数据库重新同步数据（延迟500ms，确保数据库已完成写入）
           setTimeout(async () => {
             try {
@@ -1357,6 +1387,29 @@ const useStore = create(
 
       // 删除预约单
       deleteOrder: (id) => set((state) => {
+        const order = state.orders.find(o => o.id === id)
+        const tradeNumber = order?.tradeNumber
+        
+        if (tradeNumber) {
+          // 使用查询参数根据trade_number查找对应的账单明细，然后删除
+          apiCall(`/api/transactions?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET')
+            .then(result => {
+              if (result.success && result.data) {
+                // 查找对应交易编号的账单记录
+                const matchedTransactions = result.data.filter(t => t.trade_number === tradeNumber)
+                // 批量删除这些账单记录
+                if (matchedTransactions.length > 0) {
+                  const transactionIds = matchedTransactions.map(t => t.id)
+                  apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
+                    .then(() => console.log(`[Store] 删除对应账单明细成功: ${transactionIds.length}条`))
+                    .catch(err => console.error('[Store] 删除账单明细失败:', err))
+                }
+              }
+            })
+            .catch(err => console.error('[Store] 查找账单明细失败:', err))
+        }
+        
+        // 删除订单
         apiCall(`/api/trade_orders/${id}`, 'DELETE')
         return {
           orders: state.orders.map(o =>
@@ -1503,6 +1556,7 @@ const useStore = create(
           description: transaction.description || null,
           amount: transaction.amount != null ? String(transaction.amount) : null,
           balance: transaction.balance != null ? String(transaction.balance) : null,
+          trade_number: transaction.tradeNumber || null,  // 添加交易编号关联
           transaction_date: transactionDate,
           transaction_time: transactionTime,
           // 旧结构兼容字段（当数据库还没迁移时使用）

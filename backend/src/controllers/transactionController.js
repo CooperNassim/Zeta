@@ -67,6 +67,7 @@ const createTransaction = async (req, res) => {
       description,
       amount,
       balance,
+      trade_number,
       createdAt
     } = req.body;
     
@@ -85,6 +86,7 @@ const createTransaction = async (req, res) => {
       description: description || null,
       amount: parseFloat(amount),
       balance: parseFloat(balance),
+      trade_number: trade_number || null,
       created_at: createdAt || new Date().toISOString(),
       deleted: false,
       deleted_at: null
@@ -323,6 +325,50 @@ const permanentDeleteMultipleTransactions = async (req, res) => {
   }
 };
 
+// 根据交易编号删除账单明细
+const deleteTransactionsByTradeNumber = async (req, res) => {
+  try {
+    const { trade_number } = req.params;
+    
+    if (!trade_number) {
+      return res.status(400).json({
+        success: false,
+        error: '交易编号为必填参数'
+      });
+    }
+    
+    // 先查找匹配的账单明细
+    const transactions = await findAll('transactions', {
+      where: { trade_number },
+      includeDeleted: false
+    });
+    
+    if (transactions.length === 0) {
+      return res.json({
+        success: true,
+        data: { count: 0 },
+        message: '未找到对应交易编号的账单明细'
+      });
+    }
+    
+    // 批量删除这些账单明细
+    const ids = transactions.map(t => t.id);
+    const deletedCount = await bulkDelete('transactions', ids);
+    
+    res.json({
+      success: true,
+      data: { count: deletedCount },
+      message: `成功删除 ${deletedCount} 条账单明细`
+    });
+  } catch (err) {
+    console.error('根据交易编号删除账单明细失败:', err);
+    res.status(500).json({ 
+      success: false, 
+      error: '根据交易编号删除账单明细失败: ' + err.message 
+    });
+  }
+};
+
 module.exports = {
   getAllTransactions,
   getTransactionById,
@@ -333,5 +379,6 @@ module.exports = {
   permanentDeleteTransaction,
   restoreTransaction,
   restoreMultipleTransactions,
-  permanentDeleteMultipleTransactions
+  permanentDeleteMultipleTransactions,
+  deleteTransactionsByTradeNumber
 };

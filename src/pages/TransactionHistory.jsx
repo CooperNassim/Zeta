@@ -18,7 +18,7 @@ import { useToast } from '../contexts/ToastContext'
 
 // 字段定义
 const FIELDS = [
-  { key: 'createdAt', label: '时间', type: 'datetime', width: '18%' },
+  { key: 'createdAt', label: '发生时间', type: 'datetime', width: '18%' },
   { key: 'type', label: '记账类型', type: 'text', width: '13%' },
   { key: 'symbol', label: '股票代码', type: 'text', width: '15%' },
   { key: 'name', label: '股票名称', type: 'text', width: '17%' },
@@ -193,7 +193,7 @@ const TransactionHistory = () => {
         worksheet.addRow(row)
       })
 
-      const dateColIndex = headers.findIndex(h => h === '时间')
+      const dateColIndex = headers.findIndex(h => h === '发生时间')
       if (dateColIndex !== -1) {
         const dateColumn = worksheet.getColumn(dateColIndex + 1)
         dateColumn.numFmt = 'yyyy-mm-dd hh:mm:ss'
@@ -492,7 +492,7 @@ const TransactionHistory = () => {
                 setFilterDateRange(value)
                 setCurrentPage(1)
               }}
-              placeholder="时间"
+              placeholder="发生时间"
             />
           </div>
           <div style={{ width: '180px' }}>

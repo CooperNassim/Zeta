@@ -65,7 +65,6 @@ const OrderManagement = () => {
   const riskConfig = useStore(state => state.riskConfig)
   const accountRiskData = useStore(state => state.accountRiskData)
   const addOrder = useStore(state => state.addOrder)
-  const executeOrder = useStore(state => state.executeOrder)
   const deleteMultipleOrders = useStore(state => state.deleteMultipleOrders)
 
   const [orderForm, setOrderForm] = useState({

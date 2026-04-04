@@ -22,7 +22,7 @@ const FIELDS = [
   { key: 'type', label: '记账类型', type: 'text', width: '13%' },
   { key: 'symbol', label: '股票代码', type: 'text', width: '15%' },
   { key: 'name', label: '股票名称', type: 'text', width: '17%' },
-  { key: 'description', label: '描述', type: 'text', width: '17%' },
+  { key: 'description', label: '记账说明', type: 'text', width: '17%' },
   { key: 'amount', label: '金额', type: 'text', width: '10%' },
   { key: 'balance', label: '余额', type: 'text', width: '10%' }
 ]
@@ -46,6 +46,7 @@ const TransactionHistory = () => {
   const addTransaction = useStore(state => state.addTransaction)
   const deleteMultipleTransactions = useStore(state => state.deleteMultipleTransactions)
   const orders = useStore(state => state.orders)
+  const tradeRecords = useStore(state => state.tradeRecords)
 
   // 根据账户类型获取对应的数据
   const currentTransactions = accountType === 'real' ? transactions : virtualTransactions
@@ -151,7 +152,7 @@ const TransactionHistory = () => {
 
     const stockInfo = getStockInfoFromOrders()
     addTransaction({
-      type: transactionForm.type === 'income' ? '入账' : '出账',
+      type: transactionForm.type === 'income' ? '手动入账' : '手动出账',
       symbol: stockInfo.symbol,
       name: stockInfo.name,
       amount: transactionForm.type === 'income' ? parseFloat(transactionForm.amount) : -parseFloat(transactionForm.amount),
@@ -502,8 +503,8 @@ const TransactionHistory = () => {
                 setFilterType(value === '' ? 'all' : value)
               }}
               options={[
-                { value: '入账', label: '入账' },
-                { value: '出账', label: '出账' },
+                { value: '手动入账', label: '手动入账' },
+                { value: '手动出账', label: '手动出账' },
                 { value: '买入', label: '买入股票' },
                 { value: '卖出', label: '卖出股票' }
               ]}
@@ -598,11 +599,37 @@ const TransactionHistory = () => {
                 return <span style={{ color: '#000' }}>{typeMap[item.type] || item.type}</span>
               }
               if (field.key === 'amount') {
-                const isNegative = item.type === '买入' || item.type === '出账'
+                const isNegative = item.type === '买入' || item.type === '手动出账'
                 return <span style={{ color: isNegative ? '#ef4444' : '#22c55e' }}>{isNegative ? '-' : '+'}¥{Math.abs(item.amount).toLocaleString()}</span>
               }
               if (field.key === 'balance') {
                 return `¥${(item.balance || currentAccount.balance).toLocaleString()}`
+              }
+              if (field.key === 'description') {
+                // 手动记账类型：使用原有的描述
+                if (item.type === '手动入账' || item.type === '手动出账') {
+                  return item.description || '-';
+                }
+                
+                // 股票交易类型：拼接交易数量和类型
+                if (item.type === '买入' || item.type === '卖出') {
+                  // 通过trade_number找到对应的交易记录
+                  const tradeRecord = tradeRecords.find(tr => tr.tradeNumber === item.tradeNumber);
+                  if (tradeRecord) {
+                    const quantity = item.type === '买入' ? tradeRecord.buyQuantity : tradeRecord.sellQuantity;
+                    // 使用千位分隔符格式化数量
+                    const formattedQuantity = quantity ? quantity.toLocaleString() : '0';
+                    return `${item.type}${formattedQuantity}股`;
+                  } else {
+                    // 如果找不到交易记录，使用默认拼接
+                    const quantity = item.type === '买入' ? item.buyQuantity : item.sellQuantity;
+                    const formattedQuantity = quantity ? quantity.toLocaleString() : '0';
+                    return `${item.type}${formattedQuantity}股`;
+                  }
+                }
+                
+                // 其他情况返回原描述
+                return item.description || '-';
               }
               return item[field.key] || '-'
             }}
@@ -669,7 +696,7 @@ const TransactionHistory = () => {
                     : 'border-gray-300 text-gray-600 hover:border-green-500/50'
                 }`}>
                   <ArrowUpCircle className="w-6 h-6 inline-block mr-4" />
-                  <span className="font-medium">入账</span>
+                  <span className="font-medium">手动入账</span>
                 </div>
               </label>
               <label className="flex-1 cursor-pointer">
@@ -687,7 +714,7 @@ const TransactionHistory = () => {
                     : 'border-gray-300 text-gray-600 hover:border-red-500/50'
                 }`}>
                   <ArrowDownCircle className="w-6 h-6 inline-block mr-4" />
-                  <span className="font-medium">出账</span>
+                  <span className="font-medium">手动出账</span>
                 </div>
               </label>
             </div>
@@ -711,7 +738,7 @@ const TransactionHistory = () => {
             {formErrors.amount && <ErrorMessage />}
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-2"><span className="text-red-500">*</span> 描述</label>
+            <label className="block text-sm text-gray-600 mb-2"><span className="text-red-500">*</span> 记账说明</label>
             <CustomInput
               type="textarea"
               value={transactionForm.description}

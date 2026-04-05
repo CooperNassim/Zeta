@@ -1268,6 +1268,7 @@ const useStore = create(
           take_profit_price: newOrder.takeProfitPrice,
           psychological_score: newOrder.psychologicalScore,
           strategy_score: newOrder.strategyScore,
+          strategy_id: newOrder.strategyId, // 添加策略ID字段
           risk_score: newOrder.riskScore,
           overall_score: newOrder.overallScore,
           order_date: new Date().toISOString().split('T')[0],
@@ -1865,6 +1866,7 @@ const useStore = create(
             takeProfitPrice: o.take_profit_price || o.takeProfitPrice,
             psychologicalScore: o.psychological_score || o.psychologicalScore,
             strategyScore: o.strategy_score || o.strategyScore,
+            strategyId: o.strategy_id || o.strategyId,
             riskScore: o.risk_score || o.riskScore,
             overallScore: o.overall_score || o.overallScore,
             createdAt: o.created_at || o.createdAt || new Date().toISOString(),
@@ -1950,6 +1952,10 @@ const useStore = create(
           console.log('[Store] importTradeRecords - 数据库返回空，保留本地数据')
           return state
         }
+        
+        // 获取当前所有订单，用于策略ID查找
+        const allOrders = state.orders || []
+        
         const newRecords = records.map(r => {
           // 自动计算买入金额 = 买入数量 * 买入价格
           const buyQuantity = parseFloat(r.buy_quantity || r.buyQuantity) || 0
@@ -1960,6 +1966,30 @@ const useStore = create(
           const sellQuantity = parseFloat(r.sell_quantity || r.sellQuantity) || 0
           const sellPrice = parseFloat(r.sell_price || r.sellPrice) || 0
           const calculatedSellAmount = (sellQuantity && sellPrice) ? (sellQuantity * sellPrice).toFixed(2) : null
+
+          // 从数据库获取策略ID字段
+          let buyStrategyId = r.buy_strategy_id ? Number(r.buy_strategy_id) : (r.buyStrategyId || null)
+          let strategyId = r.strategy_id ? Number(r.strategy_id) : (r.strategyId || null)
+          
+          // 如果策略ID为空，尝试从相关订单中自动获取
+          const tradeNumber = r.trade_number || r.tradeNumber || r.id
+          if (!buyStrategyId && tradeNumber && allOrders.length > 0) {
+            // 查找对应交易编号的订单
+            const relatedOrders = allOrders.filter(o => o.tradeNumber === tradeNumber)
+            const buyOrders = relatedOrders.filter(o => o.type === 'buy')
+            
+            if (!buyStrategyId && buyOrders.length > 0 && buyOrders[0].strategyId) {
+              buyStrategyId = Number(buyOrders[0].strategyId)
+              console.log('[Store] importTradeRecords - 从买入订单自动获取策略ID:', 
+                { tradeNumber, buyStrategyId, symbol: r.symbol || r.name })
+            }
+            
+            if (!strategyId && relatedOrders.length > 0 && relatedOrders[0].strategyId) {
+              strategyId = Number(relatedOrders[0].strategyId)
+              console.log('[Store] importTradeRecords - 从订单自动获取策略ID:', 
+                { tradeNumber, strategyId, symbol: r.symbol || r.name })
+            }
+          }
 
           return {
             ...r,
@@ -1979,7 +2009,7 @@ const useStore = create(
             sellOrderPrice: r.sell_order_price ? parseFloat(r.sell_order_price) : (r.sellOrderPrice || null),
             sellOrderTime: r.sell_order_time || r.sellOrderTime || null,
             sellTime: r.sell_time || r.sellTime || null,
-            tradeNumber: r.trade_number || r.tradeNumber || r.id,
+            tradeNumber: tradeNumber,
             createdAt: r.created_at || r.createdAt || new Date().toISOString(),
             deleted: r.deleted || false,
             deletedAt: r.deleted_at || r.deletedAt || null,
@@ -1995,8 +2025,8 @@ const useStore = create(
             // 买入策略字段映射（支持多个可能的字段名，确保当月亏损组件能正确获取）
             buyStrategy: r.buy_strategy || r.buyStrategy || r.strategy || r.trading_strategy || null,
             // 策略ID字段映射（用于跨表查询策略名称）
-            buyStrategyId: r.buy_strategy_id ? String(r.buy_strategy_id) : (r.buyStrategyId || null),
-            strategyId: r.strategy_id ? String(r.strategy_id) : (r.strategyId || null),
+            buyStrategyId: buyStrategyId,
+            strategyId: strategyId,
             // 盈亏金额字段映射（用于当月亏损组件筛选和显示）
             profit: r.profit != null ? parseFloat(r.profit) : (r.profit || 0),
             profitPercent: r.profit_percent != null ? parseFloat(r.profit_percent) : (r.profitPercent || 0),
@@ -2141,7 +2171,48 @@ const useStore = create(
 
       // 添加完整交易记录（买入和卖出都完成后自动生成）
       addCompleteTradeRecord: (tradeRecord) => set((state) => {
-        const newRecord = { ...tradeRecord, id: Date.now(), createdAt: new Date().toISOString(), deleted: false, deletedAt: null }
+        // 从订单中获取策略ID信息
+        const orders = state.orders
+        const tradeNumber = tradeRecord.tradeNumber
+        
+        // 查找对应交易编号的订单
+        const relatedOrders = orders.filter(o => o.tradeNumber === tradeNumber)
+        const buyOrders = relatedOrders.filter(o => o.type === 'buy')
+        const sellOrders = relatedOrders.filter(o => o.type === 'sell')
+        
+        // 提取策略ID
+        let buyStrategyId = tradeRecord.buyStrategyId || null
+        let strategyId = tradeRecord.strategyId || null
+        
+        console.log('[Store] 添加完整交易记录 - 查找策略ID:')
+        console.log('   - 交易编号:', tradeNumber)
+        console.log('   - 相关订单数量:', relatedOrders.length)
+        console.log('   - 买入订单数量:', buyOrders.length)
+        console.log('   - 卖出订单数量:', sellOrders.length)
+        
+        // 如果没有传入策略ID，从订单中自动获取
+        if (!buyStrategyId && buyOrders.length > 0 && buyOrders[0].strategyId) {
+          buyStrategyId = buyOrders[0].strategyId
+          console.log('   - 从买入订单获取策略ID:', buyStrategyId)
+        }
+        
+        if (!strategyId && relatedOrders.length > 0 && relatedOrders[0].strategyId) {
+          strategyId = relatedOrders[0].strategyId
+          console.log('   - 从订单获取策略ID:', strategyId)
+        }
+        
+        // 创建完整的交易记录
+        const newRecord = {
+          ...tradeRecord,
+          id: Date.now(),
+          createdAt: new Date().toISOString(),
+          deleted: false,
+          deletedAt: null,
+          buyStrategyId: buyStrategyId,
+          strategyId: strategyId
+        }
+
+        console.log('[Store] 添加完整交易记录 - 最终记录:', newRecord)
 
         // 同步到数据库
         apiCall('/api/trade_records', 'POST', newRecord).catch(err => console.error('同步交易记录到数据库失败:', err))

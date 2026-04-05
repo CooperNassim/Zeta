@@ -122,6 +122,7 @@ const TradeRecords = () => {
 
   const tradeRecords = useStore(state => state.tradeRecords)
   const updateTradeRecord = useStore(state => state.updateTradeRecord)
+  const strategyRecords = useStore(state => state.strategyRecords)
   const strategies = useStore(state => state.strategies)
   const orders = useStore(state => state.orders)
 
@@ -409,9 +410,40 @@ const TradeRecords = () => {
       const priceDiff = buyOrderPriceExact - parseFloat(record.buyPrice)
       buySlippage = priceDiff * buyOrdersTotalQuantity
     }
-    const buyStrategyValue = record.buyStrategyScore !== undefined && record.buyStrategyScore !== null
-      ? String(record.buyStrategyScore)
-      : (orders.find(o => String(o.id) === String(record.buyOrderId))?.strategyScore ?? '')
+    // 获取买入策略名称：从股票交易列表的策略名称取值
+    const buyOrder = orders.find(o => String(o.id) === String(record.buyOrderId))
+    let buyStrategyValue = ''
+    
+    console.log('🔍 [Debug Strategy] 查找买入策略:')
+    console.log('   - buyOrder:', buyOrder)
+    console.log('   - record.buyStrategyId:', record.buyStrategyId)
+    console.log('   - strategyRecords长度:', strategyRecords.length)
+    
+    // 详细记录所有的策略ID
+    const strategyIds = strategyRecords.map(s => s.id)
+    console.log('   - 所有策略ID:', strategyIds)
+    console.log('   - 策略记录详细:', strategyRecords)
+    
+    // 使用策略记录查找策略名称
+    if (buyOrder && buyOrder.strategyId) {
+      console.log('   - 从订单策略ID查找:', buyOrder.strategyId, ', ID类型:', typeof buyOrder.strategyId)
+      const strategy = strategyRecords.find(s => {
+        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', buyOrder.strategyId, '(类型:', typeof buyOrder.strategyId, ')')
+        return s.id === buyOrder.strategyId
+      })
+      console.log('   - 查找结果:', strategy)
+      buyStrategyValue = strategy ? strategy.name : ''
+    } else if (record.buyStrategyId) {
+      console.log('   - 从交易记录策略ID查找:', record.buyStrategyId, ', ID类型:', typeof record.buyStrategyId)
+      const strategy = strategyRecords.find(s => {
+        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', record.buyStrategyId, '(类型:', typeof record.buyStrategyId, ')')
+        return s.id === record.buyStrategyId
+      })
+      console.log('   - 查找结果:', strategy)
+      buyStrategyValue = strategy ? strategy.name : ''
+    }
+    
+    console.log('   - 最终策略名称:', buyStrategyValue)
     // 买入金额 = 实际买入价 × 股票交易列表买入数量
     const buyAmountValue = record.buyPrice && buyOrdersTotalQuantity > 0
       ? formatAmount(parseFloat(record.buyPrice) * buyOrdersTotalQuantity)
@@ -476,8 +508,40 @@ const TradeRecords = () => {
       const priceDiff = parseFloat(record.sellPrice) - sellOrderPriceExact
       sellSlippage = priceDiff * sellOrdersTotalQuantity
     }
-    // 卖出策略：从股票交易模块获取首个交易编号卖出类型的策略评估字段
-    const sellStrategyValue = orders.find(o => o.tradeNumber === record.tradeNumber && o.type === 'sell')?.strategyScore ?? ''
+    // 获取卖出策略名称：从股票交易列表的策略名称取值
+    const sellOrder = orders.find(o => o.tradeNumber === record.tradeNumber && o.type === 'sell')
+    let sellStrategyValue = ''
+    
+    console.log('🔍 [Debug Sell Strategy] 查找卖出策略:')
+    console.log('   - sellOrder:', sellOrder)
+    console.log('   - record.sellStrategyId:', record.sellStrategyId)
+    console.log('   - strategyRecords长度:', strategyRecords.length)
+    
+    // 详细记录所有的策略ID
+    const strategyIds = strategyRecords.map(s => s.id)
+    console.log('   - 所有策略ID:', strategyIds)
+    console.log('   - 策略记录详细:', strategyRecords)
+    
+    // 使用策略记录查找策略名称
+    if (sellOrder && sellOrder.strategyId) {
+      console.log('   - 从订单策略ID查找:', sellOrder.strategyId, ', ID类型:', typeof sellOrder.strategyId)
+      const strategy = strategyRecords.find(s => {
+        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', sellOrder.strategyId, '(类型:', typeof sellOrder.strategyId, ')')
+        return s.id === sellOrder.strategyId
+      })
+      console.log('   - 查找结果:', strategy)
+      sellStrategyValue = strategy ? strategy.name : ''
+    } else if (record.sellStrategyId) {
+      console.log('   - 从交易记录策略ID查找:', record.sellStrategyId, ', ID类型:', typeof record.sellStrategyId)
+      const strategy = strategyRecords.find(s => {
+        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', record.sellStrategyId, '(类型:', typeof record.sellStrategyId, ')')
+        return s.id === record.sellStrategyId
+      })
+      console.log('   - 查找结果:', strategy)
+      sellStrategyValue = strategy ? strategy.name : ''
+    }
+    
+    console.log('   - 最终策略名称:', sellStrategyValue)
     // 卖出金额 = 实际卖出价 × 股票交易列表卖出数量
     const sellAmountValue = record.sellPrice && sellOrdersTotalQuantity > 0
       ? formatAmount(parseFloat(record.sellPrice) * sellOrdersTotalQuantity)
@@ -1183,6 +1247,7 @@ const TradeRecords = () => {
                   { key: 'tradeStatus', label: '交易状态', width: '100px' },
                   { key: 'buyGrade', label: '买入评级', width: '100px' },
                   { key: 'sellGrade', label: '卖出评级', width: '100px' },
+
                   { key: 'profit', label: '盈亏金额', width: '120px' },
                   { key: 'profitPercent', label: '盈亏比例', width: '120px' },
                   { key: 'netProfit', label: '净盈亏额', width: '120px' },
@@ -1623,6 +1688,62 @@ const TradeRecords = () => {
                         查看
                       </button>
                     )
+                  }
+                  if (field.key === 'buyStrategyName') {
+                    // 获取第2选择的买入策略名称
+                    const buyOrders = orders.filter(o => o.tradeNumber === item.tradeNumber && o.type === 'buy')
+                    if (buyOrders.length > 0) {
+                      // 使用第2个买入订单的策略作为"第2选择的策略"
+                      const secondBuyOrder = buyOrders.length >= 2 ? buyOrders[1] : buyOrders[0]
+                      if (secondBuyOrder && secondBuyOrder.strategyId) {
+                        const strategyName = getStrategyName(secondBuyOrder.strategyId, '买入')
+                        return <span>{strategyName}</span>
+                      }
+                    }
+                    // 如果没有找到第2选择，则使用tradeRecord中的策略ID
+                    if (item.buyStrategyId) {
+                      const strategyName = getStrategyName(item.buyStrategyId, '买入')
+                      return <span>{strategyName}</span>
+                    }
+                    return <span>-</span>
+                  }
+                  if (field.key === 'buyStrategyScore') {
+                    // 获取买入策略评估分数
+                    const buyOrders = orders.filter(o => o.tradeNumber === item.tradeNumber && o.type === 'buy')
+                    if (buyOrders.length > 0) {
+                      // 使用第2个买入订单的策略分数作为"第2选择的策略评估"
+                      const secondBuyOrder = buyOrders.length >= 2 ? buyOrders[1] : buyOrders[0]
+                      return <span>{secondBuyOrder.strategyScore !== undefined ? secondBuyOrder.strategyScore : ''}</span>
+                    }
+                    return <span>-</span>
+                  }
+                  if (field.key === 'sellStrategyName') {
+                    // 获取第2选择的卖出策略名称
+                    const sellOrders = orders.filter(o => o.tradeNumber === item.tradeNumber && o.type === 'sell')
+                    if (sellOrders.length > 0) {
+                      // 使用第2个卖出订单的策略作为"第2选择的策略"
+                      const secondSellOrder = sellOrders.length >= 2 ? sellOrders[1] : sellOrders[0]
+                      if (secondSellOrder && secondSellOrder.strategyId) {
+                        const strategyName = getStrategyName(secondSellOrder.strategyId, '卖出')
+                        return <span>{strategyName}</span>
+                      }
+                    }
+                    // 如果没有找到第2选择，则使用tradeRecord中的策略ID
+                    if (item.sellStrategyId) {
+                      const strategyName = getStrategyName(item.sellStrategyId, '卖出')
+                      return <span>{strategyName}</span>
+                    }
+                    return <span>-</span>
+                  }
+                  if (field.key === 'sellStrategyScore') {
+                    // 获取卖出策略评估分数
+                    const sellOrders = orders.filter(o => o.tradeNumber === item.tradeNumber && o.type === 'sell')
+                    if (sellOrders.length > 0) {
+                      // 使用第2个卖出订单的策略分数作为"第2选择的策略评估"
+                      const secondSellOrder = sellOrders.length >= 2 ? sellOrders[1] : sellOrders[0]
+                      return <span>{secondSellOrder.strategyScore !== undefined ? secondSellOrder.strategyScore : ''}</span>
+                    }
+                    return <span>-</span>
                   }
                   return null
                 }}

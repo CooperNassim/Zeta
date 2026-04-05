@@ -32,6 +32,9 @@ const OrderManagement = () => {
   const [selectedFilter, setSelectedFilter] = useState('all')  // 默认显示全部订单
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState([])
+  const [toastType, setToastType] = useState('')
+  const [toastMessage, setToastMessage] = useState('')
+  const [showToastState, setShowToastState] = useState(false)
 
   // 格式化数字：整数取整，有小数点保留2位，四舍五入，千位分隔符
   const formatAmount = (amount) => {
@@ -355,7 +358,7 @@ const OrderManagement = () => {
     if (!todayTest) {
       setToastType('error')
       setToastMessage('请先完成今天的心理测试')
-      setShowToast(true)
+      setShowToastState(true)
       return false
     }
 
@@ -383,7 +386,7 @@ const OrderManagement = () => {
     if (!pass) {
       setToastType('error')
       setToastMessage(status)
-      setShowToast(true)
+      setShowToastState(true)
       return false
     }
 
@@ -394,9 +397,7 @@ const OrderManagement = () => {
   const handleStrategyEvaluation = () => {
     const strategy = strategyRecords.find(s => s.id === orderForm.strategyId)
     if (!strategy) {
-      setToastType('error')
-      setToastMessage('请选择交易策略')
-      setShowToast(true)
+      showToast('请选择交易策略', 'error')
       return false
     }
 
@@ -824,6 +825,7 @@ const OrderManagement = () => {
               { key: 'stopLossPrice', label: '止损价', width: '120px' },
               { key: 'takeProfitPrice', label: '止盈价', width: '120px' },
               { key: 'psychologicalScore', label: '心理测试', width: '100px' },
+              { key: 'strategyName', label: '策略名称', width: '120px' },
               { key: 'strategyScore', label: '策略评估', width: '100px' },
               { key: 'createdAt', label: '交易时间', width: '200px' }
             ]}
@@ -852,6 +854,14 @@ const OrderManagement = () => {
               if (field.key === 'psychologicalScore') {
                 // 显示心理测试分数（10分制）
                 return item.psychologicalScore !== undefined && item.psychologicalScore !== null ? item.psychologicalScore : '-'
+              }
+              if (field.key === 'strategyName') {
+                // 显示策略名称 - 根据strategyId从strategyRecords中查找
+                if (item.strategyId) {
+                  const strategy = strategyRecords.find(s => s.id === item.strategyId)
+                  return strategy ? strategy.name : '未知策略'
+                }
+                return '-'
               }
               if (field.key === 'strategyScore') {
                 // 显示策略评估分数（10分制）

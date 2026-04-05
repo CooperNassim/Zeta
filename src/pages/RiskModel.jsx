@@ -562,6 +562,7 @@ const AvailableRisk = () => {
 // 当月亏损组件
 const StrategyRanking = () => {
   const tradeRecords = useStore(state => state.tradeRecords)
+  const strategyRecords = useStore(state => state.strategyRecords)
   
   // 获取当前年月
   const currentMonth = new Date().getMonth()
@@ -593,23 +594,59 @@ const StrategyRanking = () => {
       return profitA - profitB // 降序排列（负数比较：-20000 < -10000，所以-20000排在前面）
     })
     .map((record, index) => {
-      // 直接从交易记录中获取买入策略字段值
+      // 获取买入策略名称：从策略记录中查找策略名称
       let strategyName = '-'
       
-      // 检查交易记录中的所有可能的买入策略字段
-      if (record.buyStrategy) {
-        strategyName = record.buyStrategy
-      } else if (record.buy_strategy) {
-        strategyName = record.buy_strategy
-      } else if (record.strategy) {
-        strategyName = record.strategy
-      } else if (record.trading_strategy) {
-        strategyName = record.trading_strategy
-      } else if (record.buyStrategyId) {
-        strategyName = `${record.buyStrategyId}号策略`
+      console.log('🔍 [RiskModel Debug Strategy] 查找策略:')
+      console.log('   - record:', record.symbol, record.name)
+      console.log('   - record.buyStrategyId:', record.buyStrategyId)
+      console.log('   - record.strategyId:', record.strategyId)
+      console.log('   - strategyRecords长度:', strategyRecords.length)
+      
+      // 详细记录所有的策略ID
+      const strategyIds = strategyRecords.map(s => s.id)
+      console.log('   - 所有策略ID:', strategyIds)
+      console.log('   - 策略记录详细:', JSON.stringify(strategyRecords, null, 2))
+      
+      // 检查策略ID信息
+      console.log('   - record.buyStrategy:', record.buyStrategy)
+      
+      // 使用策略记录查找策略名称
+      if (record.buyStrategyId) {
+        console.log('   - 从buyStrategyId查找:', record.buyStrategyId, ', ID类型:', typeof record.buyStrategyId)
+        const strategy = strategyRecords.find(s => {
+          console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', record.buyStrategyId, '(类型:', typeof record.buyStrategyId, ')')
+          return s.id === record.buyStrategyId
+        })
+        console.log('   - 查找结果:', strategy)
+        strategyName = strategy ? strategy.name : '-'
       } else if (record.strategyId) {
-        strategyName = `${record.strategyId}号策略`
+        console.log('   - 从strategyId查找:', record.strategyId, ', ID类型:', typeof record.strategyId)
+        const strategy = strategyRecords.find(s => {
+          console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', record.strategyId, '(类型:', typeof record.strategyId, ')')
+          return s.id === record.strategyId
+        })
+        console.log('   - 查找结果:', strategy)
+        strategyName = strategy ? strategy.name : '-'
+      } else if (record.buyStrategy) {
+        // 如果策略ID为空，但buyStrategy字段有内容，直接使用这个字段
+        console.log('   - 使用buyStrategy字段:', record.buyStrategy)
+        strategyName = record.buyStrategy || '-'
+      } else if (record.strategy) {
+        // 尝试从strategy字段获取（兼容更早的字段名）
+        console.log('   - 使用strategy字段:', record.strategy)
+        strategyName = record.strategy || '-'
+      } else if (record.trading_strategy) {
+        // 尝试从trading_strategy字段获取
+        console.log('   - 使用trading_strategy字段:', record.trading_strategy)
+        strategyName = record.trading_strategy || '-'
+      } else {
+        // 所有策略字段都为空，显示-
+        console.log('   - 所有策略字段为空，显示-')
+        strategyName = '-'
       }
+      
+      console.log('   - 最终策略名称:', strategyName)
       
       return {
         rank: index + 1,

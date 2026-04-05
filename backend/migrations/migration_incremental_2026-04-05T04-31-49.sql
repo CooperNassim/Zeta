@@ -1,0 +1,839 @@
+-- Zeta Trading System 增量迁移脚本
+-- 仅包含表结构，不包含数据
+-- 生成时间: 2026-04-05T04:31:49.841Z
+
+-- ========================================
+-- 说明：此脚本仅更新表结构
+-- 如果需要修改已有列，请手动调整语句
+-- ========================================
+
+-- ========================================
+-- 表: account
+-- ========================================
+-- 更新表 account 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS account CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('account_id_seq'::regclass);
+-- 列: total_balance (numeric)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS total_balance NUMERIC NOT NULL DEFAULT 0;
+-- 列: available_balance (numeric)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS available_balance NUMERIC NOT NULL DEFAULT 0;
+-- 列: frozen_balance (numeric)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS frozen_balance NUMERIC NOT NULL DEFAULT 0;
+-- 列: total_profit (numeric)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS total_profit NUMERIC NOT NULL DEFAULT 0;
+-- 列: total_profit_rate (numeric)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS total_profit_rate NUMERIC NOT NULL DEFAULT 0;
+-- 列: today_profit (numeric)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS today_profit NUMERIC NOT NULL DEFAULT 0;
+-- 列: today_profit_rate (numeric)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS today_profit_rate NUMERIC NOT NULL DEFAULT 0;
+-- 列: total_orders (integer)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS total_orders INTEGER NOT NULL DEFAULT 0;
+-- 列: winning_orders (integer)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS winning_orders INTEGER NOT NULL DEFAULT 0;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: deleted (boolean)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE account ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+
+-- ========================================
+-- 表: daily_work_data
+-- ========================================
+-- 更新表 daily_work_data 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS daily_work_data CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('daily_work_data_id_seq'::regclass);
+-- 列: date (date)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS date DATE NOT NULL;
+-- 列: nasdaq (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS nasdaq TEXT;
+-- 列: ftse (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS ftse TEXT;
+-- 列: dax (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS dax TEXT;
+-- 列: n225 (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS n225 TEXT;
+-- 列: hsi (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS hsi TEXT;
+-- 列: bitcoin (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS bitcoin TEXT;
+-- 列: eurusd (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS eurusd TEXT;
+-- 列: usdjpy (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS usdjpy TEXT;
+-- 列: usdcny (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS usdcny TEXT;
+-- 列: oil (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS oil TEXT;
+-- 列: gold (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS gold TEXT;
+-- 列: bond (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS bond TEXT;
+-- 列: consecutive (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS consecutive TEXT;
+-- 列: a50 (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS a50 TEXT;
+-- 列: sh_index (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS sh_index TEXT;
+-- 列: sh_2day_power (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS sh_2day_power TEXT;
+-- 列: sh_13day_power (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS sh_13day_power TEXT;
+-- 列: up_count (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS up_count TEXT;
+-- 列: limit_up (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS limit_up TEXT;
+-- 列: down_count (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS down_count TEXT;
+-- 列: limit_down (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS limit_down TEXT;
+-- 列: volume (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS volume TEXT;
+-- 列: sentiment (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS sentiment TEXT;
+-- 列: prediction (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS prediction TEXT;
+-- 列: trade_status (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS trade_status TEXT;
+-- 列: review_plan (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS review_plan TEXT;
+-- 列: review_execution (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS review_execution TEXT;
+-- 列: review_result (text)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS review_result TEXT;
+-- 列: deleted (boolean)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE daily_work_data ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+
+-- ========================================
+-- 表: psychological_indicators
+-- ========================================
+-- 更新表 psychological_indicators 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS psychological_indicators CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('psychological_indicators_id_seq'::regclass);
+-- 列: indicator_name (character varying)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS indicator_name VARCHAR(100) NOT NULL;
+-- 列: description (text)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS description TEXT;
+-- 列: min_score (numeric)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS min_score NUMERIC NOT NULL DEFAULT 0;
+-- 列: max_score (numeric)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS max_score NUMERIC NOT NULL DEFAULT 10;
+-- 列: weight (numeric)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS weight NUMERIC NOT NULL DEFAULT 1;
+-- 列: status (character varying)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'::character varying;
+-- 列: deleted (boolean)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: indicator_id (character varying)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS indicator_id VARCHAR(10);
+-- 列: sort_order (integer)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+-- 列: is_active (boolean)
+-- ALTER TABLE psychological_indicators ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+-- ALTER TABLE psychological_indicators ADD CONSTRAINT psychological_indicators_indicator_id_key UNIQUE (indicator_id);
+
+-- ========================================
+-- 表: psychological_test_results
+-- ========================================
+-- 更新表 psychological_test_results 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS psychological_test_results CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE psychological_test_results ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('psychological_test_results_id_seq'::regclass);
+-- 列: test_date (date)
+-- ALTER TABLE psychological_test_results ADD COLUMN IF NOT EXISTS test_date DATE NOT NULL;
+-- 列: scores (json)
+-- ALTER TABLE psychological_test_results ADD COLUMN IF NOT EXISTS scores JSON NOT NULL;
+-- 列: total_score (numeric)
+-- ALTER TABLE psychological_test_results ADD COLUMN IF NOT EXISTS total_score NUMERIC NOT NULL DEFAULT 0;
+-- 列: overall_score (numeric)
+-- ALTER TABLE psychological_test_results ADD COLUMN IF NOT EXISTS overall_score NUMERIC;
+-- 列: notes (text)
+-- ALTER TABLE psychological_test_results ADD COLUMN IF NOT EXISTS notes TEXT;
+-- 列: deleted (boolean)
+-- ALTER TABLE psychological_test_results ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE psychological_test_results ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE psychological_test_results ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE psychological_test_results ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+-- ALTER TABLE psychological_test_results ADD CONSTRAINT unique_test_date UNIQUE (test_date, deleted);
+
+-- ========================================
+-- 表: risk_config
+-- ========================================
+-- 更新表 risk_config 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS risk_config CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE risk_config ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('risk_config_id_seq'::regclass);
+-- 列: account_type (character varying)
+-- ALTER TABLE risk_config ADD COLUMN IF NOT EXISTS account_type VARCHAR(20) NOT NULL DEFAULT 'real'::character varying;
+-- 列: total_risk_percent (numeric)
+-- ALTER TABLE risk_config ADD COLUMN IF NOT EXISTS total_risk_percent NUMERIC NOT NULL DEFAULT 6;
+-- 列: single_risk_percent (numeric)
+-- ALTER TABLE risk_config ADD COLUMN IF NOT EXISTS single_risk_percent NUMERIC NOT NULL DEFAULT 2;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE risk_config ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE risk_config ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+-- 列: deleted (boolean)
+-- ALTER TABLE risk_config ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE risk_config ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+-- ALTER TABLE risk_config ADD CONSTRAINT unique_account_type UNIQUE (account_type);
+
+-- ========================================
+-- 表: stock_kline_data
+-- ========================================
+-- 更新表 stock_kline_data 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS stock_kline_data CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('stock_kline_data_id_seq'::regclass);
+-- 列: symbol (character varying)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS symbol VARCHAR(50) NOT NULL;
+-- 列: date (date)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS date DATE NOT NULL;
+-- 列: open_price (numeric)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS open_price NUMERIC NOT NULL;
+-- 列: high_price (numeric)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS high_price NUMERIC NOT NULL;
+-- 列: low_price (numeric)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS low_price NUMERIC NOT NULL;
+-- 列: close_price (numeric)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS close_price NUMERIC NOT NULL;
+-- 列: volume (numeric)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS volume NUMERIC NOT NULL;
+-- 列: deleted (boolean)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE stock_kline_data ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+
+-- ========================================
+-- 表: stock_pool
+-- ========================================
+-- 更新表 stock_pool 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS stock_pool CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('stock_pool_id_seq'::regclass);
+-- 列: symbol (character varying)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS symbol VARCHAR(50) NOT NULL;
+-- 列: name (character varying)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS name VARCHAR(200) NOT NULL;
+-- 列: sector (character varying)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS sector VARCHAR(100);
+-- 列: market (character varying)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS market VARCHAR(20) NOT NULL;
+-- 列: status (character varying)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'watching'::character varying;
+-- 列: buy_price (numeric)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS buy_price NUMERIC;
+-- 列: sell_price (numeric)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS sell_price NUMERIC;
+-- 列: notes (text)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS notes TEXT;
+-- 列: deleted (boolean)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+
+-- ========================================
+-- 表: strategy_records
+-- ========================================
+-- 更新表 strategy_records 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS strategy_records CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('strategy_records_id_seq'::regclass);
+-- 列: strategy_id (integer)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS strategy_id INTEGER NOT NULL;
+-- 列: order_id (integer)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS order_id INTEGER NOT NULL;
+-- 列: eval_score_1 (character varying)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS eval_score_1 VARCHAR(20);
+-- 列: eval_score_2 (character varying)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS eval_score_2 VARCHAR(20);
+-- 列: eval_score_3 (character varying)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS eval_score_3 VARCHAR(20);
+-- 列: eval_score_4 (character varying)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS eval_score_4 VARCHAR(20);
+-- 列: eval_score_5 (character varying)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS eval_score_5 VARCHAR(20);
+-- 列: total_score (numeric)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS total_score NUMERIC;
+-- 列: notes (text)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS notes TEXT;
+-- 列: deleted (boolean)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE strategy_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+
+-- ========================================
+-- 表: technical_indicators
+-- ========================================
+-- 更新表 technical_indicators 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS technical_indicators CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('technical_indicators_id_seq'::regclass);
+-- 列: symbol (character varying)
+-- ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS symbol VARCHAR(50) NOT NULL;
+-- 列: indicator_type (character varying)
+-- ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS indicator_type VARCHAR(20) NOT NULL;
+-- 列: value (numeric)
+-- ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS value NUMERIC NOT NULL;
+-- 列: indicator_date (date)
+-- ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS indicator_date DATE NOT NULL;
+-- 列: deleted (boolean)
+-- ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+
+-- ========================================
+-- 表: trade_orders
+-- ========================================
+-- 更新表 trade_orders 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS trade_orders CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('trade_orders_id_seq'::regclass);
+-- 列: trade_number (character varying)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS trade_number VARCHAR(50) NOT NULL;
+-- 列: order_type (character varying)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS order_type VARCHAR(20) NOT NULL;
+-- 列: symbol (character varying)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS symbol VARCHAR(50) NOT NULL;
+-- 列: name (character varying)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS name VARCHAR(100);
+-- 列: price (numeric)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS price NUMERIC NOT NULL;
+-- 列: quantity (integer)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL;
+-- 列: stop_loss_price (numeric)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS stop_loss_price NUMERIC;
+-- 列: take_profit_price (numeric)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS take_profit_price NUMERIC;
+-- 列: psychological_score (numeric)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS psychological_score NUMERIC;
+-- 列: strategy_score (numeric)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS strategy_score NUMERIC;
+-- 列: risk_score (numeric)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS risk_score NUMERIC;
+-- 列: overall_score (numeric)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS overall_score NUMERIC;
+-- 列: order_date (date)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS order_date DATE NOT NULL;
+-- 列: order_time (timestamp with time zone)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS order_time TIMESTAMPTZ;
+-- 列: status (character varying)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending'::character varying;
+-- 列: is_virtual (boolean)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS is_virtual BOOLEAN NOT NULL DEFAULT false;
+-- 列: notes (text)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS notes TEXT;
+-- 列: deleted (boolean)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: buy_order_id (integer)
+-- ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS buy_order_id INTEGER;
+
+
+-- ========================================
+-- 表: trade_orders_backup
+-- ========================================
+-- 更新表 trade_orders_backup 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS trade_orders_backup CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS id INTEGER;
+-- 列: trade_number (character varying)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS trade_number VARCHAR(50);
+-- 列: order_type (character varying)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS order_type VARCHAR(10);
+-- 列: symbol (character varying)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS symbol VARCHAR(50);
+-- 列: name (character varying)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS name VARCHAR(200);
+-- 列: price (numeric)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS price NUMERIC;
+-- 列: quantity (integer)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS quantity INTEGER;
+-- 列: stop_loss_price (numeric)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS stop_loss_price NUMERIC;
+-- 列: take_profit_price (numeric)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS take_profit_price NUMERIC;
+-- 列: psychological_score (numeric)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS psychological_score NUMERIC;
+-- 列: strategy_score (numeric)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS strategy_score NUMERIC;
+-- 列: risk_score (numeric)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS risk_score NUMERIC;
+-- 列: overall_score (numeric)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS overall_score NUMERIC;
+-- 列: order_date (date)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS order_date DATE;
+-- 列: order_time (character varying)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS order_time VARCHAR(8);
+-- 列: status (character varying)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS status VARCHAR(20);
+-- 列: is_virtual (boolean)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS is_virtual BOOLEAN;
+-- 列: notes (text)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS notes TEXT;
+-- 列: deleted (boolean)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS deleted BOOLEAN;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE trade_orders_backup ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+
+-- ========================================
+-- 表: trade_records
+-- ========================================
+-- 更新表 trade_records 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS trade_records CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('trade_records_id_seq'::regclass);
+-- 列: deleted (boolean)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: trade_number (character varying)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS trade_number VARCHAR(20) NOT NULL;
+-- 列: trade_type (character varying)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS trade_type VARCHAR(10);
+-- 列: symbol (character varying)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS symbol VARCHAR(50) NOT NULL;
+-- 列: name (character varying)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS name VARCHAR(200) NOT NULL;
+-- 列: buy_order_id (character varying)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_order_id VARCHAR(50);
+-- 列: sell_order_id (character varying)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_order_id VARCHAR(50);
+-- 列: buy_price (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_price NUMERIC;
+-- 列: buy_quantity (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_quantity NUMERIC;
+-- 列: buy_time (timestamp with time zone)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_time TIMESTAMPTZ;
+-- 列: buy_order_price (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_order_price NUMERIC;
+-- 列: buy_order_time (timestamp with time zone)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_order_time TIMESTAMPTZ;
+-- 列: buy_psychological_score (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_psychological_score NUMERIC;
+-- 列: buy_strategy_score (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_strategy_score NUMERIC;
+-- 列: buy_strategy_id (integer)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_strategy_id INTEGER;
+-- 列: sell_price (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_price NUMERIC;
+-- 列: sell_quantity (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_quantity NUMERIC;
+-- 列: sell_time (timestamp with time zone)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_time TIMESTAMPTZ;
+-- 列: sell_order_price (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_order_price NUMERIC;
+-- 列: sell_order_time (timestamp with time zone)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_order_time TIMESTAMPTZ;
+-- 列: sell_psychological_score (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_psychological_score NUMERIC;
+-- 列: sell_strategy_score (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_strategy_score NUMERIC;
+-- 列: sell_strategy_id (integer)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_strategy_id INTEGER;
+-- 列: buy_amount (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_amount NUMERIC;
+-- 列: sell_amount (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_amount NUMERIC;
+-- 列: profit (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS profit NUMERIC;
+-- 列: profit_percent (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS profit_percent NUMERIC;
+-- 列: hold_duration (integer)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS hold_duration INTEGER;
+-- 列: buy_grade (character varying)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_grade VARCHAR(10);
+-- 列: sell_grade (character varying)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_grade VARCHAR(10);
+-- 列: overall_score (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS overall_score NUMERIC;
+-- 列: buy_channel (json)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS buy_channel JSON;
+-- 列: sell_channel (json)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_channel JSON;
+-- 列: trade_summary (text)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS trade_summary TEXT;
+-- 列: trade_commission (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS trade_commission NUMERIC;
+-- 列: sell_trade_commission (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_trade_commission NUMERIC;
+-- 列: other_fees (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS other_fees NUMERIC;
+-- 列: sell_other_fees (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS sell_other_fees NUMERIC;
+-- 列: fees (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS fees NUMERIC;
+-- 列: slippage (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS slippage NUMERIC;
+-- 列: net_profit (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS net_profit NUMERIC;
+-- 列: net_profit_percent (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS net_profit_percent NUMERIC;
+-- 列: slippage_net_profit_ratio (numeric)
+-- ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS slippage_net_profit_ratio NUMERIC;
+
+
+-- ========================================
+-- 表: trade_records_backup_complete
+-- ========================================
+-- 更新表 trade_records_backup_complete 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS trade_records_backup_complete CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS id INTEGER;
+-- 列: order_id (integer)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS order_id INTEGER;
+-- 列: symbol (character varying)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS symbol VARCHAR(50);
+-- 列: entry_price (numeric)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS entry_price NUMERIC;
+-- 列: exit_price (numeric)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS exit_price NUMERIC;
+-- 列: entry_date (date)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS entry_date DATE;
+-- 列: exit_date (date)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS exit_date DATE;
+-- 列: quantity (numeric)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS quantity NUMERIC;
+-- 列: profit (numeric)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS profit NUMERIC;
+-- 列: profit_rate (numeric)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS profit_rate NUMERIC;
+-- 列: holding_days (integer)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS holding_days INTEGER;
+-- 列: notes (text)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS notes TEXT;
+-- 列: deleted (boolean)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS deleted BOOLEAN;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE trade_records_backup_complete ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+
+-- ========================================
+-- 表: trade_records_backup_sync
+-- ========================================
+-- 更新表 trade_records_backup_sync 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS trade_records_backup_sync CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS id INTEGER;
+-- 列: deleted (boolean)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS deleted BOOLEAN;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+-- 列: trade_number (character varying)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS trade_number VARCHAR(20);
+-- 列: trade_type (character varying)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS trade_type VARCHAR(10);
+-- 列: symbol (character varying)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS symbol VARCHAR(50);
+-- 列: name (character varying)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS name VARCHAR(200);
+-- 列: buy_order_id (character varying)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_order_id VARCHAR(50);
+-- 列: sell_order_id (character varying)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_order_id VARCHAR(50);
+-- 列: buy_price (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_price NUMERIC;
+-- 列: buy_quantity (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_quantity NUMERIC;
+-- 列: buy_time (timestamp with time zone)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_time TIMESTAMPTZ;
+-- 列: buy_order_price (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_order_price NUMERIC;
+-- 列: buy_order_time (timestamp with time zone)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_order_time TIMESTAMPTZ;
+-- 列: buy_psychological_score (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_psychological_score NUMERIC;
+-- 列: buy_strategy_score (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_strategy_score NUMERIC;
+-- 列: buy_strategy_id (integer)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_strategy_id INTEGER;
+-- 列: sell_price (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_price NUMERIC;
+-- 列: sell_quantity (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_quantity NUMERIC;
+-- 列: sell_time (timestamp with time zone)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_time TIMESTAMPTZ;
+-- 列: sell_order_price (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_order_price NUMERIC;
+-- 列: sell_order_time (timestamp with time zone)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_order_time TIMESTAMPTZ;
+-- 列: sell_psychological_score (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_psychological_score NUMERIC;
+-- 列: sell_strategy_score (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_strategy_score NUMERIC;
+-- 列: sell_strategy_id (integer)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_strategy_id INTEGER;
+-- 列: buy_amount (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_amount NUMERIC;
+-- 列: sell_amount (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_amount NUMERIC;
+-- 列: profit (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS profit NUMERIC;
+-- 列: profit_percent (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS profit_percent NUMERIC;
+-- 列: hold_duration (integer)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS hold_duration INTEGER;
+-- 列: buy_grade (character varying)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_grade VARCHAR(10);
+-- 列: sell_grade (character varying)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_grade VARCHAR(10);
+-- 列: overall_score (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS overall_score NUMERIC;
+-- 列: buy_channel (json)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS buy_channel JSON;
+-- 列: sell_channel (json)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_channel JSON;
+-- 列: trade_summary (text)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS trade_summary TEXT;
+-- 列: trade_commission (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS trade_commission NUMERIC;
+-- 列: sell_trade_commission (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_trade_commission NUMERIC;
+-- 列: other_fees (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS other_fees NUMERIC;
+-- 列: sell_other_fees (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS sell_other_fees NUMERIC;
+-- 列: fees (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS fees NUMERIC;
+-- 列: slippage (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS slippage NUMERIC;
+-- 列: net_profit (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS net_profit NUMERIC;
+-- 列: net_profit_percent (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS net_profit_percent NUMERIC;
+-- 列: slippage_net_profit_ratio (numeric)
+-- ALTER TABLE trade_records_backup_sync ADD COLUMN IF NOT EXISTS slippage_net_profit_ratio NUMERIC;
+
+
+-- ========================================
+-- 表: trading_strategies
+-- ========================================
+-- 更新表 trading_strategies 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS trading_strategies CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('trading_strategies_id_seq'::regclass);
+-- 列: strategy_type (character varying)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS strategy_type VARCHAR(20) NOT NULL;
+-- 列: name (character varying)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS name VARCHAR(200) NOT NULL;
+-- 列: eval_standard_1 (text)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS eval_standard_1 TEXT;
+-- 列: eval_standard_2 (text)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS eval_standard_2 TEXT;
+-- 列: eval_standard_3 (text)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS eval_standard_3 TEXT;
+-- 列: eval_standard_4 (text)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS eval_standard_4 TEXT;
+-- 列: eval_standard_5 (text)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS eval_standard_5 TEXT;
+-- 列: status (character varying)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT '启用'::character varying;
+-- 列: deleted (boolean)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: revision_version (character varying)
+-- ALTER TABLE trading_strategies ADD COLUMN IF NOT EXISTS revision_version VARCHAR(50);
+
+
+-- ========================================
+-- 表: transactions
+-- ========================================
+-- 更新表 transactions 的结构
+-- 注意：如果表已存在，使用 ALTER TABLE 添加新列或修改现有列
+-- 方式1：重建表（谨慎使用，会删除数据）
+-- DROP TABLE IF EXISTS transactions CASCADE;
+--
+-- 方式2：增量添加新列（推荐）
+-- 检查是否有新列需要添加
+-- 列: id (integer)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS id INTEGER NOT NULL DEFAULT nextval('transactions_id_seq'::regclass);
+-- 列: order_id (integer)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS order_id INTEGER;
+-- 列: transaction_type (character varying)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transaction_type VARCHAR(10);
+-- 列: symbol (character varying)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS symbol VARCHAR(50);
+-- 列: price (numeric)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS price NUMERIC;
+-- 列: quantity (numeric)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS quantity NUMERIC;
+-- 列: total_price (numeric)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS total_price NUMERIC;
+-- 列: transaction_date (date)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transaction_date DATE;
+-- 列: transaction_time (character varying)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transaction_time VARCHAR(8);
+-- 列: fee (numeric)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS fee NUMERIC DEFAULT 0;
+-- 列: profit (numeric)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS profit NUMERIC;
+-- 列: deleted (boolean)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT false;
+-- 列: deleted_at (timestamp with time zone)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- 列: created_at (timestamp with time zone)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: updated_at (timestamp with time zone)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+-- 列: name (text)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS name TEXT;
+-- 列: description (text)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS description TEXT;
+-- 列: amount (text)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS amount TEXT;
+-- 列: balance (text)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS balance TEXT;
+-- 列: account_type (character varying)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS account_type VARCHAR(20) NOT NULL DEFAULT 'realtime'::character varying;
+-- 列: trade_number (character varying)
+-- ALTER TABLE transactions ADD COLUMN IF NOT EXISTS trade_number VARCHAR(50);
+

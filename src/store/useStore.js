@@ -2697,7 +2697,96 @@ const useStore = create(
         
         return totalAssets
       },
-      
+
+      // 获取持仓占用金额 = Σ(实际买入价-止损价)×买入数量 (风险额度计算)
+      getHoldingOccupancy: () => {
+        const state = useStore.getState()
+        
+        // 计算持仓占用的风险额度：Σ(实际买入价-止损价)×买入数量
+        let holdingOccupancy = 0
+
+        try {
+          const allTradeRecords = (state.tradeRecords || []).filter(r => !r.deleted)
+          const allOrders = (state.orders || []).filter(o => !o.deleted)
+
+          // 筛选持仓中的交易记录：按交易编号去重，然后判断持仓状态
+          const uniqueRecords = []
+          const tradeNumberSet = new Set()
+
+          allTradeRecords.forEach(r => {
+            const tradeNumber = r.tradeNumber || r.trade_number
+            if (tradeNumber && !tradeNumberSet.has(tradeNumber)) {
+              tradeNumberSet.add(tradeNumber)
+              uniqueRecords.push(r)
+            }
+          })
+
+          // 筛选持仓中的交易记录
+          const holdingRecords = uniqueRecords.filter(r => {
+            // 优先使用交易状态字段（中文）
+            const tradeStatus = (r.status || r.tradeStatus || '').toString()
+            const sellQty = parseFloat(r.sellQuantity) || 0
+            const buyQty = parseFloat(r.buyQuantity) || 0
+
+            // 判断是否为持仓中的交易
+            let isHolding = false
+            if (tradeStatus.includes('持仓中') || tradeStatus === '持仓中') {
+              isHolding = true
+            } else if (sellQty < buyQty) {
+              isHolding = true
+            }
+
+            // 检查：对于有买入且没有卖出的股票交易，应该计入持仓占用
+            if (!isHolding && (parseFloat(r.sellAmount) || 0) === 0 && (parseFloat(r.buyAmount) || 0) > 0 && r.symbol) {
+              isHolding = true
+            }
+
+            return isHolding
+          })
+
+          // 计算持仓占用的风险额度 = Σ(实际买入价-止损价)×买入数量
+          if (holdingRecords.length > 0) {
+            holdingOccupancy = holdingRecords.reduce((sum, r) => {
+              const tradeNumber = r.tradeNumber || r.trade_number
+              
+              // 根据交易编号查找对应的买入订单
+              const buyOrders = allOrders.filter(o => 
+                o.tradeNumber === tradeNumber && 
+                (o.type === 'buy' || o.type === '买入')
+              )
+              
+              // 如果没有找到对应的订单，使用默认计算：买入金额
+              if (buyOrders.length === 0) {
+                const buyAmount = parseFloat(r.buyAmount) || 0
+                return sum + buyAmount
+              }
+              
+              // 计算每个买入订单的风险额度
+              let riskAmount = 0
+              buyOrders.forEach(buyOrder => {
+                const buyPrice = parseFloat(buyOrder.price) || 0
+                const stopLossPrice = parseFloat(buyOrder.stopLossPrice) || 0
+                const quantity = parseFloat(buyOrder.quantity) || 0
+                
+                // 如果止损价为0或买入价，使用默认计算
+                if (stopLossPrice <= 0 || stopLossPrice >= buyPrice) {
+                  riskAmount += buyPrice * quantity
+                } else {
+                  // 风险额度 = (实际买入价 - 止损价) × 买入数量
+                  riskAmount += (buyPrice - stopLossPrice) * quantity
+                }
+              })
+              
+              return sum + riskAmount
+            }, 0)
+          }
+
+        } catch (error) {
+          console.log('❌ [getHoldingOccupancy] 持仓占用计算出错:', error)
+        }
+
+        return holdingOccupancy
+      },
 
     }),
     {

@@ -393,6 +393,53 @@ const CurrentPositions = ({ selectedPosition, onPositionSelect }) => {
 // 账户风险组件
 const AccountRisk = () => {
   const accountRiskData = useStore(state => state.accountRiskData)
+  const getTotalAssets = useStore(state => state.getTotalAssets)
+  const getHoldingOccupancy = useStore(state => state.getHoldingOccupancy)
+  const currentTotalAssets = getTotalAssets('real')
+  const holdingOccupancy = getHoldingOccupancy()
+  
+  // 获取交易记录来计算本月盈亏（过滤盈利的数据，只显示亏损的绝对值）
+  const transactions = useStore(state => state.transactions)
+  
+  // 计算本月盈亏：与账单明细逻辑相同
+  const now = new Date()
+  const currentMonth = now.getMonth()
+  const currentYear = now.getFullYear()
+  
+  // 只使用实盘数据
+  const currentTransactions = transactions
+  
+  const monthIncome = currentTransactions.filter(t => {
+    const date = new Date(t.createdAt || t.created_at || t.buyDate || t.buyTime) 
+    return !t.deleted && (t.amount || 0) > 0 && date.getMonth() === currentMonth && date.getFullYear() === currentYear
+  }).reduce((sum, t) => sum + (t.amount || 0), 0)
+  
+  const monthExpense = currentTransactions.filter(t => {
+    const date = new Date(t.createdAt || t.created_at || t.buyDate || t.buyTime)
+    return !t.deleted && (t.amount || 0) < 0 && date.getMonth() === currentMonth && date.getFullYear() === currentYear
+  }).reduce((sum, t) => sum + Math.abs(t.amount || 0), 0)
+  
+  const monthBalance = monthIncome - monthExpense
+  
+  // 显示本月亏损：如果亏损则显示亏损绝对值，如果盈利则显示0
+  const monthlyLoss = monthBalance < 0 ? Math.abs(monthBalance) : 0
+  
+  // 计算月初账户（上月总资产）值：与账单明细逻辑相同
+  // 获取上月最后一天的日期（作为查询终点）
+  const lastMonthEnd = new Date(currentYear, currentMonth, 0, 23, 59, 59)
+  
+  // 找到上月最后一笔交易记录的余额作为上月总资产
+  const lastMonthTransactions = currentTransactions
+    .filter(t => {
+      const date = new Date(t.createdAt || t.created_at || t.buyDate || t.buyTime)
+      return !t.deleted && date && date <= lastMonthEnd
+    })
+    .sort((a, b) => new Date(b.createdAt || b.created_at || b.buyDate || b.buyTime) - new Date(a.createdAt || a.created_at || a.buyDate || a.buyTime)) // 按时间倒序，最新的在前
+  
+  // 使用上月最后一笔交易的余额作为上月总资产基准值
+  const startMonthTotal = lastMonthTransactions.length > 0 
+    ? (lastMonthTransactions[0].balance || 100000)
+    : 100000
 
   // 计算可用风险额度
   const availableRisk = accountRiskData.startMonthTotal - (accountRiskData.stopLossPreLoss + accountRiskData.monthlyLoss)
@@ -420,27 +467,27 @@ const AccountRisk = () => {
         <div style={{ marginTop: '12px', width: '100%', flex: 1, minHeight: 0 }}>
           <div style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', rowGap: '10px' }}>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>当前账户</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>总资产</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                 {accountRiskData.currentAccount.toLocaleString()}
+                 {currentTotalAssets.toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>本月亏损</div>
               <div style={{ fontWeight: 'bold', color: '#EF4444', fontSize: '16px' }}>
-                 {accountRiskData.monthlyLoss.toLocaleString()}
+                 {monthlyLoss.toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>月初账户</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                 {accountRiskData.startMonthTotal.toLocaleString()}
+                 {startMonthTotal.toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>持仓占用</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                 {accountRiskData.stopLossPreLoss.toLocaleString()}
+                 {holdingOccupancy.toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>

@@ -30,7 +30,7 @@ const DataForm = ({
           (isFullWidth ? 'col-span-2 md:col-span-4' : '')
         }>
           <label className="block text-sm text-gray-600 mb-1.5">
-            {!field.notRequired && <span className="text-red-500">*</span>} {field.label}
+            {field.required && <span className="text-red-500">*</span>} {field.label}
           </label>
           {field.readonly ? (
             <ReadOnlyInput

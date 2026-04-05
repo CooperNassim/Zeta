@@ -79,11 +79,12 @@ const formatFee = (fee) => {
 
 // 解析价格（支持千位分隔符格式）
 const parsePrice = (value) => {
-  if (!value || typeof value !== 'string') return parseFloat(value) || 0
+  if (value === '' || value === null) return null
+  if (typeof value !== 'string') return parseFloat(value) || null
   // 移除千位分隔符和其他非数字字符（保留小数点）
   const cleaned = value.replace(/,/g, '')
   const num = parseFloat(cleaned)
-  return isNaN(num) ? 0 : num
+  return isNaN(num) ? null : num
 }
 
 const TradeRecords = () => {
@@ -271,18 +272,26 @@ const TradeRecords = () => {
   const handleEditSummary = () => {
     if (selectedIds.length !== 1) return
 
-    // 从合并后的数据中获取记录，确保获取完整的合并数据
-    const record = filteredRecords.find(r => r.id === selectedIds[0])
+    // 从原始交易记录中获取记录，避免合并算法导致的随机性
+    const record = tradeRecords.find(r => r.id === selectedIds[0])
     if (!record) return
 
     setEditingTradeId(selectedIds[0])
+    
+    // 重构后的数据流逻辑：
+    // 1. 买入相关字段：从交易记录获取（值会显示在买入详情弹窗中）
+    // 2. 卖出相关字段：从交易记录获取（值会显示在卖出详情弹窗中）
+    // 3. 交易总结：从交易记录获取
     setSummaryFormData({
-      buyPrice: record.buyPrice ? formatPrice(record.buyPrice) : '',
+      // 使用智能格式化：整数显示整数，小数显示小数
+      buyPrice: record.buyPrice ? formatFee(record.buyPrice) : '',
       tradeCommission: formatFee(record.tradeCommission),
       otherFees: formatFee(record.otherFees),
-      sellPrice: record.sellPrice ? formatPrice(record.sellPrice) : '',
+      
+      sellPrice: record.sellPrice ? formatFee(record.sellPrice) : '',
       sellTradeCommission: formatFee(record.sellTradeCommission),
       sellOtherFees: formatFee(record.sellOtherFees),
+      
       tradeSummary: record.tradeSummary || ''
     })
     setSummaryFormErrors({})
@@ -294,8 +303,13 @@ const TradeRecords = () => {
 
     const errors = {}
     SUMMARY_FIELDS.forEach(field => {
-      if (field.required && (!summaryFormData[field.key] || summaryFormData[field.key].toString().trim() === '')) {
-        errors[field.key] = '不能为空'
+      // 仅验证必填字段
+      if (field.required) {
+        const value = summaryFormData[field.key]
+        // 检查值是否存在且不为空字符串
+        if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '') || value === '') {
+          errors[field.key] = '不能为空'
+        }
       }
     })
 
@@ -306,7 +320,7 @@ const TradeRecords = () => {
 
     try {
       // 获取当前记录的交易编号
-      const currentRecord = filteredRecords.find(r => r.id === editingTradeId)
+      const currentRecord = tradeRecords.find(r => r.id === editingTradeId)
       if (!currentRecord) {
         showToast('记录不存在', 'error')
         return
@@ -323,13 +337,13 @@ const TradeRecords = () => {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            buy_price: parsePrice(summaryFormData.buyPrice),
-            trade_commission: summaryFormData.tradeCommission.trim(),
-            other_fees: summaryFormData.otherFees.trim(),
-            sell_price: parsePrice(summaryFormData.sellPrice),
-            sell_trade_commission: summaryFormData.sellTradeCommission.trim(),
-            sell_other_fees: summaryFormData.sellOtherFees.trim(),
-            trade_summary: summaryFormData.tradeSummary.trim()
+            buy_price: summaryFormData.buyPrice ? parsePrice(summaryFormData.buyPrice) : (summaryFormData.buyPrice === '' ? null : undefined),
+            trade_commission: summaryFormData.tradeCommission ? parseFloat(summaryFormData.tradeCommission.trim()) : (summaryFormData.tradeCommission === '' ? null : undefined),
+            other_fees: summaryFormData.otherFees ? parseFloat(summaryFormData.otherFees.trim()) : (summaryFormData.otherFees === '' ? null : undefined),
+            sell_price: summaryFormData.sellPrice ? parsePrice(summaryFormData.sellPrice) : (summaryFormData.sellPrice === '' ? null : undefined),
+            sell_trade_commission: summaryFormData.sellTradeCommission ? parseFloat(summaryFormData.sellTradeCommission.trim()) : (summaryFormData.sellTradeCommission === '' ? null : undefined),
+            sell_other_fees: summaryFormData.sellOtherFees ? parseFloat(summaryFormData.sellOtherFees.trim()) : (summaryFormData.sellOtherFees === '' ? null : undefined),
+            trade_summary: summaryFormData.tradeSummary ? summaryFormData.tradeSummary.trim() : (summaryFormData.tradeSummary === '' ? '' : undefined)
           })
         }).then(res => res.json())
       )
@@ -344,14 +358,14 @@ const TradeRecords = () => {
           if (recordIds.includes(record.id)) {
             return {
               ...record,
-              // 更新结案相关字段
-              buyPrice: parsePrice(summaryFormData.buyPrice),
-              tradeCommission: summaryFormData.tradeCommission.trim(),
-              otherFees: summaryFormData.otherFees.trim(),
-              sellPrice: parsePrice(summaryFormData.sellPrice),
-              sellTradeCommission: summaryFormData.sellTradeCommission.trim(),
-              sellOtherFees: summaryFormData.sellOtherFees.trim(),
-              tradeSummary: summaryFormData.tradeSummary.trim()
+              // 更新结案相关字段 - 确保与API调用完全一致
+              buyPrice: summaryFormData.buyPrice === '' ? null : (summaryFormData.buyPrice ? parsePrice(summaryFormData.buyPrice) : null),
+              tradeCommission: summaryFormData.tradeCommission === '' ? null : (summaryFormData.tradeCommission ? parseFloat(summaryFormData.tradeCommission.trim()) : null),
+              otherFees: summaryFormData.otherFees === '' ? null : (summaryFormData.otherFees ? parseFloat(summaryFormData.otherFees.trim()) : null),
+              sellPrice: summaryFormData.sellPrice === '' ? null : (summaryFormData.sellPrice ? parsePrice(summaryFormData.sellPrice) : null),
+              sellTradeCommission: summaryFormData.sellTradeCommission === '' ? null : (summaryFormData.sellTradeCommission ? parseFloat(summaryFormData.sellTradeCommission.trim()) : null),
+              sellOtherFees: summaryFormData.sellOtherFees === '' ? null : (summaryFormData.sellOtherFees ? parseFloat(summaryFormData.sellOtherFees.trim()) : null),
+              tradeSummary: summaryFormData.tradeSummary === '' ? '' : (summaryFormData.tradeSummary ? summaryFormData.tradeSummary.trim() : record.tradeSummary)
             }
           }
           return record
@@ -745,7 +759,7 @@ const TradeRecords = () => {
       type: 'text',
       inputType: 'number',
       placeholder: '请输入',
-      required: true,
+      required: false,
       grid: true
     },
     {
@@ -753,7 +767,7 @@ const TradeRecords = () => {
       label: '买入佣金',
       type: 'text',
       placeholder: '请输入',
-      required: true,
+      required: false,
       grid: true
     },
     {
@@ -761,7 +775,7 @@ const TradeRecords = () => {
       label: '买入其他费用',
       type: 'text',
       placeholder: '请输入',
-      required: true,
+      required: false,
       grid: true
     },
     {
@@ -770,7 +784,7 @@ const TradeRecords = () => {
       type: 'text',
       inputType: 'number',
       placeholder: '请输入',
-      required: true,
+      required: false,
       grid: true
     },
     {
@@ -778,7 +792,7 @@ const TradeRecords = () => {
       label: '卖出佣金',
       type: 'text',
       placeholder: '请输入',
-      required: true,
+      required: false,
       grid: true
     },
     {
@@ -786,7 +800,7 @@ const TradeRecords = () => {
       label: '卖出其他费用',
       type: 'text',
       placeholder: '请输入',
-      required: true,
+      required: false,
       grid: true
     },
     {
@@ -794,7 +808,7 @@ const TradeRecords = () => {
       label: '交易总结',
       type: 'textarea',
       placeholder: '请输入',
-      required: true,
+      required: false,
       rows: 4,
       fullWidth: true
     }

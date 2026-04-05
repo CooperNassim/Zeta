@@ -278,22 +278,24 @@ const TradeRecords = () => {
 
     setEditingTradeId(selectedIds[0])
     
-    // 重构后的数据流逻辑：
-    // 1. 买入相关字段：从交易记录获取（值会显示在买入详情弹窗中）
-    // 2. 卖出相关字段：从交易记录获取（值会显示在卖出详情弹窗中）
-    // 3. 交易总结：从交易记录获取
-    setSummaryFormData({
-      // 使用智能格式化：整数显示整数，小数显示小数
-      buyPrice: record.buyPrice ? formatFee(record.buyPrice) : '',
-      tradeCommission: formatFee(record.tradeCommission),
-      otherFees: formatFee(record.otherFees),
-      
-      sellPrice: record.sellPrice ? formatFee(record.sellPrice) : '',
-      sellTradeCommission: formatFee(record.sellTradeCommission),
-      sellOtherFees: formatFee(record.sellOtherFees),
-      
-      tradeSummary: record.tradeSummary || ''
-    })
+  // 格式化交易结案的字段取值逻辑：
+  // 1.实际买入价，买入佣金，买入其他费用：在买入详情弹窗里，打开交易结案弹窗时从这里获取3个字段值，如果字段值空则获取留空
+  // 2.实际卖出价，卖出佣金，卖出其他费用：在卖出详情弹窗里，打开交易结案弹窗时从这里获取3个字段值，如果字段值空则获取留空  
+  // 3.交易总结：在交易记录列表里，打开交易结案弹窗时从列表获取字段值，如果字段值空则获取留空
+  setSummaryFormData({
+    // 买入相关字段：从当前记录的买入详情数据获取
+    buyPrice: record.buyPrice ? formatFee(record.buyPrice) : '',
+    tradeCommission: record.tradeCommission ? formatFee(record.tradeCommission) : '',
+    otherFees: record.otherFees ? formatFee(record.otherFees) : '',
+    
+    // 卖出相关字段：从当前记录的卖出详情数据获取
+    sellPrice: record.sellPrice ? formatFee(record.sellPrice) : '',
+    sellTradeCommission: record.sellTradeCommission ? formatFee(record.sellTradeCommission) : '',
+    sellOtherFees: record.sellOtherFees ? formatFee(record.sellOtherFees) : '',
+    
+    // 交易总结：从交易记录列表获取
+    tradeSummary: record.tradeSummary || ''
+  })
     setSummaryFormErrors({})
     setShowSummaryModal(true)
   }
@@ -466,11 +468,11 @@ const TradeRecords = () => {
     const formData = {
       high: record.buyChannel?.high ? formatAmount(record.buyChannel.high) : '',
       low: record.buyChannel?.low ? formatAmount(record.buyChannel.low) : '',
-      buyQuantity: buyOrdersTotalQuantity || 0,  // 取股票交易列表的Σ交易数量
+      buyQuantity: buyOrdersTotalQuantity > 0 ? formatAmount(buyOrdersTotalQuantity) : '',  // 数量也使用千位分隔符
       buyAmount: buyAmountValue,
       buyPrice: buyPriceValue,
       buyOrderPrice: buyOrderPriceValue ? formatPrice(buyOrderPriceValue) : '',
-      buySlippage: buySlippage !== null ? formatSlippage(buySlippage) : '-',
+      buySlippage: buySlippage !== null ? formatAmount(buySlippage) : '-',  // 滑点使用千位分隔符
       tradeCommission: formatFee(record.tradeCommission),
       otherFees: formatFee(record.otherFees),
       buyStrategy: buyStrategyValue,
@@ -482,13 +484,53 @@ const TradeRecords = () => {
   }
 
   const handleShowSellDetail = (record) => {
+    console.log('handleShowSellDetail record:', record);
+    console.log('Record keys:', Object.keys(record));
+    
     setDetailRecord(record)
     // 理想卖出价：从股票交易模块获取同一交易编号的卖出类型订单
     const sellOrders = orders.filter(o => o.tradeNumber === record.tradeNumber && o.type === 'sell')
+    console.log('sellOrders:', sellOrders);
+    
     let sellOrderPriceValue = ''       // 显示用的理想卖出价（四舍五入）
     let sellOrderPriceExact = 0        // 计算用的精确理想卖出价
     let sellOrdersTotalQuantity = 0    // 股票交易列表的卖出总数量
     let sellOrdersTotalAmount = 0      // 股票交易列表的卖出总金额
+    
+    // 获取卖出策略：参考买入详情弹窗的逻辑
+    let sellStrategyValue = ''
+    
+    console.log('🔍 [Debug Strategy] 查找卖出策略:')
+    console.log('   - sellOrders数量:', sellOrders.length)
+    console.log('   - record.sellStrategyId:', record.sellStrategyId)
+    console.log('   - strategyRecords长度:', strategyRecords.length)
+    
+    // 使用策略记录查找策略名称
+    if (sellOrders.length > 0 && sellOrders[0].strategyId) {
+      console.log('   - 从卖出订单策略ID查找:', sellOrders[0].strategyId, ', ID类型:', typeof sellOrders[0].strategyId)
+      const strategy = strategyRecords.find(s => {
+        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', sellOrders[0].strategyId, '(类型:', typeof sellOrders[0].strategyId, ')')
+        return s.id === sellOrders[0].strategyId
+      })
+      console.log('   - 查找结果:', strategy)
+      sellStrategyValue = strategy ? strategy.name : ''
+    } else if (record.sellStrategyId) {
+      console.log('   - 从交易记录策略ID查找:', record.sellStrategyId, ', ID类型:', typeof record.sellStrategyId)
+      const strategy = strategyRecords.find(s => {
+        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', record.sellStrategyId, '(类型:', typeof record.sellStrategyId, ')')
+        return s.id === record.sellStrategyId
+      })
+      console.log('   - 查找结果:', strategy)
+      sellStrategyValue = strategy ? strategy.name : ''
+    }
+    
+    console.log('   - 最终策略名称:', sellStrategyValue)
+    
+    // 如果仍然为空，设置默认值
+    if (!sellStrategyValue) {
+      sellStrategyValue = sellOrders.length > 0 ? '未设置策略' : '无卖出订单'
+    }
+    
     if (sellOrders.length === 1) {
       // 只有一个卖出订单，直接取交易价格
       sellOrderPriceValue = sellOrders[0].price ?? ''
@@ -504,161 +546,96 @@ const TradeRecords = () => {
         sellOrdersTotalAmount += price * quantity  // 累加交易金额
         sellOrdersTotalQuantity += quantity         // 累加交易数量
       })
-      if (sellOrdersTotalQuantity > 0) {
-        sellOrderPriceExact = sellOrdersTotalAmount / sellOrdersTotalQuantity  // 精确值
-        // 显示时四舍五入，整数取整，有小数点取小数点2位四舍五入
-        const rounded = Math.round(sellOrderPriceExact * 100) / 100
-        sellOrderPriceValue = rounded
+    }
+    
+    // 计算平均价格
+    if (sellOrdersTotalQuantity > 0) {
+      sellOrderPriceExact = sellOrdersTotalAmount / sellOrdersTotalQuantity;
+      sellOrderPriceValue = sellOrderPriceExact.toFixed(2);
+    }
+    
+    // 如果卖出策略为空，设置默认值
+    if (!sellStrategyValue) {
+      sellStrategyValue = sellOrders.length > 0 ? '未设置策略' : '无卖出订单';
+    }
+    
+    // 计算滑点：(实际卖出价 - 理想卖出价) × 卖出数量；整数取整，有小数点取小数点2位四舍五入
+    let sellSlippageValue = '';
+    const actualSellPrice = record.sellPrice ? parseFloat(record.sellPrice) : null;  // 实际卖出价
+    const idealSellPrice = parseFloat(sellOrderPriceValue) || null;  // 理想卖出价
+    const sellQuantity = sellOrdersTotalQuantity;
+    
+    if (actualSellPrice !== null && !isNaN(actualSellPrice) && 
+        idealSellPrice !== null && !isNaN(idealSellPrice) && 
+        sellQuantity > 0) {
+      const slippageValue = (actualSellPrice - idealSellPrice) * sellQuantity;
+      // 格式化：整数取整，有小数点取小数点2位四舍五入
+      if (slippageValue === Math.floor(slippageValue)) {
+        sellSlippageValue = slippageValue.toFixed(0);
+      } else {
+        sellSlippageValue = slippageValue.toFixed(2);
       }
-    }
-    // 卖出成交价格取交易结案弹窗的值(record.sellPrice)
-    const sellPriceValue = record.sellPrice ? formatPrice(record.sellPrice) : ''
-    // 计算卖出滑点：使用精确的理想卖出价计算，避免四舍五入误差
-    // 成交价格 < 订单价格 = 亏钱（负数），成交价格 > 订单价格 = 赚钱（正数）
-    let sellSlippage = null
-    if (sellOrderPriceExact > 0 &&
-        record.sellPrice !== null && record.sellPrice !== undefined &&
-        sellOrdersTotalQuantity > 0) {
-      const priceDiff = parseFloat(record.sellPrice) - sellOrderPriceExact
-      sellSlippage = priceDiff * sellOrdersTotalQuantity
-    }
-    // 获取卖出策略名称：从股票交易列表的策略名称取值
-    const sellOrder = orders.find(o => o.tradeNumber === record.tradeNumber && o.type === 'sell')
-    let sellStrategyValue = ''
-    
-    console.log('🔍 [Debug Sell Strategy] 查找卖出策略:')
-    console.log('   - sellOrder:', sellOrder)
-    console.log('   - record.sellStrategyId:', record.sellStrategyId)
-    console.log('   - strategyRecords长度:', strategyRecords.length)
-    
-    // 详细记录所有的策略ID
-    const strategyIds = strategyRecords.map(s => s.id)
-    console.log('   - 所有策略ID:', strategyIds)
-    console.log('   - 策略记录详细:', strategyRecords)
-    
-    // 使用策略记录查找策略名称
-    if (sellOrder && sellOrder.strategyId) {
-      console.log('   - 从订单策略ID查找:', sellOrder.strategyId, ', ID类型:', typeof sellOrder.strategyId)
-      const strategy = strategyRecords.find(s => {
-        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', sellOrder.strategyId, '(类型:', typeof sellOrder.strategyId, ')')
-        return s.id === sellOrder.strategyId
-      })
-      console.log('   - 查找结果:', strategy)
-      sellStrategyValue = strategy ? strategy.name : ''
-    } else if (record.sellStrategyId) {
-      console.log('   - 从交易记录策略ID查找:', record.sellStrategyId, ', ID类型:', typeof record.sellStrategyId)
-      const strategy = strategyRecords.find(s => {
-        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', record.sellStrategyId, '(类型:', typeof record.sellStrategyId, ')')
-        return s.id === record.sellStrategyId
-      })
-      console.log('   - 查找结果:', strategy)
-      sellStrategyValue = strategy ? strategy.name : ''
+    } else {
+      sellSlippageValue = sellOrders.length > 0 ? '计算失败' : '无卖出订单';
     }
     
-    console.log('   - 最终策略名称:', sellStrategyValue)
-    // 卖出金额 = 实际卖出价 × 股票交易列表卖出数量
-    const sellAmountValue = record.sellPrice && sellOrdersTotalQuantity > 0
-      ? formatAmount(parseFloat(record.sellPrice) * sellOrdersTotalQuantity)
-      : ''
-
+    // 检查记录中是否有卖出时间数据，使用格式化为年-月-日 时:分:秒
+    const sellTimeValue = record.sellTime ? formatDate(record.sellTime) : (sellOrders.length > 0 ? '未设置时间' : '无卖出订单');
+    
+    // 设置表单数据，使用格式化函数确保整数不显示.00
     const formData = {
-      high: record.sellChannel?.high ? formatAmount(record.sellChannel.high) : '',
-      low: record.sellChannel?.low ? formatAmount(record.sellChannel.low) : '',
-      sellQuantity: sellOrdersTotalQuantity || 0,  // 取股票交易列表的Σ交易数量
-      sellAmount: sellAmountValue,
-      sellPrice: sellPriceValue,
-      sellOrderPrice: sellOrderPriceValue ? formatPrice(sellOrderPriceValue) : '',
-      sellSlippage: sellSlippage !== null ? formatSlippage(sellSlippage) : '-',
-      tradeCommission: formatFee(record.sellTradeCommission),
-      otherFees: formatFee(record.sellOtherFees),
-      sellStrategy: sellStrategyValue,
-      sellTime: formatDate(record.sellTime)
+      sellPrice: record.sellPrice ? formatPrice(record.sellPrice) : (sellOrders.length > 0 ? '' : '无卖出订单'),  // 实际卖出价从记录获取
+      sellQuantity: sellOrdersTotalQuantity > 0 ? formatAmount(sellOrdersTotalQuantity) : (sellOrders.length > 0 ? '-' : '无卖出订单'),  // 数量使用千位分隔符
+      sellAmount: sellOrdersTotalAmount > 0 ? formatAmount(sellOrdersTotalAmount) : (sellOrders.length > 0 ? '0' : '无卖出订单'),
+      sellOrderPrice: sellOrderPriceValue ? formatPrice(sellOrderPriceValue) : (sellOrders.length > 0 ? '未设置' : '无卖出订单'),  // 使用计算出的理想卖出价
+      sellTime: sellTimeValue,
+      sellSlippage: sellSlippageValue,  // 已在计算逻辑中使用了千位分隔符
+      sellStrategy: sellStrategyValue,  // 使用从orders获取的策略名称
+      sellTradeCommission: record.sellTradeCommission ? formatFee(record.sellTradeCommission) : (sellOrders.length > 0 ? '' : '无卖出订单'),
+      sellOtherFees: record.sellOtherFees ? formatFee(record.sellOtherFees) : (sellOrders.length > 0 ? '' : '无卖出订单')
     }
-    setSellDetailFormData(formData)
-    setSellDetailFormErrors({})
-    setShowSellDetailModal(true)
+    
+    // 设置卖出详情弹窗数据
+    setSellDetailFormData(formData);
+    setSellDetailFormErrors({});
+    setShowSellDetailModal(true);
   }
 
-  const handleBuyDetailSubmit = async (e) => {
-    e.preventDefault()
-
-    const errors = {}
-    const requiredFields = ['buyPrice', 'tradeCommission', 'otherFees']
-    requiredFields.forEach(field => {
-      if (!buyDetailFormData[field] || buyDetailFormData[field].toString().trim() === '') {
-        errors[field] = '不能为空'
-      }
-    })
-
-    if (Object.keys(errors).length > 0) {
-      setBuyDetailFormErrors(errors)
-      return
+  const handleBuyDetailFormDataChange = function(newFormData, clearError) {
+    if (clearError === null || clearError === undefined) {
+      clearError = null;
     }
-
+    
     try {
-      // 保存到数据库
-      const response = await fetch('/api/trade_records/' + detailRecord.id, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          buy_price: parsePrice(buyDetailFormData.buyPrice),
-          trade_commission: buyDetailFormData.tradeCommission.trim(),
-          other_fees: buyDetailFormData.otherFees.trim()
-        })
-      }).then(res => res.json())
+      if (newFormData.buyPrice !== undefined || newFormData.buyOrderPrice !== undefined) {
+        var p1 = newFormData.buyPrice !== undefined ? newFormData.buyPrice : buyDetailFormData.buyPrice;
+        var p2 = newFormData.buyOrderPrice !== undefined ? newFormData.buyOrderPrice : buyDetailFormData.buyOrderPrice;
+        var price1 = parsePrice(p1);
+        var price2 = parsePrice(p2);
+        var qty = detailRecord && detailRecord.buyQuantity ? detailRecord.buyQuantity : 0;
 
-      if (response.success) {
-        // 从数据库重新同步数据
-        await fetch('/api/sync/all')
-          .then(res => res.json())
-          .then(syncResponse => {
-            if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
-              const { trade_records } = syncResponse.data
-              useStore.getState().importTradeRecords(trade_records)
-            }
-          })
-        showToast('保存成功', 'success')
-        setShowBuyDetailModal(false)
-        setDetailRecord(null)
-      } else {
-        showToast('保存失败', 'error')
+        if (price1 && price2 && qty) {
+          var val = (price2 - price1) * qty;
+          newFormData.buySlippage = formatSlippage(val);
+        } else {
+          newFormData.buySlippage = '-';
+        }
       }
     } catch (error) {
-      console.error('保存买入详情失败:', error)
-      showToast('保存失败', 'error')
+      console.error(error);
     }
-  }
-
-  const handleBuyDetailFormDataChange = (newFormData, clearError = null) => {
-    // 如果买价格或买入成交价格改变，重新计算买入滑点
-    if (newFormData.buyPrice !== undefined || newFormData.buyOrderPrice !== undefined) {
-      const buyPrice = parsePrice(newFormData.buyPrice !== undefined ? newFormData.buyPrice : buyDetailFormData.buyPrice)
-      const buyOrderPrice = parsePrice(newFormData.buyOrderPrice !== undefined ? newFormData.buyOrderPrice : buyDetailFormData.buyOrderPrice)
-      const buyQuantity = detailRecord?.buyQuantity || 0
-
-      if (buyPrice !== null && buyPrice !== undefined && !isNaN(buyPrice) &&
-          buyOrderPrice !== null && buyOrderPrice !== undefined && !isNaN(buyOrderPrice) &&
-          buyQuantity !== null && buyQuantity !== undefined && !isNaN(buyQuantity)) {
-        // 买入滑点：(买入价格 - 买入成交价格) × 买入数量
-        // 成交价格 > 订单价格 = 亏钱（负数），成交价格 < 订单价格 = 赚钱（正数）
-        const slippageValue = (buyOrderPrice - buyPrice) * buyQuantity
-        newFormData.buySlippage = formatSlippage(slippageValue)
-      } else {
-        newFormData.buySlippage = '-'
-      }
-    }
-
-    setBuyDetailFormData(newFormData)
+    
+    setBuyDetailFormData(newFormData);
     if (clearError) {
-      setBuyDetailFormErrors(prev => ({ ...prev, ...clearError }))
+      setBuyDetailFormErrors(prev => ({ ...prev, ...clearError }));
     }
-  }
+  };
 
   const handleSellDetailSubmit = async (e) => {
     e.preventDefault()
 
     const errors = {}
-    const requiredFields = ['sellPrice', 'tradeCommission', 'otherFees']
+    const requiredFields = ['sellPrice', 'sellTradeCommission', 'sellOtherFees']
     requiredFields.forEach(field => {
       if (!sellDetailFormData[field] || sellDetailFormData[field].toString().trim() === '') {
         errors[field] = '不能为空'
@@ -670,15 +647,15 @@ const TradeRecords = () => {
       return
     }
 
-    try {
+      try {
       // 保存到数据库
       const response = await fetch('/api/trade_records/' + detailRecord.id, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sell_price: parsePrice(sellDetailFormData.sellPrice),
-          sell_trade_commission: sellDetailFormData.tradeCommission?.toString().trim() || '',
-          sell_other_fees: sellDetailFormData.otherFees?.toString().trim() || ''
+          sell_trade_commission: sellDetailFormData.sellTradeCommission?.toString().trim() || '',
+          sell_other_fees: sellDetailFormData.sellOtherFees?.toString().trim() || ''
         })
       }).then(res => res.json())
 
@@ -704,20 +681,77 @@ const TradeRecords = () => {
     }
   }
 
+  const handleBuyDetailSubmit = async (e) => {
+    e.preventDefault()
+
+    const errors = {}
+    const requiredFields = ['buyPrice', 'buyTradeCommission', 'buyOtherFees']
+    requiredFields.forEach(field => {
+      if (!buyDetailFormData[field] || buyDetailFormData[field].toString().trim() === '') {
+        errors[field] = '不能为空'
+      }
+    })
+
+    if (Object.keys(errors).length > 0) {
+      setBuyDetailFormErrors(errors)
+      return
+    }
+
+    try {
+      // 保存到数据库
+      const response = await fetch('/api/trade_records/' + detailRecord.id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          buy_price: parsePrice(buyDetailFormData.buyPrice),
+          buy_trade_commission: buyDetailFormData.buyTradeCommission?.toString().trim() || '',
+          buy_other_fees: buyDetailFormData.buyOtherFees?.toString().trim() || ''
+        })
+      }).then(res => res.json())
+
+      if (response.success) {
+        // 从数据库重新同步数据
+        await fetch('/api/sync/all')
+          .then(res => res.json())
+          .then(syncResponse => {
+            if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
+              const { trade_records } = syncResponse.data
+              useStore.getState().importTradeRecords(trade_records)
+            }
+          })
+        showToast('保存成功', 'success')
+        setShowBuyDetailModal(false)
+        setDetailRecord(null)
+      } else {
+        showToast('保存失败', 'error')
+      }
+    } catch (error) {
+      console.error('保存买入详情失败:', error)
+      showToast('保存失败', 'error')
+    }
+  }
+
   const handleSellDetailFormDataChange = (newFormData, clearError = null) => {
-    // 如果卖出价格或卖出成交价格改变，重新计算卖出滑点
+    // 如果实际卖出价或理想卖出价改变，重新计算卖出滑点
     if (newFormData.sellPrice !== undefined || newFormData.sellOrderPrice !== undefined) {
-      const sellPrice = parsePrice(newFormData.sellPrice !== undefined ? newFormData.sellPrice : sellDetailFormData.sellPrice)
-      const sellOrderPrice = parsePrice(newFormData.sellOrderPrice !== undefined ? newFormData.sellOrderPrice : sellDetailFormData.sellOrderPrice)
+      // 解析用户输入的实际卖出价
+      const userInputSellPrice = newFormData.sellPrice !== undefined ? newFormData.sellPrice : sellDetailFormData.sellPrice
+      const actualSellPrice = parsePrice(userInputSellPrice)
+      // 解析理想卖出价
+      const idealSellPrice = parsePrice(newFormData.sellOrderPrice !== undefined ? newFormData.sellOrderPrice : sellDetailFormData.sellOrderPrice)
       const sellQuantity = detailRecord?.sellQuantity || 0
 
-      if (sellPrice !== null && sellPrice !== undefined && !isNaN(sellPrice) &&
-          sellOrderPrice !== null && sellOrderPrice !== undefined && !isNaN(sellOrderPrice) &&
-          sellQuantity !== null && sellQuantity !== undefined && !isNaN(sellQuantity)) {
-        // 卖出滑点：(卖出成交价格 - 卖出价格) × 卖出数量
-        // 成交价格 < 订单价格 = 亏钱（负数），成交价格 > 订单价格 = 赚钱（正数）
-        const slippageValue = (sellPrice - sellOrderPrice) * sellQuantity
-        newFormData.sellSlippage = formatSlippage(slippageValue)
+      if (actualSellPrice !== null && actualSellPrice !== undefined && !isNaN(actualSellPrice) &&
+          idealSellPrice !== null && idealSellPrice !== undefined && !isNaN(idealSellPrice) &&
+          sellQuantity !== null && sellQuantity !== undefined && !isNaN(sellQuantity) && sellQuantity > 0) {
+        // 卖出滑点 = (实际卖出价 - 理想卖出价) × 数量
+        const slippageValue = (actualSellPrice - idealSellPrice) * sellQuantity
+        // 格式化：整数取整，有小数点取小数点2位四舍五入
+        if (slippageValue === Math.floor(slippageValue)) {
+          newFormData.sellSlippage = slippageValue.toFixed(0)
+        } else {
+          newFormData.sellSlippage = slippageValue.toFixed(2)
+        }
       } else {
         newFormData.sellSlippage = '-'
       }
@@ -858,14 +892,14 @@ const TradeRecords = () => {
       grid: true
     },
     {
-      key: 'tradeCommission',
+      key: 'sellTradeCommission',
       label: '卖出佣金',
       readonly: true,
       notRequired: true,
       grid: true
     },
     {
-      key: 'otherFees',
+      key: 'sellOtherFees',
       label: '卖出其他费用',
       readonly: true,
       notRequired: true,

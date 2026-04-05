@@ -2787,7 +2787,8 @@ const useStore = create(
               // 计算每个买入订单的风险额度
               let riskAmount = 0
               buyOrders.forEach(buyOrder => {
-                const buyPrice = parseFloat(buyOrder.price) || 0
+                // 优先使用交易记录的实际买入价，如果没有则使用订单的买入价
+                const buyPrice = parseFloat(r.buyPrice) || parseFloat(buyOrder.price) || 0
                 const stopLossPrice = parseFloat(buyOrder.stopLossPrice) || 0
                 const quantity = parseFloat(buyOrder.quantity) || 0
                 

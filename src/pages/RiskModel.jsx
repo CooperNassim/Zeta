@@ -188,11 +188,16 @@ const RiskConfig = () => {
 }
 
 // 风险仪表盘组件
-const RiskGauge = ({ value, label }) => {
+const RiskGauge = ({ value, label, riskLimitPercentage = 5 }) => {
   const percentage = Math.min(Math.max(value, 0), 100)
   const circumference = 2 * Math.PI * 50
   const offset = circumference - (percentage / 100) * circumference
-  const color = percentage > 4 ? '#EF4444' : percentage > 2 ? '#F59E0B' : '#22c55e'
+  
+  // 计算风险比例：已用额度百分比 ÷ 风险额度百分比
+  const riskRatio = (percentage / riskLimitPercentage) * 100
+  
+  // 根据风险比例设置颜色
+  const color = riskRatio >= 66 ? '#EF4444' : riskRatio >= 33 ? '#F59E0B' : '#22c55e'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -398,37 +403,42 @@ const AccountRisk = () => {
   const currentTotalAssets = getTotalAssets('real')
   const holdingOccupancy = getHoldingOccupancy()
   
-  // 获取交易记录来计算本月盈亏（过滤盈利的数据，只显示亏损的绝对值）
+  // 获取交易记录来计算本月亏损（交易状态为结束且盈亏金额为负数的绝对值总和）
+  const tradeRecords = useStore(state => state.tradeRecords)
   const transactions = useStore(state => state.transactions)
   
-  // 计算本月盈亏：与账单明细逻辑相同
   const now = new Date()
   const currentMonth = now.getMonth()
   const currentYear = now.getFullYear()
   
-  // 只使用实盘数据
+  // 计算当月亏损：交易状态为结束且盈亏金额为负数的绝对值总和
+  const monthlyLoss = tradeRecords
+    .filter(r => !r.deleted) // 排除已删除的记录
+    .filter(r => {
+      // 1. 交易状态=结束：卖出数量 ≥ 买入数量
+      const sellQty = parseFloat(r.sellQuantity) || 0
+      const buyQty = parseFloat(r.buyQuantity) || 0
+      const isEndStatus = sellQty >= buyQty
+      
+      // 2. 买入时间=当月：买入时间是当前月份
+      const buyDate = new Date(r.buyDate || r.buyTime || r.createdAt)
+      const isCurrentMonth = buyDate.getMonth() === currentMonth && buyDate.getFullYear() === currentYear
+      
+      // 3. 盈亏金额为负数：亏损记录
+      const profit = parseFloat(r.profit) || 0
+      const isLoss = profit < 0
+      
+      return isEndStatus && isCurrentMonth && isLoss
+    })
+    .reduce((sum, r) => sum + Math.abs(parseFloat(r.profit) || 0), 0)
+    
+  // 只使用实盘数据（用于计算月初账户总额）
   const currentTransactions = transactions
   
-  const monthIncome = currentTransactions.filter(t => {
-    const date = new Date(t.createdAt || t.created_at || t.buyDate || t.buyTime) 
-    return !t.deleted && (t.amount || 0) > 0 && date.getMonth() === currentMonth && date.getFullYear() === currentYear
-  }).reduce((sum, t) => sum + (t.amount || 0), 0)
-  
-  const monthExpense = currentTransactions.filter(t => {
-    const date = new Date(t.createdAt || t.created_at || t.buyDate || t.buyTime)
-    return !t.deleted && (t.amount || 0) < 0 && date.getMonth() === currentMonth && date.getFullYear() === currentYear
-  }).reduce((sum, t) => sum + Math.abs(t.amount || 0), 0)
-  
-  const monthBalance = monthIncome - monthExpense
-  
-  // 显示本月亏损：如果亏损则显示亏损绝对值，如果盈利则显示0
-  const monthlyLoss = monthBalance < 0 ? Math.abs(monthBalance) : 0
-  
   // 计算月初账户（上月总资产）值：与账单明细逻辑相同
-  // 获取上月最后一天的日期（作为查询终点）
+  // 获取上月最后一笔交易记录的余额作为上月总资产
   const lastMonthEnd = new Date(currentYear, currentMonth, 0, 23, 59, 59)
   
-  // 找到上月最后一笔交易记录的余额作为上月总资产
   const lastMonthTransactions = currentTransactions
     .filter(t => {
       const date = new Date(t.createdAt || t.created_at || t.buyDate || t.buyTime)
@@ -441,6 +451,27 @@ const AccountRisk = () => {
     ? (lastMonthTransactions[0].balance || 100000)
     : 100000
 
+  // 计算已用额度（本月亏损 + 持仓风险）
+  const usedRiskAmount = monthlyLoss + holdingOccupancy
+  
+  // 计算已用额度百分比（(本月亏损 + 持仓风险) / 月初账户）
+  const usedRiskPercentage = (usedRiskAmount / startMonthTotal) * 100
+  
+  // 风险额度百分比（从风险配置数据获取）
+  const riskConfig = useStore(state => state.riskConfig)
+  const riskLimitPercentage = riskConfig?.real?.totalRiskPercent || 5
+  
+  // 调试信息：显示关键数值
+  console.log('=== 账户可用计算调试 ===')
+  console.log('月初账户:', startMonthTotal)
+  console.log('完整accountRiskData对象:', accountRiskData)
+  console.log('totalRiskPercent字段:', accountRiskData.totalRiskPercent)
+  console.log('使用的风险额度百分比:', riskLimitPercentage)
+  console.log('风险额度金额:', startMonthTotal * (riskLimitPercentage / 100))
+  console.log('已用额度:', usedRiskAmount)
+  console.log('计算结果:', (startMonthTotal * (riskLimitPercentage / 100)) - usedRiskAmount)
+  console.log('=========================')
+  
   // 计算可用风险额度
   const availableRisk = accountRiskData.startMonthTotal - (accountRiskData.stopLossPreLoss + accountRiskData.monthlyLoss)
 
@@ -462,7 +493,11 @@ const AccountRisk = () => {
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', overflow: 'auto', minHeight: 0 }}>
         <div style={{ flexShrink: 0, marginTop: '-10px', marginBottom: '10px' }}>
-           <RiskGauge value={accountRiskData.riskRatio} label={`已用额度：${availableRisk.toLocaleString()}`} />
+           <RiskGauge 
+             value={usedRiskPercentage} 
+             label={`已用额度：${usedRiskAmount.toLocaleString()}`}
+             riskLimitPercentage={riskLimitPercentage}
+           />
         </div>
         <div style={{ marginTop: '12px', width: '100%', flex: 1, minHeight: 0 }}>
           <div style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', rowGap: '10px' }}>
@@ -485,7 +520,7 @@ const AccountRisk = () => {
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>持仓占用</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>持仓风险</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
                  {holdingOccupancy.toLocaleString()}
               </div>
@@ -493,13 +528,13 @@ const AccountRisk = () => {
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>账户可用</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                {accountRiskData.accountAvailable}%
+                {Math.round((startMonthTotal * (riskLimitPercentage / 100)) - usedRiskAmount).toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>单笔可用</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                {accountRiskData.singleAvailable}%
+                {Math.round(startMonthTotal * (accountRiskData.singleRiskPercent || 2) / 100).toLocaleString()}
               </div>
             </div>
           </div>

@@ -55,20 +55,55 @@ const TransactionHistory = () => {
   // 只使用实盘数据
   const currentTransactions = transactions
   
-  // 安全重算余额：避免使用历史错误数据，每次从0重新计算
+  // 完全基于金额累积的余额计算：忽略数据库中可能存在的错误balance字段
   const calculateCurrentBalance = () => {
-    return 0  // 强制返回0，让每次手动入账都从0重新开始
+    if (!currentTransactions || currentTransactions.length === 0) {
+      return 0
+    }
+    
+// 按时间升序排序（从最早到最新）
+const sortedTransactions = currentTransactions
+  .filter(t => !t.deleted)
+  .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+
+console.log('🕒 [时间排序验证] 交易记录排序结果:')
+sortedTransactions.forEach((t, idx) => {
+  console.log(`   交易${idx+1}: ${t.createdAt} - ${t.type} - ${t.amount}`)
+})
+    
+  // 纯金额累积计算：忽略任何历史balance字段
+  let balance = 0
+  console.log('🔍 [余额调试] 开始逐笔交易分析:')
+  sortedTransactions.forEach((transaction, index) => {
+    const transactionAmount = parseFloat(transaction.amount) || 0
+    const oldBalance = balance
+    balance += transactionAmount
+    
+    console.log(`   交易${index+1}: amount=${transactionAmount}, ` +
+               `余额变化: ${oldBalance} -> ${balance}, ` +
+               `类型: ${transaction.type}, ` +
+               `时间: ${transaction.createdAt}`)
+  })
+  
+  console.log('💡 [余额调试] 分析结果:')
+  console.log(`   - 交易总数: ${sortedTransactions.length}`)
+  console.log(`   - 累计金额: ${balance}`)
+  console.log(`   - 累计差额判断: 如果余额异常大，请检查数据源`)
+    
+    return balance
   }
 
   const currentBalance = calculateCurrentBalance()
 
-  console.log('🔧 [TransactionHistory] 余额计算已重置:')
-  console.log('   - 交易记录数量:', transactions.length)
-  console.log('   - 当前余额 (固定为0):', currentBalance)
+  console.log('🔧 [TransactionHistory] 余额累积计算:')
+  console.log('   - 交易记录数量:', currentTransactions.length)
+  console.log('   - 当前累积余额:', currentBalance)
   
+  // 强制覆盖任何可能错误的store余额，使用我们正确的累计计算值
   const currentAccount = { 
-    ...(account.real || { balance: 0, totalInvested: 0, totalProfit: 0 }),
-    balance: currentBalance // 使用正确计算的余额
+    balance: currentBalance, // 强制使用正确的累计计算结果
+    totalInvested: (account.real?.totalInvested || 0),
+    totalProfit: (account.real?.totalProfit || 0)
   }
 
   const handleSelectAll = (ids) => {
@@ -169,15 +204,16 @@ const TransactionHistory = () => {
 
     const stockInfo = getStockInfoFromOrders()
     
-    // 安全重置余额计算：每次手动入账都从0重新开始，避免累积历史错误
+    // 恢复基于历史记录的余额累积计算
     const transactionAmount = transactionForm.type === 'income' ? parseFloat(transactionForm.amount) : -parseFloat(transactionForm.amount)
     
-    // 强制从0开始计算余额，避免任何历史错误的干扰
-    const newBalance = transactionAmount
+    // 在现有余额基础上累积计算新余额
+    const newBalance = currentBalance + transactionAmount
     
-    console.log('🔧 [手动入账] 强制重置余额计算:')
+    console.log('🔧 [手动入账] 余额累积计算:')
+    console.log('   - 历史余额:', currentBalance)
     console.log('   - 交易金额:', transactionAmount)
-    console.log('   - 新余额 (强制从0开始):', newBalance)
+    console.log('   - 新余额 (累计):', newBalance)
     
     console.log('💰 [手动入账] 余额计算调试（最终修复）:')
     console.log('   - 当前计算余额:', currentBalance)
@@ -187,8 +223,8 @@ const TransactionHistory = () => {
     
     addTransaction({
       type: transactionForm.type === 'income' ? '手动入账' : '手动出账',
-      symbol: stockInfo.symbol,
-      name: stockInfo.name,
+      symbol: '',  // 🔧 修复：手动记账不应该有股票代码
+      name: '',    // 🔧 修复：手动记账不应该有股票名称
       amount: transactionAmount,
       description: transactionForm.description,
       balance: newBalance,
@@ -550,7 +586,7 @@ const TransactionHistory = () => {
           }}
         >
           <div>
-            <p className="text-sm mb-0" style={{ color: '#666' }}>本月盈亏</p>
+            <p className="text-sm mb-0" style={{ color: '#666' }}>本月收支</p>
             <p className="text-2xl font-bold mb-2" style={{ color: '#0F1419' }}>
               {monthBalance < 0 ? '-' : ''}{Math.abs(monthBalance).toLocaleString()}
             </p>
@@ -727,14 +763,47 @@ const TransactionHistory = () => {
                 return <span>{formattedAmount()}</span>
               }
               if (field.key === 'balance') {
-                const balance = item.balance || currentAccount.balance
-                // 整数取整，有小数点取小数点2位四舍五入
-                if (Number.isInteger(balance)) {
-                  // 整数：直接使用toLocaleString添加千位分隔符
-                  return balance.toLocaleString('zh-CN')
+                // 🔧 **彻底修复：使用累积计算方法替代被污染的数据库balance字段**
+                
+                // 将交易记录按时间正序排列（从最早到最新）
+                const sortedTransactions = [...(currentTransactions || [])]
+                  .filter(t => !t.deleted)
+                  .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+                
+                // 找到当前记录在排序后的位置
+                const currentIndex = sortedTransactions.findIndex(t => t.id === item.id)
+                
+                // 计算累积到当前记录的余额
+                let runningBalance = 0
+                for (let i = 0; i <= currentIndex; i++) {
+                  const amount = parseFloat(sortedTransactions[i].amount) || 0
+                  runningBalance += amount
+                  
+                  // 调试信息：显示每一笔计算的详细信息
+                  console.log(`🧮 [表格余额计算] 交易${i+1}: ${sortedTransactions[i].type}`)
+                  console.log(`   金额: ${sortedTransactions[i].amount}, 累积余额: ${runningBalance}`)
+                }
+                
+                const dbBalance = parseFloat(item.balance) || 0
+                
+                // 验证结果
+                console.log(`✅ [表格余额验证] 最终计算结果:`)
+                console.log(`   交易类型: ${item.type}, 金额: ${item.amount}`)
+                console.log(`   累积计算余额: ${runningBalance}`)
+                console.log(`   数据库balance字段: ${dbBalance}`)
+                
+                if (Math.abs(runningBalance - dbBalance) > 100) {
+                  console.warn(`⚠️ [表格余额修复] 数据库balance字段已污染，使用安全计算值`)
+                }
+                
+                // 使用安全的累积计算值
+                const finalBalance = runningBalance
+                
+                // 格式化显示
+                if (Number.isInteger(finalBalance)) {
+                  return finalBalance.toLocaleString('zh-CN')
                 } else {
-                  // 有小数：四舍五入到2位小数，然后添加千位分隔符
-                  const roundedBalance = Math.round(balance * 100) / 100
+                  const roundedBalance = Math.round(finalBalance * 100) / 100
                   return roundedBalance.toLocaleString('zh-CN', { 
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2 

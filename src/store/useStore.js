@@ -1322,13 +1322,16 @@ const useStore = create(
             return latest
           }, null)
           
-          const latestBalance = latestTransaction ? latestTransaction.balance || 0 : 0
-          const newBalance = latestBalance + amount
+          // 彻底修复：避免依赖可能错误的历史balance字段
+          // 使用安全的账户余额计算：当前账户余额 + 交易金额
+          const currentAccountBalance = useStore.getState().account.real?.balance || 0
+          const newBalance = currentAccountBalance + amount
           
-          console.log('💰 [订单创建] 余额计算调试:')
-          console.log('   - 最新交易余额:', latestBalance)
+          console.log('💰 [订单创建] 余额计算调试（安全修复）:')
+          console.log('   - 当前账户余额:', currentAccountBalance)
           console.log('   - 当前交易金额:', amount)
-          console.log('   - 新余额:', newBalance)
+          console.log('   - 新余额（安全计算）:', newBalance)
+          console.log('🚫 已禁用依赖可能错误的历史balance字段')
           
           const transactionData = {
             type: transactionType,
@@ -1572,9 +1575,11 @@ const useStore = create(
 
       // 添加账单
       addTransaction: (transaction, accountType = 'real') => set((state) => {
-        // 关键修复：使用传入的balance字段作为新余额，而不是错误计算
-        // 每个交易的balance字段来自数据库，是该交易后的实际余额
-        const newBalance = transaction.balance != null ? parseFloat(transaction.balance) : null
+        // 彻底修复：避免使用传入的balance字段，它可能是错误的历史值
+        // 安全的余额计算：state账户余额 + 当前交易金额
+        const currentAccountBalance = (state.account.real?.balance || 0)
+        const transactionAmount = parseFloat(transaction.amount) || 0
+        const newBalance = currentAccountBalance + transactionAmount
         
         const newTransaction = { 
           ...transaction, 
@@ -2649,18 +2654,36 @@ const useStore = create(
             
             console.log('📅 [Debug getTotalAssets] 按时间排序的前5条记录:')
             validTransactions.slice(0, 5).forEach((t, index) => {
-              console.log(`   记录${index+1}: 余额=${t.balance}, 类型=${t.type}, 时间=${t.createdAt}`)
+              console.log(`   记录${index+1}: balance字段=${t.balance}, amount字段=${t.amount}, 类型=${t.type}, 时间=${t.createdAt}`)
             })
-            
-            // 取最新的一条记录的余额
+
+            // 🔧 **完全重新计算总余额，避免使用任何数据库balance字段**
             if (validTransactions.length > 0) {
-              currentBalance = parseFloat(validTransactions[0].balance) || 0
-              console.log('💰 [Debug getTotalAssets] 最新账单明细余额记录:', {
-                id: validTransactions[0].id,
-                createdAt: validTransactions[0].createdAt,
-                type: validTransactions[0].type,
-                balance: currentBalance
+              console.log('🔄 [Debug getTotalAssets] 重新计算总余额（基于amount字段，忽略数据库balance）:')
+              
+              // 简单地将所有交易的amount加总
+              let totalBalance = 0
+              
+              // 检查数据库中是否已有严重错误的余额值
+              const anyWrongBalance = validTransactions.some(t => {
+                const dbBalance = parseFloat(t.balance) || 0
+                return Math.abs(dbBalance) > 100000
               })
+              
+              if (anyWrongBalance) {
+                console.warn('🚨 [Debug getTotalAssets] 发现数据库中已存在错误balance值，将全面重新计算')
+              }
+              
+              validTransactions.forEach((t, index) => {
+                const amount = parseFloat(t.amount) || 0
+                const dbBalance = parseFloat(t.balance) || 0
+                totalBalance += amount
+                
+                console.log(`   交易${index+1}: amount=${amount}, 当前累计余额=${totalBalance}, 数据库balance=${dbBalance}, 类型=${t.type}`)
+              })
+              
+              currentBalance = totalBalance
+              console.log('✅ [Debug getTotalAssets] 重新计算的正确余额:', currentBalance)
             }
           } else {
             console.log('⚠️ [Debug getTotalAssets] 账单明细为空')
@@ -2795,10 +2818,13 @@ const useStore = create(
         console.log('[Store] Merge - persistedState:', persistedState)
         console.log('[Store] Merge - currentState:', currentState)
 
-        // 确保 account 结构正确
+        // 确保 account 结构正确，并彻底清除可能错误的余额值
         if (persistedState && persistedState.account) {
-          if (!persistedState.account.real || typeof persistedState.account.real.balance !== 'number') {
-            persistedState.account.real = { balance: 100000, totalInvested: 0, totalProfit: 0 }
+          if (!persistedState.account.real || 
+              typeof persistedState.account.real.balance !== 'number' ||
+              Math.abs(persistedState.account.real.balance) > 1000000) { // 清除明显错误的余额值
+            persistedState.account.real = { balance: 0, totalInvested: 0, totalProfit: 0 }
+            console.log('🔄 [状态恢复] 清除错误的余额值，重置为0')
           }
           if (!persistedState.account.virtual || typeof persistedState.account.virtual.balance !== 'number') {
             persistedState.account.virtual = { balance: 100000, totalInvested: 0, totalProfit: 0 }

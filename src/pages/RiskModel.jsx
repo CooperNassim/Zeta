@@ -7,6 +7,19 @@ import ErrorMessage from '../components/ErrorMessage'
 import Toast from '../components/Toast'
 import EmptyState from '../components/EmptyState'
 
+// 格式化日期
+const formatDate = (date) => {
+  if (!date) return '-'
+  const d = new Date(date)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hours = String(d.getHours()).padStart(2, '0')
+  const minutes = String(d.getMinutes()).padStart(2, '0')
+  const seconds = String(d.getSeconds()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+}
+
 // 风险额度编辑弹窗
 const RiskConfigModal = ({ isOpen, onClose, initialData, onSave }) => {
   const [totalRiskPercent, setTotalRiskPercent] = useState(initialData.totalRiskPercent)
@@ -220,48 +233,37 @@ const RiskGauge = ({ value, label }) => {
 
 // 当前持仓股票组件
 const CurrentPositions = ({ selectedPosition, onPositionSelect }) => {
-  // 模拟持仓数据
-  const positions = [
-    {
-      id: 1,
-      symbol: 'AAPL',
-      name: '苹果',
-      riskAmount: 5000,
-      riskPercent: 2.5,
-      profitLoss: 1200,
-      profitLossPercent: 6.0,
-      distanceToStopLoss: 3.5,
-      distanceToTakeProfit: 8.5,
-      scheduleTime: '2024-01-15 09:30:00'
-    },
-    {
-      id: 2,
-      symbol: 'MSFT',
-      name: '微软',
-      riskAmount: 3500,
-      riskPercent: 1.8,
-      profitLoss: -500,
-      profitLossPercent: -2.5,
-      distanceToStopLoss: 1.2,
-      distanceToTakeProfit: 6.8,
-      scheduleTime: '2024-01-15 10:00:00'
-    },
-    {
-      id: 3,
-      symbol: 'GOOGL',
-      name: '谷歌',
-      riskAmount: 4200,
-      riskPercent: 2.1,
-      profitLoss: 800,
-      profitLossPercent: 4.2,
-      distanceToStopLoss: 2.8,
-      distanceToTakeProfit: 7.2,
-      scheduleTime: '2024-01-15 10:30:00'
-    }
-  ]
+  const tradeRecords = useStore(state => state.tradeRecords)
+  
+  // 筛选交易状态=持仓中的股票，按买入时间降序排列
+  const positions = tradeRecords
+    .filter(r => !r.deleted) // 排除已删除的记录
+    .filter(r => {
+      const sellQty = parseFloat(r.sellQuantity) || 0
+      const buyQty = parseFloat(r.buyQuantity) || 0
+      return sellQty < buyQty // 持仓中状态
+    })
+    .sort((a, b) => {
+      // 按买入时间降序排列（最新的在前面）
+      const dateA = new Date(a.buyDate || a.createdAt || a.tradeTime || '1970-01-01')
+      const dateB = new Date(b.buyDate || b.createdAt || b.tradeTime || '1970-01-01')
+      return dateB - dateA
+    })
+    .map((record, index) => ({
+      id: record.id || index,
+      symbol: record.symbol || '',
+      name: record.name || '',
+      riskAmount: parseFloat(record.riskAmount) || parseFloat(record.buyAmount) || 0,
+      riskPercent: parseFloat(record.riskPercent) || 0,
+      profitLoss: parseFloat(record.profit) || 0,
+      profitLossPercent: parseFloat(record.profitPercent) || 0,
+      distanceToStopLoss: parseFloat(record.distanceToStopLoss) || 0,
+      distanceToTakeProfit: parseFloat(record.distanceToTakeProfit) || 0,
+      scheduleTime: record.buyDate || record.createdAt || record.tradeTime || ''
+    }))
 
-  if (!selectedPosition) {
-    selectedPosition = positions[0] // 默认选中执行最早的
+  if (!selectedPosition && positions.length > 0) {
+    selectedPosition = positions[0] // 默认选中最新的持仓
   }
 
   return (
@@ -282,9 +284,9 @@ const CurrentPositions = ({ selectedPosition, onPositionSelect }) => {
 
       {/* 持仓列表 - 垂直平铺，可滚动 */}
       <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {positions.length === 0 ? (
-          <EmptyState message="暂无持仓数据" height="100%" />
-        ) : (
+          {positions.length === 0 ? (
+            <EmptyState message="暂无数据" height="100%" />
+          ) : (
           positions.map((pos, index) => (
             <div
               key={pos.id}
@@ -378,7 +380,7 @@ const CurrentPositions = ({ selectedPosition, onPositionSelect }) => {
               </div>
 
               <div style={{ fontSize: '11px', color: '#999', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e5e7eb' }}>
-                交易时间: {pos.scheduleTime}
+                买入时间: {formatDate(pos.scheduleTime)}
               </div>
             </div>
           ))
@@ -557,18 +559,67 @@ const AvailableRisk = () => {
   )
 }
 
-// 当月亏损策略排名组件
+// 当月亏损组件
 const StrategyRanking = () => {
-  const lossRankings = [
-    { rank: 1, symbol: 'AAPL', name: '苹果', strategy: '突破策略', loss: 2500, lossPercent: 1.25 },
-    { rank: 2, symbol: 'TSLA', name: '特斯拉', strategy: '趋势策略', loss: 500, lossPercent: 0.25 },
-    { rank: 3, symbol: 'NFLX', name: '奈飞', strategy: '震荡策略', loss: 200, lossPercent: 0.10 },
-    { rank: 4, symbol: 'MSFT', name: '微软', strategy: '波段策略', loss: 180, lossPercent: 0.09 },
-    { rank: 5, symbol: 'GOOGL', name: '谷歌', strategy: '反转策略', loss: 150, lossPercent: 0.08 },
-    { rank: 6, symbol: 'AMZN', name: '亚马逊', strategy: '突破策略', loss: 120, lossPercent: 0.06 },
-    { rank: 7, symbol: 'META', name: 'Meta', strategy: '趋势策略', loss: 100, lossPercent: 0.05 },
-    { rank: 8, symbol: 'NVDA', name: '英伟达', strategy: '震荡策略', loss: 80, lossPercent: 0.04 }
-  ]
+  const tradeRecords = useStore(state => state.tradeRecords)
+  
+  // 获取当前年月
+  const currentMonth = new Date().getMonth()
+  const currentYear = new Date().getFullYear()
+
+  // 当月亏损列表实时查询交易记录数据表
+  const lossRankings = tradeRecords
+    .filter(r => !r.deleted) // 排除已删除的记录
+    .filter(r => {
+      // 1. 交易状态=结束：卖出数量 ≥ 买入数量
+      const sellQty = parseFloat(r.sellQuantity) || 0
+      const buyQty = parseFloat(r.buyQuantity) || 0
+      const isEndStatus = sellQty >= buyQty
+      
+      // 2. 买入时间=当月：买入时间是当前月份
+      const buyDate = new Date(r.buyDate || r.buyTime || r.createdAt)
+      const isCurrentMonth = buyDate.getMonth() === currentMonth && buyDate.getFullYear() === currentYear
+      
+      // 3. 盈亏金额为负数：亏损记录
+      const profit = parseFloat(r.profit) || 0
+      const isLoss = profit < 0
+      
+      return isEndStatus && isCurrentMonth && isLoss
+    })
+    .sort((a, b) => {
+      // 按亏损金额降序排列（亏损多的排在前面）
+      const profitA = parseFloat(a.profit) || 0
+      const profitB = parseFloat(b.profit) || 0
+      return profitA - profitB // 降序排列（负数比较：-20000 < -10000，所以-20000排在前面）
+    })
+    .map((record, index) => {
+      // 直接从交易记录中获取买入策略字段值
+      let strategyName = '-'
+      
+      // 检查交易记录中的所有可能的买入策略字段
+      if (record.buyStrategy) {
+        strategyName = record.buyStrategy
+      } else if (record.buy_strategy) {
+        strategyName = record.buy_strategy
+      } else if (record.strategy) {
+        strategyName = record.strategy
+      } else if (record.trading_strategy) {
+        strategyName = record.trading_strategy
+      } else if (record.buyStrategyId) {
+        strategyName = `${record.buyStrategyId}号策略`
+      } else if (record.strategyId) {
+        strategyName = `${record.strategyId}号策略`
+      }
+      
+      return {
+        rank: index + 1,
+        symbol: record.symbol || '',              // 股票代码
+        name: record.name || '',                  // 股票名称
+        strategy: strategyName,                   // 买入策略（直接从交易记录获取）
+        loss: Math.abs(parseFloat(record.profit) || 0),      // 盈亏金额（取绝对值）
+        lossPercent: Math.abs(parseFloat(record.profitPercent) || 0) // 盈亏比例（取绝对值）
+      }
+    })
 
   const getRankColor = (rank) => {
     return '#F3F4F6'
@@ -586,12 +637,12 @@ const StrategyRanking = () => {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
         <TrendingDown style={{ width: '20px', height: '20px', color: '#0F1419' }} />
-        <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>当月亏损排名</h3>
+        <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>当月亏损</h3>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {lossRankings.length === 0 ? (
-          <EmptyState message="暂无亏损数据" height="100%" />
+          <EmptyState message="暂无数据" height="100%" />
         ) : (
           lossRankings.map((item, index) => (
             <div
@@ -628,7 +679,7 @@ const StrategyRanking = () => {
             {/* 交易策略和亏损信息 */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               <div style={{ padding: '8px', background: '#ffffff', borderRadius: '4px' }}>
-                <div style={{ fontSize: '11px', color: '#999', marginBottom: '2px' }}>交易策略</div>
+                <div style={{ fontSize: '11px', color: '#999', marginBottom: '2px' }}>买入策略</div>
                 <div style={{ color: '#0F1419', fontSize: '14px' }}>
                   {item.strategy}
                 </div>

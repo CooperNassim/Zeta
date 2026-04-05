@@ -37,63 +37,9 @@ export const initialPsychologicalIndicators = [
 
 // 交易策略模板
 export const initialStrategies = {
-  buy: [
-    {
-      id: '1',
-      name: '趋势突破策略',
-      description: '价格突破关键阻力位',
-      conditions: [
-        { id: '1', name: '价格突破', weight: 0.2, threshold: 70, description: '价格突破关键位置' },
-        { id: '2', name: '成交量配合', weight: 0.2, threshold: 70, description: '成交量放大' },
-        { id: '3', name: '技术指标', weight: 0.2, threshold: 70, description: 'RSI、MACD等指标确认' },
-        { id: '4', name: '市场情绪', weight: 0.2, threshold: 70, description: '市场整体情绪良好' },
-        { id: '5', name: '风险收益比', weight: 0.2, threshold: 70, description: '风险收益比合理' },
-      ],
-      passScore: 70
-    },
-    {
-      id: '2',
-      name: '回调买入策略',
-      description: '价格回调至支撑位买入',
-      conditions: [
-        { id: '1', name: '回调位置', weight: 0.2, threshold: 70, description: '回调至支撑位' },
-        { id: '2', name: '支撑有效性', weight: 0.2, threshold: 70, description: '支撑位有效' },
-        { id: '3', name: '买入信号', weight: 0.2, threshold: 70, description: '出现买入信号' },
-        { id: '4', name: '成交量变化', weight: 0.2, threshold: 70, description: '成交量缩减' },
-        { id: '5', name: '时间周期', weight: 0.2, threshold: 70, description: '回调时间充分' },
-      ],
-      passScore: 70
-    }
-  ],
-  sell: [
-    {
-      id: '1',
-      name: '止盈策略',
-      description: '达到预期盈利目标',
-      conditions: [
-        { id: '1', name: '盈利比例', weight: 0.2, threshold: 70, description: '达到目标盈利比例' },
-        { id: '2', name: '市场环境', weight: 0.2, threshold: 70, description: '市场环境良好' },
-        { id: '3', name: '技术信号', weight: 0.2, threshold: 70, description: '技术指标确认' },
-        { id: '4', name: '资金流动', weight: 0.2, threshold: 70, description: '资金流向正常' },
-        { id: '5', name: '风险控制', weight: 0.2, threshold: 70, description: '风险可控' },
-      ],
-      passScore: 70
-    },
-    {
-      id: '2',
-      name: '止损策略',
-      description: '跌破止损位及时止损',
-      conditions: [
-        { id: '1', name: '跌破止损', weight: 0.2, threshold: 70, description: '价格触及止损位' },
-        { id: '2', name: '市场趋势', weight: 0.2, threshold: 70, description: '趋势转变' },
-        { id: '3', name: '风险控制', weight: 0.2, threshold: 70, description: '风险在可控范围' },
-        { id: '4', name: '情绪变化', weight: 0.2, threshold: 70, description: '市场情绪转变' },
-        { id: '5', name: '止损计划', weight: 0.2, threshold: 70, description: '按计划执行止损' },
-      ],
-      passScore: 70
-    }
-  ]
-}
+  buy: [],
+  sell: []
+};
 
 // 风险模型模板
 export const initialRiskModels = [
@@ -226,44 +172,86 @@ const useStore = create(
           const result = await response.json()
 
           let maxNumber = 0
+          let maxDigits = 3 // 默认3位数
+          
           if (result.success && result.data) {
-            // 从 trade_orders 中查找今天最大编号
+            // 合并所有交易编号来源进行全局最大值的查找
+            const allTradeNumbers = []
+            
+            // 从 trade_orders 获取所有交易编号
             if (result.data.trade_orders) {
-              const todayOrders = result.data.trade_orders.filter(order =>
-                order.trade_number && order.trade_number.startsWith(dateStr) && !order.deleted
-              )
-              if (todayOrders.length > 0) {
-                const maxFromOrders = todayOrders.reduce((max, order) => {
-                  const num = parseInt(order.trade_number.slice(-3))
-                  return num > max ? num : max
-                }, 0)
-                maxNumber = Math.max(maxNumber, maxFromOrders)
-              }
+              allTradeNumbers.push(...result.data.trade_orders.map(o => o.trade_number).filter(Boolean))
+            }
+            
+            // 从 trade_records 获取所有交易编号
+            if (result.data.trade_records) {
+              allTradeNumbers.push(...result.data.trade_records.map(r => r.trade_number).filter(Boolean))
             }
 
-            // 从 trade_records 中查找今天最大编号
-            if (result.data.trade_records) {
-              const todayRecords = result.data.trade_records.filter(record =>
-                record.trade_number && record.trade_number.startsWith(dateStr) && !record.deleted
-              )
-              if (todayRecords.length > 0) {
-                const maxFromRecords = todayRecords.reduce((max, record) => {
-                  const num = parseInt(record.trade_number.slice(-3))
-                  return num > max ? num : max
-                }, 0)
-                maxNumber = Math.max(maxNumber, maxFromRecords)
-              }
+            console.log('[Store] 找到的所有交易编号:', allTradeNumbers)
+
+            if (allTradeNumbers.length > 0) {
+              // 详细调试每个交易编号的处理过程
+              const numberDetails = allTradeNumbers.map(tradeNum => {
+                try {
+                  const digitsPart = tradeNum.slice(8) // 剔除前8位日期，取第9位开始的数字部分
+                  const num = parseInt(digitsPart) || 0
+                  const numDigits = digitsPart.replace(/^0+/, '').length
+                  return { tradeNum, digitsPart, num, numDigits }
+                } catch (e) {
+                  return { tradeNum, error: e.message }
+                }
+              })
+              
+              console.log('[Store] 交易编号详细分析:', numberDetails)
+              
+              // 全局查找第9位开始数字部分的最大值
+              const globalMax = allTradeNumbers.reduce((max, tradeNum) => {
+                try {
+                  const digitsPart = tradeNum.slice(8) // 剔除前8位日期，取第9位开始的数字部分
+                  const num = parseInt(digitsPart) || 0
+                  // 验证数字是否有效（大于0且数字部分长度合理）
+                  if (num > max && num < 1000000) {
+                    return num
+                  }
+                  return max
+                } catch (e) {
+                  return max
+                }
+              }, 0)
+              
+              maxNumber = globalMax
+              
+              // 同时确定最大位数
+              maxDigits = allTradeNumbers.reduce((maxDigits, tradeNum) => {
+                try {
+                  const digitsPart = tradeNum.slice(8)
+                  const numDigits = digitsPart.replace(/^0+/, '').length
+                  return Math.max(maxDigits, numDigits)
+                } catch (e) {
+                  return maxDigits
+                }
+              }, 3)
+            } else {
+              console.log('[Store] 警告：没有找到任何交易编号记录')
             }
           }
 
+          console.log('[Store] 初始化交易编号计数器调试信息:', {
+            maxNumber,
+            maxDigits,
+            allTradeNumbersCount: result.data?.trade_orders?.length || 0 + result.data?.trade_records?.length || 0
+          })
+
           set((state) => ({
             tradeNumberCounter: {
-              ...state.tradeNumberCounter,
-              [dateStr]: maxNumber
-            }
+              ...state.tradeNumberCounter, // 保留原有的计数器状态
+              _globalMax: maxNumber        // 更新全局最大值
+            },
+            tradeNumberDigitLength: Math.min(maxDigits, 6) // 存储当前数字部分的最大位数，限制为6位
           }))
 
-          console.log('[Store] 初始化交易编号计数器:', dateStr, '->', maxNumber)
+          console.log('[Store] 初始化交易编号计数器完成: 全局最大值 ->', maxNumber, '位数:', maxDigits)
         } catch (error) {
           console.error('[Store] 初始化交易编号计数器失败:', error)
         }
@@ -277,20 +265,31 @@ const useStore = create(
           String(today.getDate()).padStart(2, '0')
 
         let newTradeNumber
+        let oldGlobalMax = 0
+        
         set((state) => {
-          const counter = state.tradeNumberCounter[dateStr] || 0
-          const newCounter = counter + 1
-          newTradeNumber = dateStr + String(newCounter).padStart(3, '0')
+          // 直接使用全局最大值
+          oldGlobalMax = state.tradeNumberCounter._globalMax || 0
+          const newCounter = oldGlobalMax + 1
+          
+          // 动态确定位数：如果数字超过当前最大位数范围，自动增加位数
+          let digitLength = state.tradeNumberDigitLength || 3
+          if (newCounter > Math.pow(10, digitLength) - 1) {
+            digitLength = Math.min(digitLength + 1, 6) // 最大限制6位数
+          }
+          
+          newTradeNumber = dateStr + String(newCounter).padStart(digitLength, '0')
 
           return {
             tradeNumberCounter: {
-              ...state.tradeNumberCounter,
-              [dateStr]: newCounter
-            }
+              ...state.tradeNumberCounter, // 保留原有的计数器状态
+              _globalMax: newCounter        // 更新全局最大值
+            },
+            tradeNumberDigitLength: digitLength
           }
         })
 
-        console.log('[Store] 生成交易编号:', newTradeNumber)
+        console.log('[Store] 生成的交易编号:', newTradeNumber, '旧全局最大值:', oldGlobalMax, '新全局最大值:', oldGlobalMax + 1)
         return newTradeNumber
       },
 
@@ -1814,7 +1813,7 @@ const useStore = create(
         orders: [],
         transactions: [],
         virtualTransactions: [],
-        tradeRecords: [],
+      tradeRecords: [],
         psychologicalIndicators: [...initialPsychologicalIndicators],
         strategies: { ...initialStrategies },
         riskModels: [...initialRiskModels],
@@ -1992,7 +1991,17 @@ const useStore = create(
             sellTradeCommission: r.sell_trade_commission != null ? r.sell_trade_commission : (r.sellTradeCommission != null ? r.sellTradeCommission : null),
             sellOtherFees: r.sell_other_fees != null ? r.sell_other_fees : (r.sellOtherFees != null ? r.sellOtherFees : null),
             // 交易总结字段映射
-            tradeSummary: r.trade_summary || r.tradeSummary || null
+            tradeSummary: r.trade_summary || r.tradeSummary || null,
+            // 买入策略字段映射（支持多个可能的字段名，确保当月亏损组件能正确获取）
+            buyStrategy: r.buy_strategy || r.buyStrategy || r.strategy || r.trading_strategy || null,
+            // 策略ID字段映射（用于跨表查询策略名称）
+            buyStrategyId: r.buy_strategy_id ? String(r.buy_strategy_id) : (r.buyStrategyId || null),
+            strategyId: r.strategy_id ? String(r.strategy_id) : (r.strategyId || null),
+            // 盈亏金额字段映射（用于当月亏损组件筛选和显示）
+            profit: r.profit != null ? parseFloat(r.profit) : (r.profit || 0),
+            profitPercent: r.profit_percent != null ? parseFloat(r.profit_percent) : (r.profitPercent || 0),
+            // 买入日期字段映射
+            buyDate: r.buy_date || r.buyDate || r.buy_time || r.buyTime || null
           }
         })
         // 对交易记录进行去重（按交易编号+创建时间），防止数据重复
@@ -2150,24 +2159,46 @@ const useStore = create(
       })),
 
       // 删除交易记录
-      deleteTradeRecord: (id) => set((state) => {
-        apiCall(`/api/trade_records/${id}`, 'DELETE')
-        return {
-          tradeRecords: state.tradeRecords.map(t =>
-            t.id === id ? { ...t, deleted: true, deletedAt: new Date().toISOString() } : t
-          )
+      deleteTradeRecord: async (id) => {
+        console.log('[Store] 删除交易记录, id:', id)
+        try {
+          await apiCall(`/api/trade_records/${id}`, 'DELETE')
+          // 从数据库重新同步数据（添加自动刷新机制）
+          const syncResponse = await apiCall('/api/sync/all')
+          if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
+            const { trade_records } = syncResponse.data
+            set((state) => {
+              state.importTradeRecords(trade_records)
+              return {}
+            })
+          }
+          return { success: true }
+        } catch (err) {
+          console.error('[Store] 删除交易记录失败:', err)
+          return { success: false, error: err }
         }
-      }),
+      },
 
       // 批量删除交易记录
-      deleteMultipleTradeRecords: (ids) => set((state) => {
-        apiCall(`/api/trade_records/bulk`, 'DELETE', { ids })
-        return {
-          tradeRecords: state.tradeRecords.map(t =>
-            ids.includes(t.id) ? { ...t, deleted: true, deletedAt: new Date().toISOString() } : t
-          )
+      deleteMultipleTradeRecords: async (ids) => {
+        console.log('[Store] 批量删除交易记录, ids:', ids)
+        try {
+          await apiCall(`/api/trade_records/bulk`, 'DELETE', { ids })
+          // 从数据库重新同步数据（添加自动刷新机制）
+          const syncResponse = await apiCall('/api/sync/all')
+          if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
+            const { trade_records } = syncResponse.data
+            set((state) => {
+              state.importTradeRecords(trade_records)
+              return {}
+            })
+          }
+          return { success: true }
+        } catch (err) {
+          console.error('[Store] 批量删除交易记录失败:', err)
+          return { success: false, error: err }
         }
-      }),
+      },
 
       // 恢复交易记录
       restoreTradeRecord: (id) => set((state) => {

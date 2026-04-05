@@ -47,7 +47,8 @@ router.get('/sync/all', async (req, res) => {
 
     for (const table of tables) {
       try {
-        const data = await findAll(table);
+        // 包含软删除的数据，以便前端能正确计算最大交易编号
+        const data = await findAll(table, { includeDeleted: true });
         // 特殊处理日期格式，转换为 YYYY-MM-DD 字符串
         if (table === 'psychological_test_results') {
           syncData[table] = data.map(item => ({

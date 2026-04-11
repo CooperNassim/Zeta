@@ -362,92 +362,78 @@ sortedTransactions.forEach((t, idx) => {
 
   const monthBalance = monthIncome - monthExpense
 
-  // 计算上月数据
-  const lastMonthDate = new Date(currentYear, currentMonth, 0) // 上月最后一天
-  const lastMonth = lastMonthDate.getMonth()
-  const lastMonthYear = lastMonthDate.getFullYear()
-
   // 计算当前总资产：使用store的getTotalAssets方法确保数据同步
   const getTotalAssets = useStore(state => state.getTotalAssets)
   const currentTotalAssets = getTotalAssets('real')
   
-  // 获取上月最后一天的日期（作为查询终点）
-  const lastMonthEnd = new Date(currentYear, currentMonth, 0, 23, 59, 59)
+  // 获取本月1号的日期（用于查询本月1号的快照数据作为上月数据）
+  const firstDayOfMonth = new Date(currentYear, currentMonth, 1, 0, 0, 0)
   
-  // 找到上月最后一笔交易记录的余额作为上月总资产
-  const lastMonthTransactions = currentTransactions
-    .filter(t => {
-      const date = parseDate(t.createdAt)
-      return !t.deleted && date && date <= lastMonthEnd
-    })
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) // 按时间倒序，最新的在前
-  
-  // 使用上月最后一笔交易的余额作为上月总资产基准值
-  const lastMonthAssets = lastMonthTransactions.length > 0 
-    ? (lastMonthTransactions[0].balance || 100000)
-    : 100000
-
-  // 获取上个月所有交易（按时间排序）
-  const lastMonthAllTransactions = currentTransactions
-    .filter(t => {
-      const date = parseDate(t.createdAt)
-      return !t.deleted && date && date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear
-    })
-    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)) // 按时间顺序排序
+  // 查找历史快照数据：优先本月1号，如果没有则往前查找直到有记录为止
+  const findHistoricalSnapshot = (targetDate) => {
+    // 创建一个日期列表，从目标日期往前找，直到找到有记录的日期
+    const dateRanges = []
+    let currentDate = new Date(targetDate)
     
-  // 获取上月最后一天的日期
-  const lastDayOfMonth = new Date(currentYear, currentMonth, 0) // 上月最后一天
-  
-  // 获取上月最后一天最后一笔交易的余额作为上月资产值
-  const lastDayTransactions = lastMonthAllTransactions.filter(t => {
-    const date = parseDate(t.createdAt)
-    return date && date.getDate() === lastDayOfMonth.getDate()
-  })
-  
-  // 上月最后一天的余额：使用最后一天的最后一笔交易余额，如果没有则使用默认值
-  const lastMonthBalanceLastDay = lastDayTransactions.length > 0 
-    ? (lastDayTransactions[lastDayTransactions.length - 1].balance || 100000)
-    : 100000
-  
-  // 上月最后一天的收入：当天所有收入之和
-  const lastMonthIncomeLastDay = lastDayTransactions
-    .filter(t => t.amount > 0)
-    .reduce((sum, t) => sum + t.amount, 0)
-  
-  // 上月最后一天的支出：当天所有支出之和
-  const lastMonthExpenseLastDay = lastDayTransactions
-    .filter(t => t.amount < 0)
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0)
-  
-  // 上个月总的收入（整个月）
-  const lastMonthIncome = lastMonthAllTransactions
-    .filter(t => t.amount > 0)
-    .reduce((sum, t) => sum + t.amount, 0)
-  
-  // 上个月总的支出（整个月）
-  const lastMonthExpense = lastMonthAllTransactions
-    .filter(t => t.amount < 0)
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+    // 往前查找最多365天（一年）
+    for (let i = 0; i < 365; i++) {
+      const dateKey = currentDate.toISOString().split('T')[0]
+      const transactionsForDate = currentTransactions
+        .filter(t => {
+          const date = parseDate(t.createdAt)
+          return !t.deleted && date && date.toISOString().split('T')[0] === dateKey
+        })
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) // 按时间倒序，最新的在前
+      
+      if (transactionsForDate.length > 0) {
+        return transactionsForDate[0] // 返回当天最后一条记录
+      }
+      
+      // 往前移动一天
+      currentDate.setDate(currentDate.getDate() - 1)
+    }
+    
+    return null // 如果一年内都没有记录，返回null
+  }
 
-  // 计算上月盈亏
-  const lastMonthBalanceProfit = lastMonthIncome - lastMonthExpense
+  // 查找本月1号或最早的记录
+  const snapshotRecord = findHistoricalSnapshot(firstDayOfMonth)
 
-  // 计算总资产差值和百分比（对比上月最后一天的总资产）
+  // 总资产的上月数据：取历史快照的daily_total_assets字段，没有则为0
+  const lastMonthAssets = snapshotRecord 
+    ? (snapshotRecord.daily_total_assets || 0)
+    : 0
+
+  // 本月收入的上月数据：取历史快照，没有则为0
+  const lastMonthIncomeSnap = snapshotRecord 
+    ? (snapshotRecord.daily_month_income || 0)
+    : 0
+
+  // 本月支出的上月数据：取历史快照，没有则为0
+  const lastMonthExpenseSnap = snapshotRecord 
+    ? (snapshotRecord.daily_month_expense || 0)
+    : 0
+
+  // 本月收支的上月数据：取历史快照，没有则为0
+  const lastMonthBalanceSnap = snapshotRecord 
+    ? (snapshotRecord.daily_month_balance || 0)
+    : 0
+
+  // 计算总资产差值和百分比（对比本月1号的总资产快照）
   const balanceDiff = currentTotalAssets - lastMonthAssets
   const balancePercent = lastMonthAssets > 0 ? ((balanceDiff / lastMonthAssets) * 100) : 0
 
-  // 计算本月收入差值和百分比（对比上月最后一天的收入）
-  const incomeDiff = monthIncome - (lastMonthIncomeLastDay || 0)
-  const incomePercent = (lastMonthIncomeLastDay || 0) > 0 ? ((incomeDiff / (lastMonthIncomeLastDay || 1)) * 100) : 0
+  // 计算本月收入差值和百分比（对比本月1号的收入快照）
+  const incomeDiff = monthIncome - lastMonthIncomeSnap
+  const incomePercent = lastMonthIncomeSnap > 0 ? ((incomeDiff / lastMonthIncomeSnap) * 100) : 0
 
-  // 计算本月支出差值和百分比（对比上月最后一天的支出）
-  const expenseDiff = monthExpense - (lastMonthExpenseLastDay || 0)
-  const expensePercent = (lastMonthExpenseLastDay || 0) > 0 ? ((expenseDiff / (lastMonthExpenseLastDay || 1)) * 100) : 0
+  // 计算本月支出差值和百分比（对比本月1号的支出快照）
+  const expenseDiff = monthExpense - lastMonthExpenseSnap
+  const expensePercent = lastMonthExpenseSnap > 0 ? ((expenseDiff / lastMonthExpenseSnap) * 100) : 0
 
-  // 计算本月盈亏差值和百分比（对比上月最后一天的盈亏）
-  const lastMonthBalanceProfitLastDay = (lastMonthIncomeLastDay || 0) - (lastMonthExpenseLastDay || 0)
-  const profitDiff = monthBalance - lastMonthBalanceProfitLastDay
-  const profitPercent = lastMonthBalanceProfitLastDay !== 0 ? ((profitDiff / Math.abs(lastMonthBalanceProfitLastDay)) * 100) : 0
+  // 计算本月收支差值和百分比（对比本月1号的收支快照）
+  const profitDiff = monthBalance - lastMonthBalanceSnap
+  const profitPercent = lastMonthBalanceSnap !== 0 ? ((profitDiff / Math.abs(lastMonthBalanceSnap)) * 100) : 0
 
   // 百分比格式化：整数时不显示小数点，有小数时显示2位（四舍五入）
   const formatPercent = (percent) => {
@@ -524,7 +510,7 @@ sortedTransactions.forEach((t, idx) => {
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '4px' }}>上月</p>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
-                {lastMonthIncomeLastDay < 0 ? '-' : ''}{Math.abs(lastMonthIncomeLastDay).toLocaleString()}
+                {lastMonthIncomeSnap < 0 ? '-' : ''}{Math.abs(lastMonthIncomeSnap).toLocaleString()}
               </p>
               {incomeDiff >= 0 ? (
                 <span style={{ color: '#22c55e', fontSize: '14px', display: 'inline-block', marginRight: '4px' }}>▲</span>
@@ -559,7 +545,7 @@ sortedTransactions.forEach((t, idx) => {
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '4px' }}>上月</p>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
-                {lastMonthExpenseLastDay < 0 ? '-' : ''}{Math.abs(lastMonthExpenseLastDay).toLocaleString()}
+                {lastMonthExpenseSnap < 0 ? '-' : ''}{Math.abs(lastMonthExpenseSnap).toLocaleString()}
               </p>
               {expenseDiff >= 0 ? (
                 <span style={{ color: '#22c55e', fontSize: '14px', display: 'inline-block', marginRight: '4px' }}>▲</span>
@@ -594,7 +580,7 @@ sortedTransactions.forEach((t, idx) => {
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '4px' }}>上月</p>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
-                {lastMonthBalanceProfitLastDay < 0 ? '-' : ''}{Math.abs(lastMonthBalanceProfitLastDay).toLocaleString()}
+                {lastMonthBalanceSnap < 0 ? '-' : ''}{Math.abs(lastMonthBalanceSnap).toLocaleString()}
               </p>
               {profitDiff >= 0 ? (
                 <span style={{ color: '#22c55e', fontSize: '14px', display: 'inline-block', marginRight: '4px' }}>▲</span>

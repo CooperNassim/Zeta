@@ -15,15 +15,21 @@ export const getStockRealtime = async (symbol) => {
   try {
     // 格式化股票代码
     const formattedSymbol = formatSinaSymbol(symbol)
-    const url = `${BASE_URL}/list=${formattedSymbol}`
+    
+    // 使用代理API避免跨域和中文编码问题
+    const proxyUrl = `http://localhost:3001/api/proxy/sina-realtime?symbol=${formattedSymbol}`
+    
+    try {
+      const response = await fetch(proxyUrl)
+      if (response.ok) {
+        const data = await response.json()
+        return data
+      }
+    } catch (proxyError) {
+      console.warn('代理API不可用，使用模拟数据', proxyError)
+    }
 
-    const response = await fetch(url, {
-      method: 'GET',
-      mode: 'no-cors'  // 新浪API不支持CORS，需要使用no-cors或服务器代理
-    })
-
-    // 由于no-cors模式，我们无法直接读取响应
-    // 返回一个模拟数据，实际使用时需要后端代理
+    // 代理不可用时返回模拟数据
     return getMockRealtimeData(symbol)
   } catch (error) {
     console.error('获取股票实时数据失败:', error)
@@ -37,10 +43,21 @@ export const getStockRealtime = async (symbol) => {
  * @returns {Array} 股票实时数据数组
  */
 export const getMultipleStocksRealtime = async (symbols) => {
-  const formattedSymbols = symbols.map(s => formatSinaSymbol(s)).join(',')
   try {
-    const url = `${BASE_URL}/list=${formattedSymbols}`
-    const response = await fetch(url, { mode: 'no-cors' })
+    // 使用代理API批量获取数据
+    const proxyUrl = `http://localhost:3001/api/proxy/sina-batch-realtime?symbols=${symbols.join(',')}`
+    
+    try {
+      const response = await fetch(proxyUrl)
+      if (response.ok) {
+        const data = await response.json()
+        return data
+      }
+    } catch (proxyError) {
+      console.warn('代理API不可用，使用模拟数据', proxyError)
+    }
+
+    // 代理不可用时返回模拟数据
     return symbols.map(symbol => getMockRealtimeData(symbol))
   } catch (error) {
     console.error('获取多只股票实时数据失败:', error)
@@ -209,6 +226,69 @@ const getMockKlineData = (symbol, count = 200) => {
 }
 
 /**
+ * 解析新浪财经搜索建议数据
+ * @param {string} data - 新浪财经返回的原始数据
+ * @returns {Array} 解析后的股票列表
+ */
+const parseSinaSuggestData = (data) => {
+  try {
+    // 新浪财经返回的数据格式：var suggestdata="000001~平安银行~0.000~0.000~0.000~0.000~000001|000002~万科A~0.000~0.000~0.000~0.000~000002"
+    const match = data.match(/var\s+suggestdata\s*=\s*"([^"]+)"/)
+    if (!match || !match[1]) {
+      return []
+    }
+    
+    const items = match[1].split('|')
+    const stocks = []
+    
+    items.forEach(item => {
+      const parts = item.split('~')
+      if (parts.length >= 2) {
+        const symbol = parts[0]
+        const name = parts[1]
+        const market = symbol.startsWith('6') ? 'sh' : symbol.startsWith('0') || symbol.startsWith('3') ? 'sz' : ''
+        const exchange = market === 'sh' ? '上交所' : market === 'sz' ? '深交所' : ''
+        
+        stocks.push({
+          symbol: symbol,
+          name: name,
+          market: market,
+          exchange: exchange,
+          sector: getSectorBySymbol(symbol)
+        })
+      }
+    })
+    
+    return stocks
+  } catch (error) {
+    console.error('解析新浪搜索数据失败:', error)
+    return []
+  }
+}
+
+/**
+ * 根据股票代码获取行业分类（简单实现）
+ * @param {string} symbol - 股票代码
+ * @returns {string} 行业名称
+ */
+const getSectorBySymbol = (symbol) => {
+  const sectorMap = {
+    '000001': '银行', '600000': '银行', '600036': '银行', '601398': '银行', '601988': '银行',
+    '000002': '房地产', '000671': '房地产', '600048': '房地产',
+    '000333': '家电', '000651': '家电',
+    '600519': '白酒', '000858': '白酒',
+    '601318': '保险', '601601': '保险',
+    '600030': '证券', '600837': '证券',
+    '002594': '汽车', '600104': '汽车',
+    '300750': '电池', '600884': '电池',
+    '000063': '通讯', '600050': '通讯',
+    '601857': '能源', '600028': '能源',
+    '600900': '电力', '601991': '电力'
+  }
+  return sectorMap[symbol] || '其他'
+}
+
+/**
  * 获取股票名称（模拟数据）
  * @param {string} symbol - 股票代码
  * @returns {string} 股票名称
@@ -233,8 +313,7 @@ const getStockName = (symbol) => {
     '603259': '药明康德',
     '002594': '比亚迪',
     '300750': '宁德时代',
-    '600030': '中信证券',
-    '000001': '平安银行'
+    '600030': '中信证券'
   }
   return stockNames[symbol] || `股票${symbol}`
 }
@@ -261,11 +340,24 @@ export const batchUpdateStockData = async (symbols) => {
  */
 export const searchStock = async (keyword) => {
   try {
-    // 新浪财经的搜索接口
+    // 新浪财经的搜索接口 (GBK编码)
+    // 需要后端代理处理中文编码，前端直接请求会出现乱码
     const url = `http://suggest3.sinajs.cn/suggest/type=11,12&key=${encodeURIComponent(keyword)}&name=suggestdata`
-    const response = await fetch(url, { mode: 'no-cors' })
+    
+    // 使用代理API避免跨域和编码问题
+    const proxyUrl = `http://localhost:3001/api/proxy/sina-suggest?key=${encodeURIComponent(keyword)}`
+    
+    try {
+      const response = await fetch(proxyUrl)
+      if (response.ok) {
+        const data = await response.text()
+        return parseSinaSuggestData(data)
+      }
+    } catch (proxyError) {
+      console.warn('代理API不可用，使用模拟数据', proxyError)
+    }
 
-    // 返回模拟数据
+    // 代理不可用时返回模拟数据
     return getMockSearchResult(keyword)
   } catch (error) {
     console.error('搜索股票失败:', error)

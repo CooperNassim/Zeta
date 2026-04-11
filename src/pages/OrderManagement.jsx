@@ -56,7 +56,8 @@ const OrderManagement = () => {
     availablePercent: false,
     price: false,
     stopLossPrice: false,
-    takeProfitPrice: false
+    takeProfitPrice: false,
+    name: false
   })
   const pageSize = 20
 
@@ -319,6 +320,42 @@ const OrderManagement = () => {
     return 'pass'
   }
 
+  // 计算可用比例的最小值：min(账户可用/月初账户*100, 单笔可用/月初账户*100)；负数显示0%；整数取整，有小数点保留2位四舍五入
+  const getMinAvailablePercent = () => {
+    // 从risk_config表中读取正确计算的数值
+    // 注意：需要确保riskData中的这些字段已正确存储计算值
+    const riskData = accountRiskData || {}
+    const startMonthTotal = riskData.startMonthTotal || riskData.start_month_total || 0
+    const accountAvailable = riskData.accountAvailable || riskData.account_available || 0
+    const singleAvailable = riskData.singleAvailable || riskData.single_available || 0
+    
+    // 避免除以0
+    if (startMonthTotal <= 0) return 0
+    
+    // 计算两个百分比
+    const accountPercent = (accountAvailable / startMonthTotal) * 100
+    const singlePercent = (singleAvailable / startMonthTotal) * 100
+    
+    console.log('[DEBUG] 风险数据计算:', {
+      风险数据源: riskData,
+      月初账户: startMonthTotal,
+      账户可用金额: accountAvailable,
+      单笔可用金额: singleAvailable,
+      账户可用百分比: accountPercent,
+      单笔可用百分比: singlePercent,
+    })
+    
+    // 取最小值，如果是负数显示0
+    const minPercent = Math.max(Math.min(accountPercent, singlePercent), 0)
+    
+    // 整数取整，有小数点保留2位四舍五入
+    const rounded = Math.round(minPercent * 100) / 100
+    const result = Number.isInteger(rounded) ? Math.floor(rounded) : rounded
+    
+    console.log('[DEBUG] 最终可用比例:', result)
+    return result
+  }
+
   // 当风险控制状态变化时，清除错误状态
   React.useEffect(() => {
     const riskStatus = getRiskControlStatus()
@@ -327,7 +364,8 @@ const OrderManagement = () => {
         availablePercent: false,
         price: false,
         stopLossPrice: false,
-        takeProfitPrice: false
+        takeProfitPrice: false,
+        name: false
       })
       setSymbolError(false)
     }
@@ -514,6 +552,8 @@ const OrderManagement = () => {
 
     // 检查股票代码是否为空
     const isSymbolEmpty = !orderForm.symbol || orderForm.symbol.trim() === ''
+    // 检查股票名称是否为空
+    const isNameEmpty = !orderForm.name || orderForm.name.trim() === ''
 
     // 如果是买入订单，验证风险管控必填项
     if (orderType === 'buy') {
@@ -523,14 +563,15 @@ const OrderManagement = () => {
         availablePercent: !hasAvailablePercent || hasAvailablePercent === '' || hasAvailablePercent === undefined || hasAvailablePercent === null,
         price: !orderForm.price || orderForm.price === '',
         stopLossPrice: !orderForm.stopLossPrice || orderForm.stopLossPrice === '',
-        takeProfitPrice: !orderForm.takeProfitPrice || orderForm.takeProfitPrice === ''
+        takeProfitPrice: !orderForm.takeProfitPrice || orderForm.takeProfitPrice === '',
+        name: isNameEmpty
       }
 
-      // 设置股票代码错误
+      // 设置股票代码错误和股票名称错误
       setSymbolError(isSymbolEmpty)
 
       // 如果有错误，显示并返回
-      if (isSymbolEmpty || Object.values(newRiskErrors).some(error => error)) {
+      if (isSymbolEmpty || isNameEmpty || Object.values(newRiskErrors).some(error => error)) {
         setRiskErrors(newRiskErrors)
         return
       }
@@ -1147,12 +1188,22 @@ const OrderManagement = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        股票名称
+                        {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 股票名称
                       </label>
-                      <ReadOnlyInput
-                        value={orderForm.name || ''}
-                        placeholder={orderType === 'sell' ? '' : (getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动获取')}
-                      />
+                        <CustomInput
+                          type="text"
+                          value={orderForm.name || ''}
+                          onChange={(value) => {
+                            setOrderForm({ ...orderForm, name: value })
+                            setRiskErrors({ ...riskErrors, name: false })
+                          }}
+                          placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入'}
+                          error={riskErrors.name && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail')}
+                          disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
+                        />
+                        {riskErrors.name && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && (
+                          <ErrorMessage message="不能为空" showIcon={true} />
+                        )}
                     </div>
 
                   {orderType === 'buy' && (
@@ -1164,9 +1215,23 @@ const OrderManagement = () => {
                         <CustomInput
                           type="number"
                           step="0.01"
-                          value={orderForm.availablePercent || accountRiskData?.singleAvailable}
+                          value={orderForm.availablePercent !== undefined && orderForm.availablePercent !== null && orderForm.availablePercent !== '' 
+                            ? Math.max(getMinAvailablePercent(), Math.min(orderForm.availablePercent, Math.min(accountRiskData?.accountAvailable || 100, accountRiskData?.singleAvailable || 100)))
+                            : getMinAvailablePercent()
+                          }
                           onChange={(value) => {
-                            setOrderForm({ ...orderForm, availablePercent: value })
+                            // 计算最小值：min(账户可用/月初账户*100, 单笔可用/月初账户*100)
+                            const minValue = getMinAvailablePercent()
+                            const currentValue = parseFloat(value) || 0
+                            
+                            // 如果输入值大于最小值，重置为最小值（防止过度风险）
+                            if (currentValue > minValue) {
+                              setOrderForm({ ...orderForm, availablePercent: minValue })
+                            } else {
+                              // 允许输入小于最小值（主动降低风险）
+                              setOrderForm({ ...orderForm, availablePercent: currentValue })
+                            }
+                            
                             if (riskErrors.availablePercent) {
                               setRiskErrors({ ...riskErrors, availablePercent: false })
                             }
@@ -1174,6 +1239,8 @@ const OrderManagement = () => {
                           placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入'}
                           error={riskErrors.availablePercent && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail')}
                           disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
+                          min="0"
+                          max="100"
                         />
                         {riskErrors.availablePercent && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <ErrorMessage message="不能为空" />}
                       </div>

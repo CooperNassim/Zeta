@@ -1,0 +1,69 @@
+/**
+ * 统一的API客户端
+ * 用于前端与后端API通信
+ */
+
+class ApiClient {
+  constructor() {
+    this.baseURL = window.location.origin
+  }
+
+  async request(url, options = {}) {
+    const config = {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+      },
+      ...options
+    }
+
+    // 处理请求体
+    if (options.body) {
+      config.body = JSON.stringify(options.body)
+    }
+
+    try {
+      const response = await fetch(`${this.baseURL}${url}`, config)
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      return { data, status: response.status }
+    } catch (error) {
+      console.error('API请求失败:', error)
+      throw error
+    }
+  }
+
+  async get(url, params = {}) {
+    const queryString = new URLSearchParams(params).toString()
+    const fullUrl = queryString ? `${url}?${queryString}` : url
+    return this.request(fullUrl)
+  }
+
+  async post(url, data) {
+    return this.request(url, {
+      method: 'POST',
+      body: data
+    })
+  }
+
+  async put(url, data) {
+    return this.request(url, {
+      method: 'PUT',
+      body: data
+    })
+  }
+
+  async delete(url) {
+    return this.request(url, {
+      method: 'DELETE'
+    })
+  }
+}
+
+// 创建全局实例
+export default new ApiClient()

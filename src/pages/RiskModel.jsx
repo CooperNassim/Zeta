@@ -187,6 +187,44 @@ const RiskConfig = () => {
   )
 }
 
+// 保存风险模型数据到数据库
+const saveRiskModelData = async (startMonthTotal, accountAvailable, singleAvailable) => {
+  try {
+    const state = useStore.getState()
+    const today = new Date().toISOString().split('T')[0]
+    
+    // 获取账单明细模块的总资产字段最新值
+    const getTotalAssets = useStore.getState().getTotalAssets
+    const currentTotalAssets = getTotalAssets ? getTotalAssets('real') : 0
+    
+    // 检查是否已有今天的数据记录
+    const existingRecords = await state.apiCall('/api/account_risk_data')
+    const existingRecord = existingRecords.find(r => r.date === today)
+    
+    // 准备保存到数据库的数据 - 使用账单明细模块的总资产值
+    const saveData = {
+      date: today,
+      start_month_total: startMonthTotal,
+      account_available: accountAvailable,
+      single_available: singleAvailable,
+      snapshot_date: new Date().toISOString(),
+      total_assets: currentTotalAssets // 取自账单明细模块的最新总资产值
+    }
+
+    if (existingRecord) {
+      // 如果已有记录，更新数据
+      await state.apiCall(`/api/account_risk_data/${existingRecord.id}`, 'PUT', saveData)
+      console.log('风险模型数据更新成功:', saveData)
+    } else {
+      // 如果没有记录，创建新数据
+      await state.apiCall('/api/account_risk_data', 'POST', saveData)
+      console.log('风险模型数据创建成功:', saveData)
+    }
+  } catch (error) {
+    console.error('保存风险模型数据失败:', error)
+  }
+}
+
 // 风险仪表盘组件
 const RiskGauge = ({ value, label, riskLimitPercentage = 5 }) => {
   const percentage = Math.min(Math.max(value, 0), 100)
@@ -472,8 +510,18 @@ const AccountRisk = () => {
   console.log('计算结果:', (startMonthTotal * (riskLimitPercentage / 100)) - usedRiskAmount)
   console.log('=========================')
   
-  // 计算可用风险额度
-  const availableRisk = accountRiskData.startMonthTotal - (accountRiskData.stopLossPreLoss + accountRiskData.monthlyLoss)
+  // 计算账户可用额度（月初账户总额 × 账户风险额度百分比 - 已用额度）
+  const accountAvailable = Math.round((startMonthTotal * (riskLimitPercentage / 100)) - usedRiskAmount)
+  
+  // 计算单笔可用额度（月初账户总额 × 单笔风险额度百分比）
+  const singleAvailable = Math.round(startMonthTotal * (accountRiskData.singleRiskPercent || 2) / 100)
+  
+  // 保存风险模型数据到数据库
+  useEffect(() => {
+    if (startMonthTotal > 0 && accountAvailable >= 0 && singleAvailable >= 0) {
+      saveRiskModelData(startMonthTotal, accountAvailable, singleAvailable)
+    }
+  }, [startMonthTotal, accountAvailable, singleAvailable])
 
   return (
     <div style={{
@@ -528,13 +576,13 @@ const AccountRisk = () => {
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>账户可用</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                {Math.round((startMonthTotal * (riskLimitPercentage / 100)) - usedRiskAmount).toLocaleString()}
+                {accountAvailable.toLocaleString()}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>单笔可用</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                {Math.round(startMonthTotal * (accountRiskData.singleRiskPercent || 2) / 100).toLocaleString()}
+                {singleAvailable.toLocaleString()}
               </div>
             </div>
           </div>

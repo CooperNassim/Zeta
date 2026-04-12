@@ -3,13 +3,13 @@ import { motion } from 'framer-motion'
 
 const DataTable = ({
   fields,
-  data,
-  selectedIds,
+  data = [], // 默认值设为空数组
+  selectedIds = [],
   onSelectAll,
   onSelectOne,
-  emptyStateProps = {},
-  renderCell = null,
-  showCheckbox = true
+  emptyStateProps,
+  renderCell,
+  showCheckbox = true // 添加showCheckbox参数，默认为true
 }) => {
   const handleSelectAll = (checked) => {
     if (checked && data) {
@@ -20,15 +20,15 @@ const DataTable = ({
   }
 
   return (
-    <table style={{ width: '100%' }}>
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
-        <tr className="border-b sticky top-0" style={{ backgroundColor: '#F4F5F7', zIndex: '20' }}>
+        <tr className="border-b" style={{ backgroundColor: '#F4F5F7' }}>
           {showCheckbox && (
-            <th className="px-0 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap w-10 sticky left-0 bg-[#F4F5F7]" style={{ backgroundColor: '#F4F5F7', margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px', zIndex: '30' }}>
+            <th className="px-0 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap w-10 bg-[#F4F5F7]" style={{ backgroundColor: '#F4F5F7', margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px' }}>
               <input
                 type="checkbox"
-                checked={data && selectedIds.length === data.length && data.length > 0}
-                onChange={(e) => handleSelectAll(e.target.checked)}
+                checked={data.length > 0 && selectedIds.length === data.length}
+                onChange={(e) => onSelectAll(e.target.checked)}
                 className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                 style={{ position: 'relative', zIndex: '1' }}
               />
@@ -42,43 +42,52 @@ const DataTable = ({
         </tr>
       </thead>
       <tbody>
-        {!data || data.length === 0 ? (
+        {data.length === 0 ? (
           <tr>
-            <td colSpan={fields.filter(field => !field.hideInTable).length + (showCheckbox ? 1 : 0)} className="px-0 py-4 text-center text-gray-500 text-sm" style={{ backgroundColor: '#ffffff' }}>
-              {emptyStateProps.Component && <emptyStateProps.Component {...emptyStateProps.props} />}
+            <td colSpan={fields.filter(field => !field.hideInTable).length + (showCheckbox ? 1 : 0)}>
+              <div className="py-8">
+                {emptyStateProps?.Component ? (
+                  <emptyStateProps.Component {...emptyStateProps.props} />
+                ) : (
+                  <div className="text-center text-gray-500">暂无数据</div>
+                )}
+              </div>
             </td>
           </tr>
         ) : (
-          <>
-            {data.map((item, index) => (
-              <tr
-                key={`${item.id || item.tradeNumber || ''}-${index}`}
-                className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                style={{ backgroundColor: '#ffffff' }}
-              >
-                {showCheckbox && (
-                  <td className="px-0 py-3 w-10 sticky left-0 bg-white" style={{ margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px', zIndex: '10', backgroundColor: '#ffffff' }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(item.id)}
-                      onChange={(e) => onSelectOne(item.id, e.target.checked)}
-                      className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
-                      style={{ position: 'relative', zIndex: '1' }}
-                    />
-                  </td>
-                )}
-                {fields.filter(field => !field.hideInTable).map((field, index) => (
-                  <td key={field.key} className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap" style={{ width: field.width || 'auto', backgroundColor: '#ffffff' }}>
-                    {renderCell ? (
-                      renderCell(field, item) || <span className="font-medium text-gray-700">{item[field.key] || '-'}</span>
-                    ) : (
-                      <span className="font-medium text-gray-700">{item[field.key] || '-'}</span>
-                    )}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </>
+          data.map((item, index) => (
+            <motion.tr
+              key={item.id || index}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2, delay: index * 0.02 }}
+              className="border-b hover:bg-gray-50"
+            >
+              {showCheckbox && (
+                <td className="px-0 py-2 text-left text-sm text-gray-700 whitespace-nowrap w-10 bg-white" style={{ margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px', backgroundColor: 'white' }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(item.id)}
+                    onChange={(e) => onSelectOne(item.id, e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                    style={{ position: 'relative', zIndex: '1' }}
+                  />
+                </td>
+              )}
+              {fields.filter(field => !field.hideInTable).map((field, fieldIndex) => (
+                <td 
+                  key={field.key} 
+                  className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap bg-white"
+                  style={{ 
+                    width: field.width || 'auto', 
+                    backgroundColor: 'white'
+                  }}
+                >
+                  {renderCell ? renderCell(item, field) : item[field.key]}
+                </td>
+              ))}
+            </motion.tr>
+          ))
         )}
       </tbody>
     </table>

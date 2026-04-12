@@ -2052,16 +2052,28 @@ const useStore = create(
         
         const finalRecords = Object.values(uniqueRecords)
         
-        console.log('[Store] importTradeRecords - 使用数据库数据，不与本地合并')
-        console.log('[Store] importTradeRecords - 数据库交易记录数量:', newRecords.length)
-        console.log('[Store] importTradeRecords - 去重后记录数量:', finalRecords.length)
+        // 智能合并模式：保留本地状态中的记录，用数据库数据更新或补充
+        const mergedRecords = state.tradeRecords.map(localRecord => {
+          const dbRecord = finalRecords.find(r => r.id === localRecord.id)
+          if (dbRecord) {
+            // 如果数据库中有对应记录，合并数据（优先使用数据库数据）
+            return { ...localRecord, ...dbRecord }
+          }
+          // 如果数据库中没有，保留本地记录（可能是用户刚修改但还未同步到数据库的数据）
+          return localRecord
+        })
         
-        // 如果去重后数量有差异，说明存在重复数据
-        if (newRecords.length !== finalRecords.length) {
-          console.warn('[Store] importTradeRecords - 警告：检测到重复交易记录，已自动去重')
-        }
+        // 添加数据库中有但本地没有的新记录
+        const localIds = new Set(mergedRecords.map(r => r.id))
+        const newDbRecords = finalRecords.filter(r => !localIds.has(r.id))
+        const completeMergedRecords = [...mergedRecords, ...newDbRecords]
         
-        return { tradeRecords: finalRecords }
+        console.log('[Store] importTradeRecords - 智能合并模式')
+        console.log('[Store] importTradeRecords - 本地记录数量:', state.tradeRecords.length)
+        console.log('[Store] importTradeRecords - 数据库记录数量:', finalRecords.length)
+        console.log('[Store] importTradeRecords - 合并后记录数量:', completeMergedRecords.length)
+        
+        return { tradeRecords: completeMergedRecords }
       }),
 
       // 批量导入股票（从数据库同步）- 合并到现有数据

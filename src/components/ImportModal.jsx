@@ -58,7 +58,7 @@ const ImportModal = ({
           <input
             type="file"
             accept=".csv,.xlsx,.xls"
-            onChange={onFileChange}
+            onChange={(e) => onFileChange(e.target.files[0])}
             className={`w-full px-4 py-3 border rounded text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-white hover:file:opacity-90 transition-all text-sm ${importFileError ? 'border-red-500' : 'border-gray-300'}`}
           />
           {importFileError && (
@@ -67,24 +67,41 @@ const ImportModal = ({
         </div>
         {importResult && (
           <div className="p-3 bg-gray-50 rounded text-sm">
-            <p className={importResult.success ? "text-green-600" : "text-red-600"}>
-              {importResult.success
-                ? `部分导入成功！成功导入 ${importResult.successCount} 条数据`
-                : `导入失败！`}
-              {importResult.errorCount > 0 && `，有 ${importResult.errorCount} 条数据存在错误`}
-            </p>
+            {importResult.successCount > 0 && importResult.errorCount > 0 ? (
+              <p className="text-yellow-600">
+                部分成功！成功导入 {importResult.successCount} 条，失败 {importResult.errorCount} 条
+              </p>
+            ) : importResult.successCount > 0 ? (
+              <p className="text-green-600">
+                导入成功！共 {importResult.successCount} 条数据
+              </p>
+            ) : (
+              <p className="text-red-600">
+                导入失败！{importResult.errorCount} 条数据存在错误
+              </p>
+            )}
             <p className="text-gray-600 mt-1">
-              共处理 {importResult.totalCount} 条数据
+              处理总数: {importResult.totalCount}
             </p>
             {errorWorkbook && (
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={onDownloadError}
-                className="mt-2 w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors text-sm flex items-center justify-center gap-2"
+                className="mt-2 px-4 py-2 rounded hover:opacity-90 transition-opacity text-sm flex items-center justify-center gap-2"
+                style={{ 
+                  color: '#EF4444',
+                  borderColor: '#EF4444',
+                  borderWidth: '1px',
+                  borderStyle: 'solid',
+                  backgroundColor: 'transparent',
+                  width: 'auto', // 宽度自动
+                  marginLeft: '0',
+                  marginRight: 'auto'
+                }}
               >
-                <Download className="w-4 h-4" />
-                下载错误表格
+                <Download className="w-4 h-4" style={{ color: '#EF4444' }} />
+                下载错误
               </motion.button>
             )}
           </div>

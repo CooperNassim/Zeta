@@ -709,14 +709,15 @@ const TradingStrategy = () => {
                 Component: EmptyState,
                 props: { message: '暂无数据' }
               }}
-              renderCell={(field, item) => {
+              renderCell={(item, field) => {
                 if (field.key === 'updatedAt' && item[field.key]) {
                   return format(new Date(item[field.key]), 'yyyy-MM-dd HH:mm:ss')
                 }
                 if (field.key === 'createdAt' && item[field.key]) {
                   return format(new Date(item[field.key]), 'yyyy-MM-dd HH:mm:ss')
                 }
-                return null
+                // 对于其他字段，返回原始值或空字符串
+                return item[field.key] || ''
               }}
             />
           </div>

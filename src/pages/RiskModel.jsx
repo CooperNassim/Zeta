@@ -261,10 +261,10 @@ const RiskGauge = ({ value, label, riskLimitPercentage = 5 }) => {
             strokeLinecap="round"
           />
         </svg>
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: '10px' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '24px', fontWeight: 'bold', color: color }}>
-              {percentage.toFixed(1)}%
+            <div style={{ fontSize: '24px', fontWeight: 'bold', color: color, lineHeight: '1', marginBottom: '2px' }}>
+              {Math.round(percentage * 100) / 100}%
             </div>
           </div>
         </div>
@@ -484,10 +484,10 @@ const AccountRisk = () => {
     })
     .sort((a, b) => new Date(b.createdAt || b.created_at || b.buyDate || b.buyTime) - new Date(a.createdAt || a.created_at || a.buyDate || a.buyTime)) // 按时间倒序，最新的在前
   
-  // 使用上月最后一笔交易的余额作为上月总资产基准值
+  // 使用上月最后一笔交易的余额作为上月总资产基准值，使用初始值1072680.52
   const startMonthTotal = lastMonthTransactions.length > 0 
-    ? (lastMonthTransactions[0].balance || 100000)
-    : 100000
+    ? (lastMonthTransactions[0].balance || 1072680.52)
+    : 1072680.52
 
   // 计算已用额度（本月亏损 + 持仓风险）
   const usedRiskAmount = monthlyLoss + holdingOccupancy

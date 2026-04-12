@@ -129,7 +129,8 @@ const TradeRecords = () => {
 
   // 筛选交易记录
   const filteredRecords = (() => {
-    let result = tradeRecords.filter(r => !r.deleted)
+    // 先不立即过滤删除标记，让合并算法处理关联关系
+    let result = [...tradeRecords]
 
     // 盈亏筛选
     switch (selectedFilter) {
@@ -189,12 +190,27 @@ const TradeRecords = () => {
     // 按交易编号合并记录，同一交易编号只显示一条记录
     const mergedRecordsMap = new Map()
 
+    // 先处理未删除的记录，确保基础信息正确
     result.forEach(r => {
-      if (mergedRecordsMap.has(r.tradeNumber)) {
-        // 已存在该交易编号的记录，合并信息
+      if (!r.deleted) {
+        if (mergedRecordsMap.has(r.tradeNumber)) {
+          const existing = mergedRecordsMap.get(r.tradeNumber)
+          // 更新记录保持最新的未删除状态
+          Object.assign(existing, r)
+        } else {
+          // 新增未删除记录
+          mergedRecordsMap.set(r.tradeNumber, { ...r })
+        }
+      }
+    })
+
+    // 再处理已删除的记录，只为了补齐缺失的关联信息
+    result.forEach(r => {
+      if (r.deleted && mergedRecordsMap.has(r.tradeNumber)) {
         const existing = mergedRecordsMap.get(r.tradeNumber)
+        
+        // 如果现有记录缺失买入信息，从删除记录补充
         if (r.buyTime && !existing.buyTime) {
-          // 更新买入信息
           Object.assign(existing, {
             buyOrderId: r.buyOrderId,
             buyPrice: r.buyPrice,
@@ -212,8 +228,9 @@ const TradeRecords = () => {
             otherFees: r.otherFees
           })
         }
+        
+        // 如果现有记录缺失卖出信息，从删除记录补充
         if (r.sellTime && !existing.sellTime) {
-          // 更新卖出信息
           Object.assign(existing, {
             sellOrderId: r.sellOrderId,
             sellPrice: r.sellPrice,
@@ -234,24 +251,24 @@ const TradeRecords = () => {
             sellOtherFees: r.sellOtherFees
           })
         }
-        // 更新最新时间和评分
-        if (r.createdAt) existing.createdAt = r.createdAt
-        if (r.overallScore) existing.overallScore = r.overallScore
-        // 优先取非空的 tradeSummary
+        
+        // 优先保留现有记录的时间信息，不覆盖
+        if (!existing.createdAt && r.createdAt) existing.createdAt = r.createdAt
+        if (!existing.overallScore && r.overallScore) existing.overallScore = r.overallScore
         if (r.tradeSummary && !existing.tradeSummary) {
           existing.tradeSummary = r.tradeSummary
         }
-      } else {
-        // 新建该交易编号的记录
-        mergedRecordsMap.set(r.tradeNumber, { ...r })
       }
     })
 
     // 转换为数组并按时间降序排序
     const mergedRecords = Array.from(mergedRecordsMap.values())
-    mergedRecords.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    
+    // 最终过滤掉依然标记为删除的记录（可能是只有删除记录的交易）
+    const finalRecords = mergedRecords.filter(r => !r.deleted)
+    finalRecords.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
 
-    return mergedRecords
+    return finalRecords
   })()
 
   const totalPages = Math.ceil(filteredRecords.length / pageSize)

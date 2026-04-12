@@ -320,41 +320,159 @@ const OrderManagement = () => {
     return 'pass'
   }
 
-  // 计算可用比例的最小值：min(账户可用/月初账户*100, 单笔可用/月初账户*100)；负数显示0%；整数取整，有小数点保留2位四舍五入
+  // 先获取store中的hook，在组件函数中定义
+  const getTotalAssets = useStore(state => state.getTotalAssets)
+  const getHoldingOccupancy = useStore(state => state.getHoldingOccupancy)
+  const tradeRecords = useStore(state => state.tradeRecords)
+  const transactions = useStore(state => state.transactions)
+
+  // 计算可用比例的最小值：Min(账户可用/月初账户*100，单笔可用/月初账户*100)；负数时为0；整数取整，有小数点取小数点2位四舍五入
   const getMinAvailablePercent = () => {
-    // 从risk_config表中读取正确计算的数值
-    // 注意：需要确保riskData中的这些字段已正确存储计算值
-    const riskData = accountRiskData || {}
-    const startMonthTotal = riskData.startMonthTotal || riskData.start_month_total || 0
-    const accountAvailable = riskData.accountAvailable || riskData.account_available || 0
-    const singleAvailable = riskData.singleAvailable || riskData.single_available || 0
+    // 直接计算，不再调用内部函数
+    const currentTotalAssets = getTotalAssets('real')
+    const holdingOccupancy = getHoldingOccupancy()
     
-    // 避免除以0
-    if (startMonthTotal <= 0) return 0
+    const now = new Date()
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
     
-    // 计算两个百分比
+    // 计算当月亏损
+    const monthlyLoss = tradeRecords
+      .filter(r => !r.deleted)
+      .filter(r => {
+        const sellQty = parseFloat(r.sellQuantity) || 0
+        const buyQty = parseFloat(r.buyQuantity) || 0
+        const isEndStatus = sellQty >= buyQty
+        
+        const buyDate = new Date(r.buyDate || r.buyTime || r.createdAt)
+        const isCurrentMonth = buyDate.getMonth() === currentMonth && buyDate.getFullYear() === currentYear
+        
+        const profit = parseFloat(r.profit) || 0
+        const isLoss = profit < 0
+        
+        return isEndStatus && isCurrentMonth && isLoss
+      })
+      .reduce((sum, r) => sum + Math.abs(parseFloat(r.profit) || 0), 0)
+    
+    // 计算月初账户（上月总资产）
+    const lastMonthEnd = new Date(currentYear, currentMonth, 0, 23, 59, 59)
+    
+    const lastMonthTransactions = transactions
+      .filter(t => {
+        const date = new Date(t.createdAt || t.created_at || t.buyDate || t.buyTime)
+        return !t.deleted && date && date <= lastMonthEnd
+      })
+      .sort((a, b) => new Date(b.createdAt || b.created_at || b.buyDate || b.buyTime) - new Date(a.createdAt || a.created_a || a.buyDate || a.buyTime))
+    
+    const startMonthTotal = lastMonthTransactions.length > 0 
+      ? (lastMonthTransactions[0].balance || 1072680.52)
+      : 1072680.52
+
+    // 风险额度百分比
+    const riskLimitPercentage = riskConfig?.real?.totalRiskPercent || 5
+    
+    // 计算账户可用额度
+    const usedRiskAmount = monthlyLoss + holdingOccupancy
+    const accountAvailable = Math.round((startMonthTotal * (riskLimitPercentage / 100)) - usedRiskAmount)
+    
+    // 计算单笔可用额度
+    const singleAvailable = Math.round(startMonthTotal * (riskConfig?.real?.singleRiskPercent || 2) / 100)
+    
+    // 计算可用比例的最小值
     const accountPercent = (accountAvailable / startMonthTotal) * 100
     const singlePercent = (singleAvailable / startMonthTotal) * 100
+    const minPercent = Math.min(accountPercent, singlePercent)
+    const nonNegativePercent = minPercent < 0 ? 0 : minPercent
+    const result = Math.round(nonNegativePercent * 100) / 100
     
-    console.log('[DEBUG] 风险数据计算:', {
-      风险数据源: riskData,
-      月初账户: startMonthTotal,
-      账户可用金额: accountAvailable,
-      单笔可用金额: singleAvailable,
-      账户可用百分比: accountPercent,
-      单笔可用百分比: singlePercent,
-    })
+    console.log('[正确计算] 月初账户:', startMonthTotal)
+    console.log('[正确计算] 账户可用:', accountAvailable)
+    console.log('[正确计算] 单笔可用:', singleAvailable)
+    console.log('[正确计算] 账户百分比:', accountPercent)
+    console.log('[正确计算] 单笔百分比:', singlePercent)
+    console.log('[正确计算] 最终结果:', result)
     
-    // 取最小值，如果是负数显示0
-    const minPercent = Math.max(Math.min(accountPercent, singlePercent), 0)
-    
-    // 整数取整，有小数点保留2位四舍五入
-    const rounded = Math.round(minPercent * 100) / 100
-    const result = Number.isInteger(rounded) ? Math.floor(rounded) : rounded
-    
-    console.log('[DEBUG] 最终可用比例:', result)
     return result
   }
+
+  // 计算可用额度：start_month_total（月初账户） * 可用比例(%)
+  const calculateAvailableLimit = () => {
+    // 直接使用与getMinAvailablePercent相同的逻辑获取月初账户
+    const now = new Date()
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+    
+    // 计算月初账户（上月总资产）
+    const lastMonthEnd = new Date(currentYear, currentMonth, 0, 23, 59, 59)
+    
+    const lastMonthTransactions = transactions
+      .filter(t => {
+        const date = new Date(t.createdAt || t.created_at || t.buyDate || t.buyTime)
+        return !t.deleted && date && date <= lastMonthEnd
+      })
+      .sort((a, b) => new Date(b.createdAt || b.created_at || b.buyDate || b.buyTime) - new Date(a.createdAt || a.created_a || a.buyDate || a.buyTime))
+    
+    const startMonthTotal = lastMonthTransactions.length > 0 
+      ? (lastMonthTransactions[0].balance || 1072680.52)
+      : 1072680.52
+    
+    // 获取可用比例：用户输入的值或自动计算值（注意：getMinAvailablePercent返回的是百分比值如2，不是0.02）
+    const availablePercentValue = parseFloat(orderForm.availablePercent)
+    const availablePercent = !isNaN(availablePercentValue) ? availablePercentValue : getMinAvailablePercent()
+    
+    // 计算可用额度 = 1,072,680.52 * (2% / 100)
+    const availableLimit = startMonthTotal * (availablePercent / 100)
+    
+    // 整数取整，有小数点取小数点2位四舍五入，千位分隔符
+    const roundedAmount = Math.round(availableLimit * 100) / 100
+    
+    console.log('[可用额度计算] 月初账户:', startMonthTotal)
+    console.log('[可用额度计算] 可用比例:', availablePercent)
+    console.log('[可用额度计算] 计算结果:', roundedAmount)
+    
+    // 使用现有的formatAmount函数格式化显示
+    return formatAmount(roundedAmount)
+  }
+
+  // 计算买入数量：买入数量 = 可用额度/(买入价格-止损价)
+  const calculateBuyQuantity = () => {
+    // 获取买入价格和止损价
+    const buyPrice = parseFloat(orderForm.price) || 0
+    const stopLossPrice = parseFloat(orderForm.stopLossPrice) || 0
+    
+    // 如果买入价格或止损价为空或为0，返回提示文字
+    if (!buyPrice || !stopLossPrice) {
+      return '' // 保持为空，显示placeholder的"自动计算"
+    }
+    
+    // 计算价格差（买入价 - 止损价）
+    const priceDifference = buyPrice - stopLossPrice
+    
+    // 如果价格差为0或负数，返回0
+    if (priceDifference <= 0) {
+      return formatAmount(0)
+    }
+    
+    // 获取可用额度
+    const availableLimitString = calculateAvailableLimit()
+    // 从格式化字符串中解析出数值（移除千位分隔符）
+    const availableLimit = parseFloat(availableLimitString.replace(/,/g, '')) || 0
+    
+    // 计算买入数量 = 可用额度 / (买入价 - 止损价)
+    const buyQuantity = availableLimit / priceDifference
+    
+    // A股100股起售：将结果转换为100股的倍数，四舍五入
+    const hundredMultiples = Math.round(buyQuantity / 100) * 100
+    
+    // 避免结果为0，最小值为100股
+    const minQuantity = Math.max(hundredMultiples, 100)
+    
+    // 使用千位分隔符格式化（由于是100股的整数倍，应该没有小数）
+    return formatAmount(minQuantity)
+  }
+
+  // 用于强制输入组件重新渲染的计数器
+  const [resetKey, setResetKey] = React.useState(0)
 
   // 当风险控制状态变化时，清除错误状态
   React.useEffect(() => {
@@ -1154,7 +1272,7 @@ const OrderManagement = () => {
 
             {evaluationStep === 3 && (
               <div>
-                <p className="text-gray-600 mb-2">填写买入信息</p>
+                <p className="text-gray-600 mb-2">{orderType === 'sell' ? '填写卖出信息' : '填写买入信息'}</p>
 
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                     <div>
@@ -1188,22 +1306,31 @@ const OrderManagement = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 股票名称
+                        {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' || orderType === 'sell') && <span className="text-red-500">*</span>} 股票名称
                       </label>
-                        <CustomInput
-                          type="text"
+                      {orderType === 'sell' ? (
+                        <ReadOnlyInput
                           value={orderForm.name || ''}
-                          onChange={(value) => {
-                            setOrderForm({ ...orderForm, name: value })
-                            setRiskErrors({ ...riskErrors, name: false })
-                          }}
-                          placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入'}
-                          error={riskErrors.name && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail')}
-                          disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
+                          placeholder=""
                         />
-                        {riskErrors.name && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && (
-                          <ErrorMessage message="不能为空" showIcon={true} />
-                        )}
+                      ) : (
+                        <>
+                          <CustomInput
+                            type="text"
+                            value={orderForm.name || ''}
+                            onChange={(value) => {
+                              setOrderForm({ ...orderForm, name: value })
+                              setRiskErrors({ ...riskErrors, name: false })
+                            }}
+                            placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '请输入'}
+                            error={riskErrors.name && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail')}
+                            disabled={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail'}
+                          />
+                          {riskErrors.name && !(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && (
+                            <ErrorMessage message="不能为空" showIcon={true} />
+                          )}
+                        </>
+                      )}
                     </div>
 
                   {orderType === 'buy' && (
@@ -1213,10 +1340,11 @@ const OrderManagement = () => {
                           {!(getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail') && <span className="text-red-500">*</span>} 可用比例(%)
                         </label>
                         <CustomInput
+                          key={`availablePercent-${resetKey}`} // 每次重置都重新渲染
                           type="number"
                           step="0.01"
                           value={orderForm.availablePercent !== undefined && orderForm.availablePercent !== null && orderForm.availablePercent !== '' 
-                            ? Math.max(getMinAvailablePercent(), Math.min(orderForm.availablePercent, Math.min(accountRiskData?.accountAvailable || 100, accountRiskData?.singleAvailable || 100)))
+                            ? orderForm.availablePercent
                             : getMinAvailablePercent()
                           }
                           onChange={(value) => {
@@ -1224,12 +1352,18 @@ const OrderManagement = () => {
                             const minValue = getMinAvailablePercent()
                             const currentValue = parseFloat(value) || 0
                             
+                            console.log('[可用比例输入] 当前值:', currentValue, '最小值:', minValue, '是否重置:', currentValue > minValue)
+                            
                             // 如果输入值大于最小值，重置为最小值（防止过度风险）
                             if (currentValue > minValue) {
-                              setOrderForm({ ...orderForm, availablePercent: minValue })
+                              console.log('[已重置] 可用比例从', currentValue, '重置为', minValue)
+                              // 使用函数式更新确保state正确设置
+                              setOrderForm(prevForm => ({ ...prevForm, availablePercent: minValue }))
+                              // 递增计数器强制组件重新渲染
+                              setResetKey(prev => prev + 1)
                             } else {
                               // 允许输入小于最小值（主动降低风险）
-                              setOrderForm({ ...orderForm, availablePercent: currentValue })
+                              setOrderForm(prevForm => ({ ...prevForm, availablePercent: currentValue }))
                             }
                             
                             if (riskErrors.availablePercent) {
@@ -1249,7 +1383,7 @@ const OrderManagement = () => {
                           可用额度
                         </label>
                         <ReadOnlyInput
-                          value={formatAmount(accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100))}
+                          value={calculateAvailableLimit()}
                           placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动计算'}
                         />
                       </div>
@@ -1278,7 +1412,7 @@ const OrderManagement = () => {
                           买入数量
                         </label>
                         <ReadOnlyInput
-                          value={orderForm.price ? Math.floor((accountRiskData?.startMonthTotal * (parseFloat(orderForm.availablePercent || accountRiskData?.singleAvailable || 0) / 100)) / parseFloat(orderForm.price) / 100) * 100 : ''}
+                          value={calculateBuyQuantity()}
                           placeholder={getRiskControlStatus() === 'zero' || getRiskControlStatus() === 'fail' ? '' : '自动计算'}
                         />
                       </div>

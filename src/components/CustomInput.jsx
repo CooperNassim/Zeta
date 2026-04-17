@@ -1,8 +1,6 @@
-import React, { useState } from 'react'
+import React from 'react'
 
-const CustomInput = ({ value, onChange, placeholder = '请输入', className = '', error = false, type = 'text', rows, ...props }) => {
-  const [inputValue, setInputValue] = useState(value || '')
-
+const CustomInput = ({ value, onChange, placeholder = '请输入', className = '', error = false, type = 'text', rows, onFocus, ...props }) => {
   // 格式化数字（整数取整，有小数点保留小数点后2位四舍五入）
   const formatNumber = (val) => {
     if (!val || val === '') return ''
@@ -18,13 +16,13 @@ const CustomInput = ({ value, onChange, placeholder = '请输入', className = '
   // 处理值变化
   const handleChange = (e) => {
     const newValue = e.target.value
-    setInputValue(newValue)
     onChange(newValue)
   }
 
   // 处理失焦，格式化数字
-  const handleBlur = () => {
-    if (inputValue === '' || inputValue === null || inputValue === undefined) {
+  const handleBlur = (e) => {
+    const inputValue = e.target.value
+    if (inputValue === null || inputValue === undefined || inputValue === '') {
       return // 空值不处理
     }
     
@@ -33,31 +31,31 @@ const CustomInput = ({ value, onChange, placeholder = '请输入', className = '
       const numValue = parseFloat(inputValue.toString().replace(/,/g, ''))
       if (isNaN(numValue)) {
         // 如果是无效数字，清空输入框
-        setInputValue('')
         onChange('')
       } else {
         // 如果是有效数字，直接使用原值，不进行格式化
-        setInputValue(inputValue)
         onChange(inputValue)
       }
     }
   }
 
-  // 外部value变化时更新inputValue
-  React.useEffect(() => {
-    if (value !== inputValue) {
-      setInputValue(value || '')
+  // 处理获得焦点
+  const handleFocus = (e) => {
+    if (onFocus) {
+      onFocus(e)
     }
-  }, [value])
+  }
 
   if (type === 'textarea') {
     return (
       <textarea
-        value={inputValue || ''}
+        value={value || ''}
         onChange={handleChange}
+        onBlur={handleBlur}
+        onFocus={handleFocus}
         className={`w-full px-3 py-2 border rounded focus:outline-none transition-colors text-sm resize-none ${error ? 'border-red-500' : 'border-gray-300'} ${className}`}
         placeholder={placeholder}
-        style={{ color: inputValue ? '#1f2937' : '#9ca3af' }}
+        style={{ color: value ? '#1f2937' : '#9ca3af' }}
         rows={rows || 2}
         {...props}
       />
@@ -67,12 +65,13 @@ const CustomInput = ({ value, onChange, placeholder = '请输入', className = '
   return (
     <input
       type={type}
-      value={inputValue || ''}
+      value={value || ''}
       onChange={handleChange}
       onBlur={handleBlur}
+      onFocus={handleFocus}
       className={`w-full px-3 py-2 border rounded focus:outline-none transition-colors text-sm ${error ? 'border-red-500' : 'border-gray-300'} ${className}`}
       placeholder={placeholder}
-      style={{ color: inputValue ? '#1f2937' : '#9ca3af' }}
+      style={{ color: value ? '#1f2937' : '#9ca3af' }}
       {...props}
     />
   )

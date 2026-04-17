@@ -24,18 +24,19 @@ const FIELDS = [
     key: 'strategyType',
     label: '策略类型',
     type: 'select',
+    required: true,
     options: [
       { value: '买入', label: '买入' },
       { value: '卖出', label: '卖出' }
     ],
     width: '100px'
   },
-  { key: 'name', label: '策略名称', type: 'text' },
-  { key: 'evalStandard1', label: '评估标准Ⅰ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；' },
-  { key: 'evalStandard2', label: '评估标准Ⅱ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；' },
-  { key: 'evalStandard3', label: '评估标准Ⅲ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；' },
-  { key: 'evalStandard4', label: '评估标准Ⅳ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；' },
-  { key: 'evalStandard5', label: '评估标准Ⅴ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；' },
+  { key: 'name', label: '策略名称', type: 'text', required: true },
+  { key: 'evalStandard1', label: '评估标准Ⅰ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；', required: true },
+  { key: 'evalStandard2', label: '评估标准Ⅱ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；', required: true },
+  { key: 'evalStandard3', label: '评估标准Ⅲ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；', required: true },
+  { key: 'evalStandard4', label: '评估标准Ⅳ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；', required: true },
+  { key: 'evalStandard5', label: '评估标准Ⅴ', type: 'text', placeholder: '指标：0=xx；1=xx；2=xx；', required: true },
   {
     key: 'status',
     label: '状态',
@@ -102,8 +103,8 @@ const TradingStrategy = () => {
       if (field.readonly || field.key === 'creator' || field.hideInForm || field.key === 'id') {
         return
       }
-      if (!formData[field.key] || formData[field.key].trim() === '') {
-        errors[field.key] = true
+      if (field.required && (!formData[field.key] || formData[field.key].trim() === '')) {
+        errors[field.key] = '不能为空'
       }
     })
 
@@ -112,13 +113,11 @@ const TradingStrategy = () => {
       record => record.name === formData.name && (!isEditMode || record.id !== editingId)
     )
     if (existingRecord) {
-      errors.name = true
-      errorMessages.name = '已存在'
+      errors.name = '已存在'
     }
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors)
-      setFormErrorMessage(errorMessages)
       return
     }
 
@@ -127,7 +126,9 @@ const TradingStrategy = () => {
     const submitData = {
       ...formData,
       // 自动设置创建人
-      creator: formData.creator || '系统'
+      creator: formData.creator || '系统',
+      // 如果修订版本为空，使用默认值V1.0.0
+      revisionVersion: formData.revisionVersion || 'V1.0.0'
     }
 
     if (isEditMode && editingId) {
@@ -152,6 +153,8 @@ const TradingStrategy = () => {
     FIELDS.forEach(field => {
       initialData[field.key] = editingData[field.key] || ''
     })
+    // 如果修订版本为空，使用默认值V1.0.0
+    initialData.revisionVersion = initialData.revisionVersion || 'V1.0.0'
     setFormData(initialData)
     setFormErrors({})
     setFormErrorMessage({})
@@ -709,7 +712,7 @@ const TradingStrategy = () => {
                 Component: EmptyState,
                 props: { message: '暂无数据' }
               }}
-              renderCell={(item, field) => {
+              renderCell={(field, item) => {
                 if (field.key === 'updatedAt' && item[field.key]) {
                   return format(new Date(item[field.key]), 'yyyy-MM-dd HH:mm:ss')
                 }

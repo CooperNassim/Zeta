@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Download, Trash2, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
+import { Plus, Download, Trash2, ArrowUpCircle, ArrowDownCircle, RotateCcw } from 'lucide-react'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
 import ExcelJS from 'exceljs'
@@ -167,9 +167,17 @@ sortedTransactions.forEach((t, idx) => {
     })
 
     if (hasStockTransaction) {
-      showToast('只可删除手动记账', 'error')
-      setShowDeleteModal(false)
-      return
+      // 检查这些股票交易记录是否有交易编号
+      const hasTradeNumber = selectedIds.some(id => {
+        const transaction = currentTransactions.find(t => t.id === id)
+        return transaction && (transaction.tradeNumber || transaction.trade_number)
+      })
+      
+      if (hasTradeNumber) {
+        showToast('只可删除手动记账', 'error')
+        setShowDeleteModal(false)
+        return
+      }
     }
 
     console.log('确认删除, selectedIds:', selectedIds)
@@ -658,6 +666,20 @@ sortedTransactions.forEach((t, idx) => {
         >
           <Trash2 className="w-4 h-4" />
           删除
+        </motion.button>
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            if (window.confirm('确定要重置交易记录数据吗？这将清除所有交易记录。')) {
+              resetTransactionsData()
+              showToast('交易记录已重置')
+            }
+          }}
+          className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2"
+        >
+          <RotateCcw className="w-4 h-4" />
+          重置
         </motion.button>
         </div>
       </div>

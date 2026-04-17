@@ -1404,14 +1404,26 @@ const useStore = create(
         const order = state.orders.find(o => o.id === id)
         const tradeNumber = order?.tradeNumber
         
-        if (tradeNumber) {
-          // 使用查询参数根据trade_number查找对应的账单明细，然后删除
-          apiCall(`/api/transactions?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET')
-            .then(result => {
-              if (result.success && result.data) {
-                // 查找对应交易编号的账单记录
-                const matchedTransactions = result.data.filter(t => t.trade_number === tradeNumber)
-                // 批量删除这些账单记录
+        if (order) {
+          // 查找关联的交易记录和账单明细
+          Promise.all([
+            apiCall(`/api/transactions`, 'GET'),
+            apiCall(`/api/trade_records`, 'GET')
+          ])
+            .then(([transactionsResult, tradeRecordsResult]) => {
+              // 处理账单明细
+              if (transactionsResult.success && transactionsResult.data) {
+                const matchedTransactions = transactionsResult.data.filter(t => {
+                  if (tradeNumber && (t.trade_number === tradeNumber || t.tradeNumber === tradeNumber)) {
+                    return true
+                  }
+                  if (!tradeNumber && t.type && (t.type === '买入' || t.type === '卖出')) {
+                    return t.symbol === order.symbol && 
+                           t.name === order.name && 
+                           Math.abs(parseFloat(t.amount || 0)) === Math.abs(parseFloat(order.price || 0) * parseFloat(order.quantity || 0))
+                  }
+                  return false
+                })
                 if (matchedTransactions.length > 0) {
                   const transactionIds = matchedTransactions.map(t => t.id)
                   apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
@@ -1419,8 +1431,24 @@ const useStore = create(
                     .catch(err => console.error('[Store] 删除账单明细失败:', err))
                 }
               }
+              
+              // 处理交易记录
+              if (tradeRecordsResult.success && tradeRecordsResult.data) {
+                const matchedTradeRecords = tradeRecordsResult.data.filter(r => {
+                  if (tradeNumber && (r.trade_number === tradeNumber || r.tradeNumber === tradeNumber)) {
+                    return true
+                  }
+                  return false
+                })
+                if (matchedTradeRecords.length > 0) {
+                  const tradeRecordIds = matchedTradeRecords.map(r => r.id)
+                  apiCall('/api/trade_records/bulk/delete', 'POST', { ids: tradeRecordIds })
+                    .then(() => console.log(`[Store] 删除对应交易记录成功: ${tradeRecordIds.length}条`))
+                    .catch(err => console.error('[Store] 删除交易记录失败:', err))
+                }
+              }
             })
-            .catch(err => console.error('[Store] 查找账单明细失败:', err))
+            .catch(err => console.error('[Store] 查找关联记录失败:', err))
         }
         
         // 删除订单
@@ -1434,27 +1462,74 @@ const useStore = create(
 
       // 批量删除预约单
       deleteMultipleOrders: (ids) => set((state) => {
-        // 查找所有要删除的订单的交易编号
+        // 查找所有要删除的订单
         const ordersToDelete = state.orders.filter(o => ids.includes(o.id))
-        const tradeNumbers = [...new Set(ordersToDelete.map(o => o.tradeNumber).filter(Boolean))]
         
-        // 删除关联的账单明细
-        if (tradeNumbers.length > 0) {
-          tradeNumbers.forEach(tradeNumber => {
-            apiCall(`/api/transactions?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET')
+        // 删除关联的账单明细和交易记录
+        if (ordersToDelete.length > 0) {
+          // 获取所有交易编号
+          const tradeNumbers = [...new Set(ordersToDelete.map(o => o.tradeNumber).filter(Boolean))]
+          
+          // 先通过交易编号删除
+          if (tradeNumbers.length > 0) {
+            tradeNumbers.forEach(tradeNumber => {
+              Promise.all([
+                apiCall(`/api/transactions?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET'),
+                apiCall(`/api/trade_records?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET')
+              ])
+                .then(([transactionsResult, tradeRecordsResult]) => {
+                  // 处理账单明细
+                  if (transactionsResult.success && transactionsResult.data) {
+                    const matchedTransactions = transactionsResult.data.filter(t => t.trade_number === tradeNumber)
+                    if (matchedTransactions.length > 0) {
+                      const transactionIds = matchedTransactions.map(t => t.id)
+                      apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
+                        .then(() => console.log(`[Store] 删除对应账单明细成功: ${tradeNumber} -> ${transactionIds.length}条`))
+                        .catch(err => console.error('[Store] 删除账单明细失败:', err))
+                    }
+                  }
+                  
+                  // 处理交易记录
+                  if (tradeRecordsResult.success && tradeRecordsResult.data) {
+                    const matchedTradeRecords = tradeRecordsResult.data.filter(r => r.trade_number === tradeNumber)
+                    if (matchedTradeRecords.length > 0) {
+                      const tradeRecordIds = matchedTradeRecords.map(r => r.id)
+                      apiCall('/api/trade_records/bulk/delete', 'POST', { ids: tradeRecordIds })
+                        .then(() => console.log(`[Store] 删除对应交易记录成功: ${tradeNumber} -> ${tradeRecordIds.length}条`))
+                        .catch(err => console.error('[Store] 删除交易记录失败:', err))
+                    }
+                  }
+                })
+                .catch(err => console.error('[Store] 查找关联记录失败:', err))
+            })
+          }
+          
+          // 再处理没有交易编号的订单
+          const ordersWithoutTradeNumber = ordersToDelete.filter(o => !o.tradeNumber)
+          if (ordersWithoutTradeNumber.length > 0) {
+            apiCall(`/api/transactions`, 'GET')
               .then(result => {
                 if (result.success && result.data) {
-                  const matchedTransactions = result.data.filter(t => t.trade_number === tradeNumber)
+                  const matchedTransactions = result.data.filter(t => {
+                    if (t.type && (t.type === '买入' || t.type === '卖出')) {
+                      return ordersWithoutTradeNumber.some(order => 
+                        t.symbol === order.symbol && 
+                        t.name === order.name && 
+                        Math.abs(parseFloat(t.amount || 0)) === Math.abs(parseFloat(order.price || 0) * parseFloat(order.quantity || 0))
+                      )
+                    }
+                    return false
+                  })
                   if (matchedTransactions.length > 0) {
                     const transactionIds = matchedTransactions.map(t => t.id)
                     apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
-                      .then(() => console.log(`[Store] 删除对应账单明细成功: ${tradeNumber} -> ${transactionIds.length}条`))
+                      .then(() => console.log(`[Store] 删除无交易编号的账单明细成功: ${transactionIds.length}条`))
                       .catch(err => console.error('[Store] 删除账单明细失败:', err))
                   }
                 }
               })
               .catch(err => console.error('[Store] 查找账单明细失败:', err))
-          })
+          }
         }
         
         // 同步到数据库
@@ -1788,6 +1863,14 @@ const useStore = create(
         }
       }),
 
+      // 重置交易记录数据
+      resetTransactionsData: () => set((state) => {
+        console.log('[Store] 重置交易记录数据')
+        return {
+          transactions: []
+        }
+      }),
+
       // 计算交易盈亏
       calculateTradeProfit: (tradeId, profit) => set((state) => ({
         tradeRecords: state.tradeRecords.map(t =>
@@ -1906,7 +1989,9 @@ const useStore = create(
           return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
         }
         
-        const newTransactions = transactions.map(t => ({
+        const newTransactions = transactions
+          .filter(t => !t.deleted) // 过滤掉已删除的记录
+          .map(t => ({
           id: t.id,
           type: t.transaction_type || t.type || null,
           symbol: t.symbol || null,
@@ -1961,30 +2046,61 @@ const useStore = create(
         // 获取当前所有订单，用于策略ID查找
         const allOrders = state.orders || []
         
-        const newRecords = records.map(r => {
-          // 自动计算买入金额 = 买入数量 * 买入价格
-          const buyQuantity = parseFloat(r.buy_quantity || r.buyQuantity) || 0
-          const buyPrice = parseFloat(r.buy_price || r.buyPrice) || 0
-          const calculatedBuyAmount = (buyQuantity && buyPrice) ? (buyQuantity * buyPrice).toFixed(2) : null
-
-          // 自动计算卖出金额 = 卖出数量 * 卖出价格
-          const sellQuantity = parseFloat(r.sell_quantity || r.sellQuantity) || 0
-          const sellPrice = parseFloat(r.sell_price || r.sellPrice) || 0
-          const calculatedSellAmount = (sellQuantity && sellPrice) ? (sellQuantity * sellPrice).toFixed(2) : null
-
+        const newRecords = records
+          .filter(r => !r.deleted) // 过滤掉已删除的记录
+          .map(r => {
           // 从数据库获取策略ID字段
           let buyStrategyId = r.buy_strategy_id ? Number(r.buy_strategy_id) : (r.buyStrategyId || null)
           let strategyId = r.strategy_id ? Number(r.strategy_id) : (r.strategyId || null)
           
           // 如果策略ID为空，尝试从相关订单中自动获取
           const tradeNumber = r.trade_number || r.tradeNumber || r.id
+          
+          // 自动计算买入金额 = 买入数量 * 买入价格
+          // 通过遍历订单来计算，确保与股票交易列表中的交易金额一致
+          const buyOrders = allOrders.filter(o => o.tradeNumber === tradeNumber && o.type === 'buy')
+          let calculatedBuyAmount = 0
+          buyOrders.forEach(o => {
+            const quantity = parseFloat(o.quantity) || 0
+            const price = parseFloat(o.price) || 0
+            calculatedBuyAmount += quantity * price
+          })
+          calculatedBuyAmount = calculatedBuyAmount.toFixed(2)
+          console.log('[Store] 计算买入金额:', { buyOrders: buyOrders.length, calculatedBuyAmount, tradeNumber })
+
+          // 自动计算卖出金额 = 卖出数量 * 卖出价格
+          // 通过遍历订单来计算，确保与股票交易列表中的交易金额一致
+          const sellOrders = allOrders.filter(o => o.tradeNumber === tradeNumber && o.type === 'sell')
+          let calculatedSellAmount = 0
+          let sellOrderPriceFromOrders = null
+          if (sellOrders.length === 1) {
+            // 只有一个卖出订单，直接取交易价格
+            const price = parseFloat(sellOrders[0].price) || 0
+            const quantity = parseFloat(sellOrders[0].quantity) || 0
+            calculatedSellAmount = price * quantity
+            sellOrderPriceFromOrders = price
+          } else if (sellOrders.length > 1) {
+            // 多个卖出订单，计算平均价格
+            let totalQuantity = 0
+            sellOrders.forEach(o => {
+              const price = parseFloat(o.price) || 0
+              const quantity = parseFloat(o.quantity) || 0
+              calculatedSellAmount += price * quantity
+              totalQuantity += quantity
+            })
+            if (totalQuantity > 0) {
+              sellOrderPriceFromOrders = calculatedSellAmount / totalQuantity
+            }
+          }
+          calculatedSellAmount = calculatedSellAmount.toFixed(2)
+          console.log('[Store] 计算卖出金额:', { sellOrders: sellOrders.length, calculatedSellAmount, tradeNumber, sellOrderPriceFromOrders })
           if (!buyStrategyId && tradeNumber && allOrders.length > 0) {
             // 查找对应交易编号的订单
             const relatedOrders = allOrders.filter(o => o.tradeNumber === tradeNumber)
-            const buyOrders = relatedOrders.filter(o => o.type === 'buy')
+            const strategyBuyOrders = relatedOrders.filter(o => o.type === 'buy')
             
-            if (!buyStrategyId && buyOrders.length > 0 && buyOrders[0].strategyId) {
-              buyStrategyId = Number(buyOrders[0].strategyId)
+            if (!buyStrategyId && strategyBuyOrders.length > 0 && strategyBuyOrders[0].strategyId) {
+              buyStrategyId = Number(strategyBuyOrders[0].strategyId)
               console.log('[Store] importTradeRecords - 从买入订单自动获取策略ID:', 
                 { tradeNumber, buyStrategyId, symbol: r.symbol || r.name })
             }
@@ -1999,9 +2115,9 @@ const useStore = create(
           return {
             ...r,
             // 确保驼峰格式字段存在（兼容数据库的下划线格式和前端驼峰格式）
-            buyQuantity: r.buy_quantity ? parseFloat(r.buy_quantity) : (r.buyQuantity || 0),
+            buyQuantity: parseFloat(r.buy_quantity || r.buyQuantity) || 0,
             // 买入成交价格buy_price：人工手动填写（成交价），从数据库下划线格式读取
-            buyPrice: r.buy_price != null ? parseFloat(r.buy_price) : (r.buyPrice || null),
+            buyPrice: parseFloat(r.buy_price || r.buyPrice) || 0,
             // 买入订单价格buy_order_price：自动从数据库获取，为空时回退到buy_price
             buyOrderPrice: r.buy_order_price ? parseFloat(r.buy_order_price) : (r.buyOrderPrice || parseFloat(r.buy_price) || null),
             buyOrderTime: r.buy_order_time || r.buyOrderTime || null,
@@ -2011,10 +2127,14 @@ const useStore = create(
             buyOrderId: r.buy_order_id ? String(r.buy_order_id) : (r.buyOrderId || null),
             sellQuantity: r.sell_quantity ? parseFloat(r.sell_quantity) : (r.sellQuantity || 0),
             sellPrice: r.sell_price ? parseFloat(r.sell_price) : (r.sellPrice || null),
-            sellOrderPrice: r.sell_order_price ? parseFloat(r.sell_order_price) : (r.sellOrderPrice || null),
+            // 卖出订单价格sell_order_price：自动从数据库获取，为空时从订单计算
+            sellOrderPrice: r.sell_order_price ? parseFloat(r.sell_order_price) : (r.sellOrderPrice !== undefined ? r.sellOrderPrice : (sellOrderPriceFromOrders !== null ? sellOrderPriceFromOrders : null)),
             sellOrderTime: r.sell_order_time || r.sellOrderTime || null,
             sellTime: r.sell_time || r.sellTime || null,
             tradeNumber: tradeNumber,
+            // 明确映射股票代码和名称字段（兼容数据库的下划线格式和前端驼峰格式）
+            symbol: r.symbol || '-',
+            name: r.name || '-',
             createdAt: r.created_at || r.createdAt || new Date().toISOString(),
             deleted: r.deleted || false,
             deletedAt: r.deleted_at || r.deletedAt || null,

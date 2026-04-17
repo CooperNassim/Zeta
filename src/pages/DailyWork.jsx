@@ -19,33 +19,34 @@ import FormModal from '../components/FormModal'
 
 // 字段定义
 const FIELDS = [
-  { key: 'date', label: '日期', type: 'date' },
-  { key: 'nasdaq', label: '纳斯达克', type: 'text' },
-  { key: 'ftse', label: '英国富时', type: 'text' },
-  { key: 'dax', label: '德国DAX', type: 'text' },
-  { key: 'n225', label: '日经N225', type: 'text' },
-  { key: 'hsi', label: '恒生指数', type: 'text' },
-  { key: 'bitcoin', label: '比特币', type: 'text' },
-  { key: 'eurusd', label: '欧元兑美元', type: 'text' },
-  { key: 'usdjpy', label: '美元兑日元', type: 'text' },
-  { key: 'usdcny', label: '美元兑人民币', type: 'text' },
-  { key: 'oil', label: '布伦特原油', type: 'text' },
-  { key: 'gold', label: '伦敦黄金', type: 'text' },
-  { key: 'bond', label: '国债指数', type: 'text' },
-  { key: 'consecutive', label: '昨日连板', type: 'text' },
-  { key: 'a50', label: '富时A50', type: 'text' },
-  { key: 'shIndex', label: '上证指数', type: 'text' },
-  { key: 'sh2dayPower', label: '上证2日强力(亿)', type: 'text' },
-  { key: 'sh13dayPower', label: '上证13日强力(亿)', type: 'text' },
-  { key: 'upCount', label: '大盘涨家', type: 'text' },
-  { key: 'limitUp', label: '涨停', type: 'text' },
-  { key: 'downCount', label: '大盘跌家', type: 'text' },
-  { key: 'limitDown', label: '跌停', type: 'text' },
-  { key: 'volume', label: '大盘成交(亿)', type: 'text' },
+  { key: 'date', label: '日期', type: 'date', required: true },
+  { key: 'nasdaq', label: '纳斯达克', type: 'text', required: true },
+  { key: 'ftse', label: '英国富时', type: 'text', required: true },
+  { key: 'dax', label: '德国DAX', type: 'text', required: true },
+  { key: 'n225', label: '日经N225', type: 'text', required: true },
+  { key: 'hsi', label: '恒生指数', type: 'text', required: true },
+  { key: 'bitcoin', label: '比特币', type: 'text', required: true },
+  { key: 'eurusd', label: '欧元兑美元', type: 'text', required: true },
+  { key: 'usdjpy', label: '美元兑日元', type: 'text', required: true },
+  { key: 'usdcny', label: '美元兑人民币', type: 'text', required: true },
+  { key: 'oil', label: '布伦特原油', type: 'text', required: true },
+  { key: 'gold', label: '伦敦黄金', type: 'text', required: true },
+  { key: 'bond', label: '国债指数', type: 'text', required: true },
+  { key: 'consecutive', label: '昨日连板', type: 'text', required: true },
+  { key: 'a50', label: '富时A50', type: 'text', required: true },
+  { key: 'shIndex', label: '上证指数', type: 'text', required: true },
+  { key: 'sh2dayPower', label: '上证2日强力(亿)', type: 'text', required: true },
+  { key: 'sh13dayPower', label: '上证13日强力(亿)', type: 'text', required: true },
+  { key: 'upCount', label: '大盘涨家', type: 'text', required: true },
+  { key: 'limitUp', label: '涨停', type: 'text', required: true },
+  { key: 'downCount', label: '大盘跌家', type: 'text', required: true },
+  { key: 'limitDown', label: '跌停', type: 'text', required: true },
+  { key: 'volume', label: '大盘成交(亿)', type: 'text', required: true },
   { 
     key: 'sentiment', 
     label: '大盘情绪', 
     type: 'select',
+    required: true,
     options: [
       { value: '冰点', label: '冰点' },
       { value: '过冷', label: '过冷' },
@@ -59,6 +60,7 @@ const FIELDS = [
     key: 'prediction', 
     label: '预测当日', 
     type: 'select',
+    required: true,
     options: [
       { value: '看涨', label: '看涨' },
       { value: '看跌', label: '看跌' }
@@ -68,6 +70,7 @@ const FIELDS = [
     key: 'tradeStatus', 
     label: '交易状态', 
     type: 'select',
+    required: true,
     options: [
       { value: '积极地', label: '积极地' },
       { value: '保守地', label: '保守地' },
@@ -117,8 +120,8 @@ const DailyWork = () => {
 
     const errors = {}
     FIELDS.forEach(field => {
-      if (!formData[field.key] || formData[field.key].trim() === '') {
-        errors[field.key] = true
+      if (field.required && (!formData[field.key] || formData[field.key].trim() === '')) {
+        errors[field.key] = '不能为空'
       }
     })
 

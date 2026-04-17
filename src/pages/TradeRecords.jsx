@@ -32,7 +32,7 @@ const formatDate = (date) => {
 
 // 格式化金额，整数取整，有小数点保留小数点后2位四舍五入，使用千位分隔符
 const formatAmount = (amount) => {
-  if (!amount || amount === null || amount === undefined) return '-'
+  if (amount === null || amount === undefined) return '-'
   const num = parseFloat(amount)
   if (isNaN(num)) return '-'
   const rounded = Math.round(num * 100) / 100
@@ -43,7 +43,7 @@ const formatAmount = (amount) => {
 
 // 格式化价格，整数显示整数，小数正常显示小数
 const formatPrice = (price) => {
-  if (!price || price === null || price === undefined) return '-'
+  if (price === null || price === undefined) return '-'
   const num = parseFloat(price)
   if (isNaN(num)) return '-'
   const rounded = Math.round(num * 100) / 100
@@ -129,8 +129,8 @@ const TradeRecords = () => {
 
   // 筛选交易记录
   const filteredRecords = (() => {
-    // 先不立即过滤删除标记，让合并算法处理关联关系
-    let result = [...tradeRecords]
+    // 先过滤删除标记
+    let result = tradeRecords.filter(r => !r.deleted)
 
     // 盈亏筛选
     switch (selectedFilter) {
@@ -406,8 +406,6 @@ const TradeRecords = () => {
 
   const handleShowBuyDetail = (record) => {
     setDetailRecord(record)
-    // 买入成交价格取交易结案弹窗的值(record.buyPrice)
-    const buyPriceValue = record.buyPrice ? formatPrice(record.buyPrice) : ''
     // 理想买入价：从股票交易模块获取同一交易编号的买入类型订单
     const buyOrders = orders.filter(o => o.tradeNumber === record.tradeNumber && o.type === 'buy')
     let buyOrderPriceValue = ''       // 显示用的理想买入价（四舍五入）
@@ -434,13 +432,16 @@ const TradeRecords = () => {
         buyOrderPriceValue = rounded
       }
     }
+    // 买入成交价格取交易结案弹窗的值(record.buyPrice)，如果未填写则默认使用理想买入价
+    const buyPriceValue = record.buyPrice ? formatPrice(record.buyPrice) : (buyOrderPriceValue ? formatPrice(buyOrderPriceValue) : '')
     // 计算买入滑点：使用精确的理想买入价计算，避免四舍五入误差
     // 成交价格 > 订单价格 = 亏钱（负数），成交价格 < 订单价格 = 赚钱（正数）
     let buySlippage = null
     if (buyOrderPriceExact > 0 &&
-        record.buyPrice !== null && record.buyPrice !== undefined &&
+        (record.buyPrice !== null && record.buyPrice !== undefined || buyOrderPriceValue) &&
         buyOrdersTotalQuantity > 0) {
-      const priceDiff = buyOrderPriceExact - parseFloat(record.buyPrice)
+      const actualBuyPrice = record.buyPrice ? parseFloat(record.buyPrice) : parseFloat(buyOrderPriceValue)
+      const priceDiff = buyOrderPriceExact - actualBuyPrice
       buySlippage = priceDiff * buyOrdersTotalQuantity
     }
     // 获取买入策略名称：从股票交易列表的策略名称取值
@@ -477,10 +478,20 @@ const TradeRecords = () => {
     }
     
     console.log('   - 最终策略名称:', buyStrategyValue)
-    // 买入金额 = 实际买入价 × 股票交易列表买入数量
-    const buyAmountValue = record.buyPrice && buyOrdersTotalQuantity > 0
-      ? formatAmount(parseFloat(record.buyPrice) * buyOrdersTotalQuantity)
+    // 买入金额 = 股票交易列表买入总金额（与交易记录列表一致的取值逻辑）
+    const buyAmountValue = buyOrdersTotalAmount > 0
+      ? formatAmount(buyOrdersTotalAmount)
       : ''
+
+    // 买入实际时间 = 股票交易列表-买入类型-交易时间
+    let buyTimeValue = ''
+    if (buyOrders.length > 0) {
+      // 从股票交易列表的买入订单中获取交易时间
+      const buyOrder = buyOrders[0]
+      if (buyOrder.created_at || buyOrder.createdAt) {
+        buyTimeValue = formatDate(buyOrder.created_at || buyOrder.createdAt)
+      }
+    }
 
     const formData = {
       high: record.buyChannel?.high ? formatAmount(record.buyChannel.high) : '',
@@ -493,7 +504,7 @@ const TradeRecords = () => {
       tradeCommission: formatFee(record.tradeCommission),
       otherFees: formatFee(record.otherFees),
       buyStrategy: buyStrategyValue,
-      buyTime: formatDate(record.buyTime)
+      buyTime: buyTimeValue
     }
     setBuyDetailFormData(formData)
     setBuyDetailFormErrors({})
@@ -509,10 +520,62 @@ const TradeRecords = () => {
     const sellOrders = orders.filter(o => o.tradeNumber === record.tradeNumber && o.type === 'sell')
     console.log('sellOrders:', sellOrders);
     
+    // 调试：打印所有订单，确认是否有卖出订单
+    console.log('🔍 [Debug Orders] 所有订单:');
+    orders.forEach(order => {
+      if (order.tradeNumber === record.tradeNumber) {
+        console.log('   - 订单:', { id: order.id, type: order.type, tradeNumber: order.tradeNumber, price: order.price, quantity: order.quantity });
+      }
+    });
+    
     let sellOrderPriceValue = ''       // 显示用的理想卖出价（四舍五入）
     let sellOrderPriceExact = 0        // 计算用的精确理想卖出价
     let sellOrdersTotalQuantity = 0    // 股票交易列表的卖出总数量
     let sellOrdersTotalAmount = 0      // 股票交易列表的卖出总金额
+    
+    // 优先使用record.sellOrderPrice（从数据库或importTradeRecords计算）
+    if (record.sellOrderPrice !== undefined && record.sellOrderPrice !== null) {
+      sellOrderPriceExact = parseFloat(record.sellOrderPrice) || 0
+      sellOrderPriceValue = sellOrderPriceExact.toFixed(2)
+      console.log('🔍 [Debug Sell Price] 使用record.sellOrderPrice:', record.sellOrderPrice);
+    } else {
+      // 从订单计算理想卖出价
+      if (sellOrders.length === 1) {
+        // 只有一个卖出订单，直接取交易价格
+        const price = parseFloat(sellOrders[0].price) || 0
+        const quantity = parseFloat(sellOrders[0].quantity) || 0
+        sellOrderPriceValue = price.toFixed(2)
+        sellOrderPriceExact = price
+        sellOrdersTotalQuantity = quantity
+        sellOrdersTotalAmount = price * quantity
+      } else if (sellOrders.length > 1) {
+        // 多个卖出订单，计算平均价格：Σ交易金额/交易数量
+        // 交易金额 = 交易价格 * 交易数量
+        sellOrders.forEach(o => {
+          const price = parseFloat(o.price) || 0
+          const quantity = parseFloat(o.quantity) || 0
+          sellOrdersTotalAmount += price * quantity  // 累加交易金额
+          sellOrdersTotalQuantity += quantity         // 累加交易数量
+        })
+        
+        // 计算平均价格
+        if (sellOrdersTotalQuantity > 0) {
+          sellOrderPriceExact = sellOrdersTotalAmount / sellOrdersTotalQuantity;
+          sellOrderPriceValue = sellOrderPriceExact.toFixed(2);
+        }
+      }
+      console.log('🔍 [Debug Sell Price] 从订单计算理想卖出价:', sellOrderPriceValue);
+    }
+    
+    // 计算卖出总数量和总金额
+    if (sellOrders.length > 0) {
+      sellOrders.forEach(o => {
+        const quantity = parseFloat(o.quantity) || 0
+        const price = parseFloat(o.price) || 0
+        sellOrdersTotalQuantity += quantity
+        sellOrdersTotalAmount += price * quantity
+      })
+    }
     
     // 获取卖出策略：参考买入详情弹窗的逻辑
     let sellStrategyValue = ''
@@ -548,37 +611,20 @@ const TradeRecords = () => {
       sellStrategyValue = sellOrders.length > 0 ? '未设置策略' : '无卖出订单'
     }
     
-    if (sellOrders.length === 1) {
-      // 只有一个卖出订单，直接取交易价格
-      sellOrderPriceValue = sellOrders[0].price ?? ''
-      sellOrderPriceExact = parseFloat(sellOrders[0].price) || 0
-      sellOrdersTotalQuantity = parseFloat(sellOrders[0].quantity) || 0
-      sellOrdersTotalAmount = (parseFloat(sellOrders[0].price) || 0) * (parseFloat(sellOrders[0].quantity) || 0)
-    } else if (sellOrders.length > 1) {
-      // 多个卖出订单，计算平均价格：Σ交易金额/交易数量
-      // 交易金额 = 交易价格 * 交易数量
-      sellOrders.forEach(o => {
-        const price = parseFloat(o.price) || 0
-        const quantity = parseFloat(o.quantity) || 0
-        sellOrdersTotalAmount += price * quantity  // 累加交易金额
-        sellOrdersTotalQuantity += quantity         // 累加交易数量
-      })
-    }
-    
-    // 计算平均价格
-    if (sellOrdersTotalQuantity > 0) {
-      sellOrderPriceExact = sellOrdersTotalAmount / sellOrdersTotalQuantity;
-      sellOrderPriceValue = sellOrderPriceExact.toFixed(2);
-    }
-    
     // 如果卖出策略为空，设置默认值
     if (!sellStrategyValue) {
       sellStrategyValue = sellOrders.length > 0 ? '未设置策略' : '无卖出订单';
     }
     
+    // 调试日志
+    console.log('🔍 [Debug Sell Price] 卖出价格信息:');
+    console.log('   - record.sellPrice:', record.sellPrice);
+    console.log('   - sellOrderPriceValue:', sellOrderPriceValue);
+    console.log('   - sellOrders.length:', sellOrders.length);
+    
     // 计算滑点：(实际卖出价 - 理想卖出价) × 卖出数量；整数取整，有小数点取小数点2位四舍五入
     let sellSlippageValue = '';
-    const actualSellPrice = record.sellPrice ? parseFloat(record.sellPrice) : null;  // 实际卖出价
+    const actualSellPrice = record.sellPrice ? parseFloat(record.sellPrice) : (parseFloat(sellOrderPriceValue) || null);  // 实际卖出价，未填写时使用理想卖出价
     const idealSellPrice = parseFloat(sellOrderPriceValue) || null;  // 理想卖出价
     const sellQuantity = sellOrdersTotalQuantity;
     
@@ -599,9 +645,13 @@ const TradeRecords = () => {
     // 检查记录中是否有卖出时间数据，使用格式化为年-月-日 时:分:秒
     const sellTimeValue = record.sellTime ? formatDate(record.sellTime) : (sellOrders.length > 0 ? '未设置时间' : '无卖出订单');
     
+    // 计算实际卖出价默认值
+    const defaultSellPrice = record.sellPrice ? formatPrice(record.sellPrice) : (sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : (sellOrders.length > 0 ? '' : '无卖出订单'));
+    console.log('   - 计算出的实际卖出价默认值:', defaultSellPrice);
+    
     // 设置表单数据，使用格式化函数确保整数不显示.00
     const formData = {
-      sellPrice: record.sellPrice ? formatPrice(record.sellPrice) : (sellOrders.length > 0 ? '' : '无卖出订单'),  // 实际卖出价从记录获取
+      sellPrice: defaultSellPrice,  // 实际卖出价从记录获取，未填写时使用理想卖出价
       sellQuantity: sellOrdersTotalQuantity > 0 ? formatAmount(sellOrdersTotalQuantity) : (sellOrders.length > 0 ? '-' : '无卖出订单'),  // 数量使用千位分隔符
       sellAmount: sellOrdersTotalAmount > 0 ? formatAmount(sellOrdersTotalAmount) : (sellOrders.length > 0 ? '0' : '无卖出订单'),
       sellOrderPrice: sellOrderPriceValue ? formatPrice(sellOrderPriceValue) : (sellOrders.length > 0 ? '未设置' : '无卖出订单'),  // 使用计算出的理想卖出价
@@ -1331,9 +1381,18 @@ const TradeRecords = () => {
                 onSelectAll={handleSelectAll}
                 onSelectOne={handleSelectOne}
                 renderCell={(field, item) => {
+                  if (field.key === 'tradeNumber') {
+                    return <span>{item.tradeNumber || '-'}</span>
+                  }
+                  if (field.key === 'symbol') {
+                    return <span>{item.symbol || '-'}</span>
+                  }
+                  if (field.key === 'name') {
+                    return <span>{item.name || '-'}</span>
+                  }
                   if (field.key === 'buyAmount') {
                     const amount = item.buyAmount
-                    if (!amount || amount === null || amount === undefined) return <span>-</span>
+                    if (amount === null || amount === undefined) return <span>-</span>
                     return (
                       <button
                         onClick={() => handleShowBuyDetail(item)}

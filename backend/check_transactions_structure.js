@@ -12,23 +12,10 @@ const pool = new Pool({
 async function main() {
   const client = await pool.connect();
   try {
-    console.log('=== 检查 trade_orders 表的触发器 ===');
-    const result = await client.query(`
-      SELECT trigger_name, event_object_table, action_timing, action_statement
-      FROM information_schema.triggers
-      WHERE event_object_table IN ('trade_orders', 'transactions')
-    `);
-    console.table(result.rows);
+    console.log('=== 检查交易记录表结构 ===\n');
 
-    console.log('\n=== 检查触发器函数 ===');
-    const funcResult = await client.query(`
-      SELECT routine_name, routine_type
-      FROM information_schema.routines
-      WHERE routine_name LIKE '%sync%' OR routine_name LIKE '%transaction%'
-    `);
-    console.table(funcResult.rows);
-
-    console.log('\n=== 检查 transactions 表结构 ===');
+    // 1. 检查表结构
+    console.log('1. 表结构:');
     const tableResult = await client.query(`
       SELECT column_name, data_type, is_nullable
       FROM information_schema.columns
@@ -36,6 +23,19 @@ async function main() {
       ORDER BY ordinal_position
     `);
     console.table(tableResult.rows);
+
+    // 2. 查找没有交易编号的记录
+    console.log('\n2. 查找没有交易编号的记录:');
+    const result = await client.query(`
+      SELECT id, transaction_type, symbol, name, amount, trade_number, created_at, deleted
+      FROM transactions
+      WHERE (trade_number IS NULL OR trade_number = '')
+      AND (transaction_type = '买入' OR transaction_type = '卖出')
+      ORDER BY created_at DESC
+    `);
+    
+    console.log(`找到 ${result.rows.length} 条没有交易编号的股票交易记录:`);
+    console.table(result.rows);
 
   } catch (error) {
     console.error('错误:', error.message);

@@ -122,7 +122,7 @@ const pool = new Pool({
                           sell_price = avg_price,
                           sell_quantity = total_quantity,
                           sell_time = latest_time,
-                          sell_order_ids = order_ids,
+                          sell_order_id = NEW.id,
                           sell_psychological_score = NEW.psychological_score,
                           sell_strategy_score = NEW.strategy_score,
                           sell_grade = CASE 
@@ -147,7 +147,7 @@ const pool = new Pool({
                           sell_price,
                           sell_quantity,
                           sell_time,
-                          sell_order_ids,
+                          sell_order_id,
                           sell_psychological_score,
                           sell_strategy_score,
                           sell_grade
@@ -161,7 +161,7 @@ const pool = new Pool({
                               NEW.order_time::TIMESTAMPTZ,
                               (NEW.order_date::DATE)::TIMESTAMPTZ
                           ),
-                          NEW.id::TEXT,
+                          NEW.id,
                           NEW.psychological_score,
                           NEW.strategy_score,
                           CASE 

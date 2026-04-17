@@ -11,7 +11,8 @@ const DataTable = ({
   renderCell,
   showCheckbox = true // 添加showCheckbox参数，默认为true
 }) => {
-  const handleSelectAll = (checked) => {
+  const handleSelectAll = (e) => {
+    const checked = e.target.checked
     if (checked && data) {
       onSelectAll(data.map(d => d.id))
     } else {
@@ -27,8 +28,8 @@ const DataTable = ({
             <th className="px-0 py-2 text-left text-sm font-normal text-gray-700 whitespace-nowrap w-10 bg-[#F4F5F7]" style={{ backgroundColor: '#F4F5F7', margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px' }}>
               <input
                 type="checkbox"
-                checked={data.length > 0 && selectedIds.length === data.length}
-                onChange={(e) => onSelectAll(e.target.checked)}
+                checked={data.length > 0 && Array.isArray(selectedIds) && selectedIds.length === data.length}
+                onChange={handleSelectAll}
                 className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                 style={{ position: 'relative', zIndex: '1' }}
               />
@@ -67,7 +68,7 @@ const DataTable = ({
                 <td className="px-0 py-2 text-left text-sm text-gray-700 whitespace-nowrap w-10 bg-white" style={{ margin: '0', padding: '0', paddingLeft: '10px', paddingRight: '10px', backgroundColor: 'white' }}>
                   <input
                     type="checkbox"
-                    checked={selectedIds.includes(item.id)}
+                    checked={Array.isArray(selectedIds) && selectedIds.includes(item.id)}
                     onChange={(e) => onSelectOne(item.id, e.target.checked)}
                     className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                     style={{ position: 'relative', zIndex: '1' }}
@@ -83,7 +84,7 @@ const DataTable = ({
                     backgroundColor: 'white'
                   }}
                 >
-                  {renderCell ? renderCell(item, field) : item[field.key]}
+                  {renderCell ? renderCell(field, item) : item[field.key]}
                 </td>
               ))}
             </motion.tr>

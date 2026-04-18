@@ -1411,40 +1411,64 @@ const useStore = create(
             apiCall(`/api/trade_records`, 'GET')
           ])
             .then(([transactionsResult, tradeRecordsResult]) => {
-              // 处理账单明细
+              // 处理账单明细：只在删除最后一个同交易编号的订单时才删除账单明细
               if (transactionsResult.success && transactionsResult.data) {
-                const matchedTransactions = transactionsResult.data.filter(t => {
-                  if (tradeNumber && (t.trade_number === tradeNumber || t.tradeNumber === tradeNumber)) {
-                    return true
+                // 检查是否还有其他同交易编号的未删除订单
+                const remainingOrders = state.orders.filter(o => 
+                  o.tradeNumber === tradeNumber && 
+                  o.id !== id && 
+                  !o.deleted
+                )
+                
+                // 如果没有其他同交易编号的订单，才删除账单明细
+                if (remainingOrders.length === 0) {
+                  const matchedTransactions = transactionsResult.data.filter(t => {
+                    if (tradeNumber && (t.trade_number === tradeNumber || t.tradeNumber === tradeNumber)) {
+                      return true
+                    }
+                    if (!tradeNumber && t.type && (t.type === '买入' || t.type === '卖出')) {
+                      return t.symbol === order.symbol && 
+                             t.name === order.name && 
+                             Math.abs(parseFloat(t.amount || 0)) === Math.abs(parseFloat(order.price || 0) * parseFloat(order.quantity || 0))
+                    }
+                    return false
+                  })
+                  if (matchedTransactions.length > 0) {
+                    const transactionIds = matchedTransactions.map(t => t.id)
+                    apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
+                      .then(() => console.log(`[Store] 删除对应账单明细成功: ${transactionIds.length}条`))
+                      .catch(err => console.error('[Store] 删除账单明细失败:', err))
                   }
-                  if (!tradeNumber && t.type && (t.type === '买入' || t.type === '卖出')) {
-                    return t.symbol === order.symbol && 
-                           t.name === order.name && 
-                           Math.abs(parseFloat(t.amount || 0)) === Math.abs(parseFloat(order.price || 0) * parseFloat(order.quantity || 0))
-                  }
-                  return false
-                })
-                if (matchedTransactions.length > 0) {
-                  const transactionIds = matchedTransactions.map(t => t.id)
-                  apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
-                    .then(() => console.log(`[Store] 删除对应账单明细成功: ${transactionIds.length}条`))
-                    .catch(err => console.error('[Store] 删除账单明细失败:', err))
+                } else {
+                  console.log(`[Store] 还有其他同交易编号的订单，保留账单明细: ${remainingOrders.length}条`)
                 }
               }
               
-              // 处理交易记录
+              // 处理交易记录：只在删除最后一个同交易编号的订单时才删除交易记录
               if (tradeRecordsResult.success && tradeRecordsResult.data) {
-                const matchedTradeRecords = tradeRecordsResult.data.filter(r => {
-                  if (tradeNumber && (r.trade_number === tradeNumber || r.tradeNumber === tradeNumber)) {
-                    return true
+                // 检查是否还有其他同交易编号的未删除订单
+                const remainingOrders = state.orders.filter(o => 
+                  o.tradeNumber === tradeNumber && 
+                  o.id !== id && 
+                  !o.deleted
+                )
+                
+                // 如果没有其他同交易编号的订单，才删除交易记录
+                if (remainingOrders.length === 0) {
+                  const matchedTradeRecords = tradeRecordsResult.data.filter(r => {
+                    if (tradeNumber && (r.trade_number === tradeNumber || r.tradeNumber === tradeNumber)) {
+                      return true
+                    }
+                    return false
+                  })
+                  if (matchedTradeRecords.length > 0) {
+                    const tradeRecordIds = matchedTradeRecords.map(r => r.id)
+                    apiCall('/api/trade_records/bulk/delete', 'POST', { ids: tradeRecordIds })
+                      .then(() => console.log(`[Store] 删除对应交易记录成功: ${tradeRecordIds.length}条`))
+                      .catch(err => console.error('[Store] 删除交易记录失败:', err))
                   }
-                  return false
-                })
-                if (matchedTradeRecords.length > 0) {
-                  const tradeRecordIds = matchedTradeRecords.map(r => r.id)
-                  apiCall('/api/trade_records/bulk/delete', 'POST', { ids: tradeRecordIds })
-                    .then(() => console.log(`[Store] 删除对应交易记录成功: ${tradeRecordIds.length}条`))
-                    .catch(err => console.error('[Store] 删除交易记录失败:', err))
+                } else {
+                  console.log(`[Store] 还有其他同交易编号的订单，保留交易记录: ${remainingOrders.length}条`)
                 }
               }
             })
@@ -1473,34 +1497,46 @@ const useStore = create(
           // 先通过交易编号删除
           if (tradeNumbers.length > 0) {
             tradeNumbers.forEach(tradeNumber => {
-              Promise.all([
-                apiCall(`/api/transactions?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET'),
-                apiCall(`/api/trade_records?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET')
-              ])
-                .then(([transactionsResult, tradeRecordsResult]) => {
-                  // 处理账单明细
-                  if (transactionsResult.success && transactionsResult.data) {
-                    const matchedTransactions = transactionsResult.data.filter(t => t.trade_number === tradeNumber)
-                    if (matchedTransactions.length > 0) {
-                      const transactionIds = matchedTransactions.map(t => t.id)
-                      apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
-                        .then(() => console.log(`[Store] 删除对应账单明细成功: ${tradeNumber} -> ${transactionIds.length}条`))
-                        .catch(err => console.error('[Store] 删除账单明细失败:', err))
+              // 检查是否还有其他同交易编号的未删除订单
+              const remainingOrders = state.orders.filter(o => 
+                o.tradeNumber === tradeNumber && 
+                !ids.includes(o.id) && 
+                !o.deleted
+              )
+              
+              // 如果没有其他同交易编号的订单，才删除关联记录
+              if (remainingOrders.length === 0) {
+                Promise.all([
+                  apiCall(`/api/transactions?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET'),
+                  apiCall(`/api/trade_records?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET')
+                ])
+                  .then(([transactionsResult, tradeRecordsResult]) => {
+                    // 处理账单明细
+                    if (transactionsResult.success && transactionsResult.data) {
+                      const matchedTransactions = transactionsResult.data.filter(t => t.trade_number === tradeNumber)
+                      if (matchedTransactions.length > 0) {
+                        const transactionIds = matchedTransactions.map(t => t.id)
+                        apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
+                          .then(() => console.log(`[Store] 删除对应账单明细成功: ${tradeNumber} -> ${transactionIds.length}条`))
+                          .catch(err => console.error('[Store] 删除账单明细失败:', err))
+                      }
                     }
-                  }
-                  
-                  // 处理交易记录
-                  if (tradeRecordsResult.success && tradeRecordsResult.data) {
-                    const matchedTradeRecords = tradeRecordsResult.data.filter(r => r.trade_number === tradeNumber)
-                    if (matchedTradeRecords.length > 0) {
-                      const tradeRecordIds = matchedTradeRecords.map(r => r.id)
-                      apiCall('/api/trade_records/bulk/delete', 'POST', { ids: tradeRecordIds })
-                        .then(() => console.log(`[Store] 删除对应交易记录成功: ${tradeNumber} -> ${tradeRecordIds.length}条`))
-                        .catch(err => console.error('[Store] 删除交易记录失败:', err))
+                    
+                    // 处理交易记录
+                    if (tradeRecordsResult.success && tradeRecordsResult.data) {
+                      const matchedTradeRecords = tradeRecordsResult.data.filter(r => r.trade_number === tradeNumber)
+                      if (matchedTradeRecords.length > 0) {
+                        const tradeRecordIds = matchedTradeRecords.map(r => r.id)
+                        apiCall('/api/trade_records/bulk/delete', 'POST', { ids: tradeRecordIds })
+                          .then(() => console.log(`[Store] 删除对应交易记录成功: ${tradeNumber} -> ${tradeRecordIds.length}条`))
+                          .catch(err => console.error('[Store] 删除交易记录失败:', err))
+                      }
                     }
-                  }
-                })
-                .catch(err => console.error('[Store] 查找关联记录失败:', err))
+                  })
+                  .catch(err => console.error('[Store] 查找关联记录失败:', err))
+              } else {
+                console.log(`[Store] 还有其他同交易编号的订单，保留关联记录: ${tradeNumber} -> ${remainingOrders.length}条`)
+              }
             })
           }
           
@@ -2115,7 +2151,8 @@ const useStore = create(
           return {
             ...r,
             // 确保驼峰格式字段存在（兼容数据库的下划线格式和前端驼峰格式）
-            buyQuantity: parseFloat(r.buy_quantity || r.buyQuantity) || 0,
+            // 买入数量：从订单计算，确保与股票交易列表一致
+            buyQuantity: buyOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0),
             // 买入成交价格buy_price：人工手动填写（成交价），从数据库下划线格式读取
             buyPrice: parseFloat(r.buy_price || r.buyPrice) || 0,
             // 买入订单价格buy_order_price：自动从数据库获取，为空时回退到buy_price
@@ -2125,7 +2162,8 @@ const useStore = create(
             fillPrice: r.buy_order_price ? parseFloat(r.buy_order_price) : (r.fillPrice || parseFloat(r.buy_price) || null),
             buyTime: r.buy_time || r.buyTime || null,
             buyOrderId: r.buy_order_id ? String(r.buy_order_id) : (r.buyOrderId || null),
-            sellQuantity: r.sell_quantity ? parseFloat(r.sell_quantity) : (r.sellQuantity || 0),
+            // 卖出数量：从订单计算，确保与股票交易列表一致
+            sellQuantity: sellOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0),
             sellPrice: r.sell_price ? parseFloat(r.sell_price) : (r.sellPrice || null),
             // 卖出订单价格sell_order_price：自动从数据库获取，为空时从订单计算
             sellOrderPrice: r.sell_order_price ? parseFloat(r.sell_order_price) : (r.sellOrderPrice !== undefined ? r.sellOrderPrice : (sellOrderPriceFromOrders !== null ? sellOrderPriceFromOrders : null)),
@@ -2504,10 +2542,8 @@ const useStore = create(
         }
 
         // 计算盈亏
-        const buyAmount = buyOrder.price * buyOrder.quantity
-        const sellAmount = sellOrder.price * sellOrder.quantity
-        const profit = sellAmount - buyAmount
-        const profitPercent = ((profit / buyAmount) * 100).toFixed(2)
+        const profit = (sellOrder.price - buyOrder.price) * sellOrder.quantity
+        const profitPercent = (((sellOrder.price - buyOrder.price) / buyOrder.price) * 100).toFixed(2)
 
         // 计算整体评分
         let overallScore = 0
@@ -2749,23 +2785,31 @@ const useStore = create(
           
           console.log('✅ [Debug getTotalAssets] 持仓中的交易记录数量:', holdingRecords.length)
           
-          // 精确计算持仓市值 = Σ买入金额 - Σ卖出金额
+          // 精确计算持仓市值 = Σ((买入数量 - 卖出数量) × 买入均价)
+          // 买入均价 = 买入金额 / 买入数量
           if (holdingRecords.length > 0) {
-            buyAmountSum = holdingRecords.reduce((sum, r) => {
-              return sum + (parseFloat(r.buyAmount) || 0)
+            holdingMarketValue = holdingRecords.reduce((sum, r) => {
+              const buyQty = parseFloat(r.buyQuantity) || 0
+              const sellQty = parseFloat(r.sellQuantity) || 0
+              const buyAmount = parseFloat(r.buyAmount) || 0
+              
+              // 剩余持仓数量
+              const residualQty = buyQty - sellQty
+              
+              // 买入均价
+              const avgBuyPrice = buyQty > 0 ? buyAmount / buyQty : 0
+              
+              // 持仓市值 = 剩余持仓数量 × 买入均价
+              const recordHoldingValue = residualQty * avgBuyPrice
+              
+              console.log(`   记录持仓市值计算: 交易编号=${r.tradeNumber}, 买入数量=${buyQty}, 卖出数量=${sellQty}, 剩余=${residualQty}, 买入均价=${avgBuyPrice.toFixed(2)}, 单条市值=${recordHoldingValue.toFixed(2)}`)
+              
+              return sum + recordHoldingValue
             }, 0)
-            
-            sellAmountSum = holdingRecords.reduce((sum, r) => {
-              return sum + (parseFloat(r.sellAmount) || 0)
-            }, 0)
-            
-            holdingMarketValue = buyAmountSum - sellAmountSum
           }
           
           console.log('🧮 [Debug getTotalAssets] 精确计算明细:')
-          console.log('   - Σ买入金额:', buyAmountSum)
-          console.log('   - Σ卖出金额:', sellAmountSum)
-          console.log('   - 持仓市值 (Σ买入 - Σ卖出):', holdingMarketValue)
+          console.log('   - 持仓市值 (Σ(剩余数量×买入均价)):', holdingMarketValue)
           
         } catch (error) {
           console.log('❌ [Debug getTotalAssets] 持仓市值计算出错:', error)
@@ -2853,86 +2897,128 @@ const useStore = create(
         return totalAssets
       },
 
-      // 获取持仓占用金额 = Σ(实际买入价-止损价)×买入数量 (风险额度计算)
+      // 获取持仓占用金额 = Σ((买入价-止损价)×(买入数量-卖出数量)) (风险额度计算)
+      // 持仓风险只计算剩余持仓的风险，不计入已卖出的部分
+      // 如果止损价无效（为0或大于等于买入价），该订单的风险额度为0
       getHoldingOccupancy: () => {
         const state = useStore.getState()
         
-        // 计算持仓占用的风险额度：Σ(实际买入价-止损价)×买入数量
+        // 计算持仓占用的风险额度：持仓中交易记录的风险额度计算
         let holdingOccupancy = 0
 
         try {
           const allTradeRecords = (state.tradeRecords || []).filter(r => !r.deleted)
           const allOrders = (state.orders || []).filter(o => !o.deleted)
 
-          // 筛选持仓中的交易记录：按交易编号去重，然后判断持仓状态
-          const uniqueRecords = []
-          const tradeNumberSet = new Set()
-
+          // 筛选持仓中的交易记录：只取交易状态为"持仓中"的记录，并按交易编号去重
+          const holdingRecords = []
+          const processedTradeNumbers = new Set()
+          
           allTradeRecords.forEach(r => {
             const tradeNumber = r.tradeNumber || r.trade_number
-            if (tradeNumber && !tradeNumberSet.has(tradeNumber)) {
-              tradeNumberSet.add(tradeNumber)
-              uniqueRecords.push(r)
+            // 跳过已处理过的交易编号
+            if (processedTradeNumbers.has(tradeNumber)) {
+              return
             }
-          })
-
-          // 筛选持仓中的交易记录
-          const holdingRecords = uniqueRecords.filter(r => {
+            
             // 优先使用交易状态字段（中文）
             const tradeStatus = (r.status || r.tradeStatus || '').toString()
-            const sellQty = parseFloat(r.sellQuantity) || 0
-            const buyQty = parseFloat(r.buyQuantity) || 0
-
-            // 判断是否为持仓中的交易
             let isHolding = false
+            
             if (tradeStatus.includes('持仓中') || tradeStatus === '持仓中') {
               isHolding = true
-            } else if (sellQty < buyQty) {
-              isHolding = true
+            } else {
+              // 如果交易状态字段不存在或为空，根据买卖数量判断
+              const sellQty = r.sellQuantity || 0
+              const buyQty = r.buyQuantity || 0
+              if (buyQty > 0 && sellQty < buyQty) {
+                isHolding = true
+              }
             }
-
-            // 检查：对于有买入且没有卖出的股票交易，应该计入持仓占用
-            if (!isHolding && (parseFloat(r.sellAmount) || 0) === 0 && (parseFloat(r.buyAmount) || 0) > 0 && r.symbol) {
-              isHolding = true
+            
+            if (isHolding) {
+              processedTradeNumbers.add(tradeNumber)
+              holdingRecords.push(r)
             }
-
-            return isHolding
           })
+          
+          console.log('   - 筛选后的持仓记录:', holdingRecords.length)
+          if (holdingRecords.length === 0) {
+            console.log('   - 所有交易记录:')
+            allTradeRecords.forEach(r => {
+              console.log('      ', { tradeNumber: r.tradeNumber, buyQuantity: r.buyQuantity, sellQuantity: r.sellQuantity, status: r.status || r.tradeStatus })
+            })
+          }
 
-          // 计算持仓占用的风险额度 = Σ(实际买入价-止损价)×买入数量
+          // 计算持仓占用的风险额度
+          console.log('🔍 [getHoldingOccupancy] 开始计算持仓风险')
+          console.log('   - 持仓记录数量:', holdingRecords.length)
+          
           if (holdingRecords.length > 0) {
             holdingOccupancy = holdingRecords.reduce((sum, r) => {
               const tradeNumber = r.tradeNumber || r.trade_number
+              console.log('   - 处理交易记录:', { tradeNumber, buyQuantity: r.buyQuantity, sellQuantity: r.sellQuantity })
               
               // 根据交易编号查找对应的买入订单
               const buyOrders = allOrders.filter(o => 
                 o.tradeNumber === tradeNumber && 
                 (o.type === 'buy' || o.type === '买入')
               )
+              console.log('   - 找到买入订单数量:', buyOrders.length)
               
-              // 如果没有找到对应的订单，使用默认计算：买入金额
+              // 根据交易编号查找对应的卖出订单
+              const sellOrders = allOrders.filter(o => 
+                o.tradeNumber === tradeNumber && 
+                (o.type === 'sell' || o.type === '卖出')
+              )
+              console.log('   - 找到卖出订单数量:', sellOrders.length)
+              
+              // 如果没有找到对应的买入订单，返回0
               if (buyOrders.length === 0) {
-                const buyAmount = parseFloat(r.buyAmount) || 0
-                return sum + buyAmount
+                console.log('   - 没有找到买入订单，返回0')
+                return sum
               }
               
-              // 计算每个买入订单的风险额度
+              // 计算每个买入订单的风险额度：(买入价-止损价)×(买入数量-卖出数量)
+              // 持仓风险只计算剩余持仓的风险，不计入已卖出的部分
               let riskAmount = 0
+              let hasValidStopLoss = false
               buyOrders.forEach(buyOrder => {
-                // 优先使用交易记录的实际买入价，如果没有则使用订单的买入价
-                const buyPrice = parseFloat(r.buyPrice) || parseFloat(buyOrder.price) || 0
+                const buyPrice = parseFloat(buyOrder.price) || 0
                 const stopLossPrice = parseFloat(buyOrder.stopLossPrice) || 0
-                const quantity = parseFloat(buyOrder.quantity) || 0
+                const buyQty = parseFloat(buyOrder.quantity) || 0
+                console.log('   - 买入订单详情:', { buyPrice, stopLossPrice, buyQty })
                 
-                // 如果止损价为0或买入价，使用默认计算
-                if (stopLossPrice <= 0 || stopLossPrice >= buyPrice) {
-                  riskAmount += buyPrice * quantity
+                // 获取该订单对应的卖出数量
+                const relatedSellQty = sellOrders.reduce((sellSum, sellOrder) => {
+                  return sellSum + (parseFloat(sellOrder.quantity) || 0)
+                }, 0)
+                console.log('   - 相关卖出数量:', relatedSellQty)
+                
+                // 剩余持仓数量
+                const remainingQty = buyQty - relatedSellQty
+                console.log('   - 剩余持仓数量:', remainingQty)
+                
+                // 风险额度 = (买入价 - 止损价) × 剩余持仓数量
+                if (stopLossPrice > 0 && stopLossPrice < buyPrice && remainingQty > 0) {
+                  riskAmount += (buyPrice - stopLossPrice) * remainingQty
+                  hasValidStopLoss = true
+                  console.log('   - 计算风险额度:', (buyPrice - stopLossPrice) * remainingQty)
                 } else {
-                  // 风险额度 = (实际买入价 - 止损价) × 买入数量
-                  riskAmount += (buyPrice - stopLossPrice) * quantity
+                  console.log('   - 条件不满足: stopLossPrice > 0 && stopLossPrice < buyPrice && remainingQty > 0')
+                  console.log('      stopLossPrice > 0:', stopLossPrice > 0)
+                  console.log('      stopLossPrice < buyPrice:', stopLossPrice < buyPrice)
+                  console.log('      remainingQty > 0:', remainingQty > 0)
                 }
               })
               
+              // 如果没有有效的止损价设置，风险额度为0
+              if (!hasValidStopLoss) {
+                riskAmount = 0
+                console.log('   - 没有有效的止损价，风险额度设为0')
+              }
+              
+              console.log('   - 本条记录风险额度:', riskAmount)
               return sum + riskAmount
             }, 0)
           }
@@ -2989,3 +3075,4 @@ const useStore = create(
 )
 
 export default useStore
+export { apiCall }

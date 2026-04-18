@@ -31,6 +31,9 @@ if (typeof window !== 'undefined') {
 // 使用相对路径，通过 Vite 代理到后端
 const API_BASE_URL = ''
 
+// 忽略可见性变化的标志（用于防止 HMR 等导致的重复请求）
+let ignoreVisibilityChangeUntil = 0
+
 // 数据同步组件 - 只在首次加载和页面可见时同步
 function DataSync() {
   const syncedRef = useRef(false)
@@ -41,27 +44,38 @@ function DataSync() {
   // 检查后端是否就绪
   const checkBackendReady = async () => {
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
       const response = await fetch(`${API_BASE_URL}/health`, {
         method: 'GET',
-        cache: 'no-store'
+        cache: 'no-store',
+        signal: controller.signal
       })
+      clearTimeout(timeoutId)
       return response.ok
-    } catch {
+    } catch (e) {
+      // ERR_ABORTED 表示请求被取消，不是真正的错误，视为后端未就绪
+      if (e.name === 'AbortError' || (e instanceof TypeError && e.message.includes('ERR_ABORTED'))) {
+        console.log('[DataSync] 健康检查请求被取消，后端可能未就绪')
+        return false
+      }
       return false
     }
   }
 
   const syncData = useCallback(async () => {
-    // 检查是否正在同步中（避免并发请求）
+    // 检查是否正在同步中（避免并发请求）- 尽早设置锁
     if (syncedRef.current) {
       console.log('[DataSync] 正在同步中，跳过本次请求')
       return
     }
+    syncedRef.current = true // 立即设置锁，防止并发请求
 
     // 检查是否距离上次同步太近（避免频繁同步）
     const now = Date.now()
     if (lastSyncTimeRef.current && now - lastSyncTimeRef.current < 1000) {
       console.log('[DataSync] 距离上次同步时间太短，跳过本次请求')
+      syncedRef.current = false
       return
     }
 
@@ -70,6 +84,14 @@ function DataSync() {
     if (isResetting) {
       console.log('[DataSync] ⚠️ 检测到重置操作，跳过同步以防止旧数据覆盖')
       localStorage.removeItem('is_resetting_transactions') // 清除重置标志
+      syncedRef.current = false
+      return
+    }
+
+    // 忽略可见性变化期间的同步（防止 HMR 触发的重复请求）
+    if (now < ignoreVisibilityChangeUntil) {
+      console.log('[DataSync] 忽略可见性变化期间的同步')
+      syncedRef.current = false
       return
     }
 
@@ -91,7 +113,6 @@ function DataSync() {
     }
 
     isReadyRef.current = true
-    syncedRef.current = true // 标记为正在同步
 
     console.log('[DataSync] 从数据库同步数据...')
 
@@ -102,12 +123,16 @@ function DataSync() {
     const attemptSync = async () => {
       try {
         console.log('[DataSync] 正在请求 /api/sync/all...')
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 10000)
         const response = await fetch(`${API_BASE_URL}/api/sync/all`, {
           cache: 'no-store',
           headers: {
             'Cache-Control': 'no-cache'
-          }
+          },
+          signal: controller.signal
         })
+        clearTimeout(timeoutId)
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`)
@@ -152,6 +177,10 @@ function DataSync() {
           throw new Error(result.error || '同步响应格式错误')
         }
       } catch (error) {
+        if (error.name === 'AbortError' || error.name === 'TypeError') {
+          console.log('[DataSync] 请求已取消或超时')
+          return
+        }
         console.error('[DataSync] 数据同步失败:', error.message || error)
         retryCount++
         if (retryCount < maxRetries) {
@@ -178,7 +207,8 @@ function DataSync() {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         console.log('[DataSync] 页面可见，重新同步...')
-        syncedRef.current = false // 重置同步锁，允许立即同步
+        // 设置忽略标志，防止 HMR 等导致的重复请求
+        ignoreVisibilityChangeUntil = Date.now() + 2000
         syncData()
       }
     }
@@ -188,7 +218,6 @@ function DataSync() {
     // 监听窗口获得焦点时同步
     const handleFocus = () => {
       console.log('[DataSync] 窗口获得焦点，重新同步...')
-      syncedRef.current = false // 重置同步锁，允许立即同步
       syncData()
     }
 

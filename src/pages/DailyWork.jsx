@@ -582,9 +582,9 @@ const DailyWork = () => {
     currentPage * pageSize
   )
 
-  const handleSelectAll = (checked) => {
-    if (checked) {
-      setSelectedIds(paginatedData.map(item => item.id))
+  const handleSelectAll = (ids) => {
+    if (Array.isArray(ids) && ids.length > 0) {
+      setSelectedIds(ids)
     } else {
       setSelectedIds([])
     }
@@ -621,7 +621,7 @@ const DailyWork = () => {
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '0px', paddingRight: '10px', position: 'relative' }}>
         {/* 筛选条件 */}
         <div style={{ flexShrink: 0, marginTop: '10px' }}>
-          <div className="flex gap-4 items-center">
+          <div className="flex items-center" style={{ gap: '10px' }}>
             <div style={{ position: 'relative', width: '240px' }}>
               <DateRangePicker
                 value={filterDateRange}

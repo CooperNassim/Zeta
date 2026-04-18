@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import useStore from '../store/useStore'
+import useStore, { apiCall } from '../store/useStore'
 import { TrendingUp, TrendingDown, Shield, Activity, Target, Wallet, TrendingDown as RankingDown, Edit as EditIcon, AlertCircle } from 'lucide-react'
 import Modal from '../components/Modal'
 import CustomInput from '../components/CustomInput'
@@ -190,7 +190,6 @@ const RiskConfig = () => {
 // 保存风险模型数据到数据库
 const saveRiskModelData = async (startMonthTotal, accountAvailable, singleAvailable) => {
   try {
-    const state = useStore.getState()
     const today = new Date().toISOString().split('T')[0]
     
     // 获取账单明细模块的总资产字段最新值
@@ -198,8 +197,10 @@ const saveRiskModelData = async (startMonthTotal, accountAvailable, singleAvaila
     const currentTotalAssets = getTotalAssets ? getTotalAssets('real') : 0
     
     // 检查是否已有今天的数据记录
-    const existingRecords = await state.apiCall('/api/account_risk_data')
-    const existingRecord = existingRecords.find(r => r.date === today)
+    const existingRecords = await apiCall('/api/account_risk_data')
+    // 确保existingRecords是数组
+    const recordsArray = Array.isArray(existingRecords) ? existingRecords : []
+    const existingRecord = recordsArray.find(r => r.date === today)
     
     // 准备保存到数据库的数据 - 使用账单明细模块的总资产值
     const saveData = {
@@ -213,11 +214,11 @@ const saveRiskModelData = async (startMonthTotal, accountAvailable, singleAvaila
 
     if (existingRecord) {
       // 如果已有记录，更新数据
-      await state.apiCall(`/api/account_risk_data/${existingRecord.id}`, 'PUT', saveData)
+      await apiCall(`/api/account_risk_data/${existingRecord.id}`, 'PUT', saveData)
       console.log('风险模型数据更新成功:', saveData)
     } else {
       // 如果没有记录，创建新数据
-      await state.apiCall('/api/account_risk_data', 'POST', saveData)
+      await apiCall('/api/account_risk_data', 'POST', saveData)
       console.log('风险模型数据创建成功:', saveData)
     }
   } catch (error) {
@@ -450,7 +451,7 @@ const AccountRisk = () => {
   const currentYear = now.getFullYear()
   
   // 计算当月亏损：交易状态为结束且盈亏金额为负数的绝对值总和
-  const monthlyLoss = tradeRecords
+  const monthlyLossFiltered = tradeRecords
     .filter(r => !r.deleted) // 排除已删除的记录
     .filter(r => {
       // 1. 交易状态=结束：卖出数量 ≥ 买入数量
@@ -468,7 +469,17 @@ const AccountRisk = () => {
       
       return isEndStatus && isCurrentMonth && isLoss
     })
-    .reduce((sum, r) => sum + Math.abs(parseFloat(r.profit) || 0), 0)
+  
+  console.log('🔍 [monthlyLoss] 筛选后的亏损记录:', monthlyLossFiltered)
+  console.log('🔍 [monthlyLoss] 亏损记录详情:', monthlyLossFiltered.map(r => ({
+    tradeNumber: r.tradeNumber,
+    buyQuantity: r.buyQuantity,
+    sellQuantity: r.sellQuantity,
+    profit: r.profit,
+    buyDate: r.buyDate || r.buyTime || r.createdAt
+  })))
+  
+  const monthlyLoss = monthlyLossFiltered.reduce((sum, r) => sum + Math.abs(parseFloat(r.profit) || 0), 0)
     
   // 只使用实盘数据（用于计算月初账户总额）
   const currentTransactions = transactions
@@ -511,15 +522,34 @@ const AccountRisk = () => {
   console.log('=========================')
   
   // 计算账户可用额度（月初账户总额 × 账户风险额度百分比 - 已用额度）
-  const accountAvailable = Math.round((startMonthTotal * (riskLimitPercentage / 100)) - usedRiskAmount)
+  const accountAvailable = (startMonthTotal * (riskLimitPercentage / 100)) - usedRiskAmount
   
   // 计算单笔可用额度（月初账户总额 × 单笔风险额度百分比）
-  const singleAvailable = Math.round(startMonthTotal * (accountRiskData.singleRiskPercent || 2) / 100)
+  const singleAvailable = startMonthTotal * (accountRiskData.singleRiskPercent || 2) / 100
+  
+  // 格式化金额：整数取整，有小数点取2位四舍五入，千位分隔符
+  const formatAmount = (amount) => {
+    const num = parseFloat(amount)
+    if (isNaN(num)) return '0'
+    
+    if (Number.isInteger(num)) {
+      return num.toLocaleString('zh-CN')
+    } else {
+      const roundedAmount = Math.round(num * 100) / 100
+      return roundedAmount.toLocaleString('zh-CN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      })
+    }
+  }
   
   // 保存风险模型数据到数据库
   useEffect(() => {
     if (startMonthTotal > 0 && accountAvailable >= 0 && singleAvailable >= 0) {
-      saveRiskModelData(startMonthTotal, accountAvailable, singleAvailable)
+      // 保存时取整
+      const savedAccountAvailable = Math.round(accountAvailable)
+      const savedSingleAvailable = Math.round(singleAvailable)
+      saveRiskModelData(startMonthTotal, savedAccountAvailable, savedSingleAvailable)
     }
   }, [startMonthTotal, accountAvailable, singleAvailable])
 
@@ -552,37 +582,37 @@ const AccountRisk = () => {
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>总资产</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                 {currentTotalAssets.toLocaleString()}
+                 {formatAmount(currentTotalAssets)}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>本月亏损</div>
               <div style={{ fontWeight: 'bold', color: '#EF4444', fontSize: '16px' }}>
-                 {monthlyLoss.toLocaleString()}
+                 {formatAmount(monthlyLoss)}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>月初账户</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                 {startMonthTotal.toLocaleString()}
+                 {formatAmount(startMonthTotal)}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>持仓风险</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                 {holdingOccupancy.toLocaleString()}
+                 {formatAmount(holdingOccupancy)}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>账户可用</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                {accountAvailable.toLocaleString()}
+                {formatAmount(accountAvailable)}
               </div>
             </div>
             <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '12px', color: '#999', marginBottom: '2px' }}>单笔可用</div>
               <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '16px' }}>
-                {singleAvailable.toLocaleString()}
+                {formatAmount(singleAvailable)}
               </div>
             </div>
           </div>

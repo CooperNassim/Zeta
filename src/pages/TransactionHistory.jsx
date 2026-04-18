@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Download, Trash2, ArrowUpCircle, ArrowDownCircle, RotateCcw } from 'lucide-react'
+import { Plus, Download, Trash2, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
 import ExcelJS from 'exceljs'
@@ -48,7 +48,6 @@ const TransactionHistory = () => {
   const deleteMultipleTransactions = useStore(state => state.deleteMultipleTransactions)
   const getCurrentStockPositions = useStore(state => state.getCurrentStockPositions)
   const tradeRecords = useStore(state => state.tradeRecords)
-  const resetTransactionsData = useStore(state => state.resetTransactionsData)
 
 
 
@@ -374,74 +373,63 @@ sortedTransactions.forEach((t, idx) => {
   const getTotalAssets = useStore(state => state.getTotalAssets)
   const currentTotalAssets = getTotalAssets('real')
   
-  // 获取本月1号的日期（用于查询本月1号的快照数据作为上月数据）
-  const firstDayOfMonth = new Date(currentYear, currentMonth, 1, 0, 0, 0)
+  // 获取上月月份和年份
+  const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1
+  const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear
   
-  // 查找历史快照数据：优先本月1号，如果没有则往前查找直到有记录为止
-  const findHistoricalSnapshot = (targetDate) => {
-    // 创建一个日期列表，从目标日期往前找，直到找到有记录的日期
-    const dateRanges = []
-    let currentDate = new Date(targetDate)
-    
-    // 往前查找最多365天（一年）
-    for (let i = 0; i < 365; i++) {
-      const dateKey = currentDate.toISOString().split('T')[0]
-      const transactionsForDate = currentTransactions
-        .filter(t => {
-          const date = parseDate(t.createdAt)
-          return !t.deleted && date && date.toISOString().split('T')[0] === dateKey
-        })
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) // 按时间倒序，最新的在前
-      
-      if (transactionsForDate.length > 0) {
-        return transactionsForDate[0] // 返回当天最后一条记录
-      }
-      
-      // 往前移动一天
-      currentDate.setDate(currentDate.getDate() - 1)
-    }
-    
-    return null // 如果一年内都没有记录，返回null
+  // 计算上月数据
+  const lastMonthIncome = currentTransactions.filter(t => {
+    const date = parseDate(t.createdAt)
+    return !t.deleted && t.amount > 0 && date && date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear
+  }).reduce((sum, t) => sum + t.amount, 0)
+
+  const lastMonthExpense = currentTransactions.filter(t => {
+    const date = parseDate(t.createdAt)
+    return !t.deleted && t.amount < 0 && date && date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear
+  }).reduce((sum, t) => sum + Math.abs(t.amount), 0)
+
+  const lastMonthBalance = lastMonthIncome - lastMonthExpense
+  
+  // 计算上月最后一天的余额
+  // 1. 筛选上月及之前的所有交易记录
+  const lastMonthTransactions = currentTransactions
+    .filter(t => {
+      const date = parseDate(t.createdAt)
+      return !t.deleted && date && 
+        (date.getFullYear() < lastMonthYear || 
+         (date.getFullYear() === lastMonthYear && date.getMonth() <= lastMonth))
+    })
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)) // 按时间正序
+  
+  // 2. 计算到上月最后一天的累积余额
+  let lastMonthAssets = 0
+  if (lastMonthTransactions.length > 0) {
+    lastMonthAssets = lastMonthTransactions.reduce((balance, t) => {
+      return balance + (parseFloat(t.amount) || 0)
+    }, 0)
   }
-
-  // 查找本月1号或最早的记录
-  const snapshotRecord = findHistoricalSnapshot(firstDayOfMonth)
-
-  // 总资产的上月数据：取历史快照的daily_total_assets字段，没有则为0
-  const lastMonthAssets = snapshotRecord 
-    ? (snapshotRecord.daily_total_assets || 0)
-    : 0
-
-  // 本月收入的上月数据：取历史快照，没有则为0
-  const lastMonthIncomeSnap = snapshotRecord 
-    ? (snapshotRecord.daily_month_income || 0)
-    : 0
-
-  // 本月支出的上月数据：取历史快照，没有则为0
-  const lastMonthExpenseSnap = snapshotRecord 
-    ? (snapshotRecord.daily_month_expense || 0)
-    : 0
-
-  // 本月收支的上月数据：取历史快照，没有则为0
-  const lastMonthBalanceSnap = snapshotRecord 
-    ? (snapshotRecord.daily_month_balance || 0)
-    : 0
-
-  // 计算总资产差值和百分比（对比本月1号的总资产快照）
+  
+  console.log('📊 [上月数据计算] 结果:')
+  console.log('   - 上月总资产:', lastMonthAssets)
+  console.log('   - 上月收入:', lastMonthIncome)
+  console.log('   - 上月支出:', lastMonthExpense)
+  console.log('   - 上月收支:', lastMonthBalance)
+  
+  // 计算总资产差值和百分比（对比上月总资产）
   const balanceDiff = currentTotalAssets - lastMonthAssets
   const balancePercent = lastMonthAssets > 0 ? ((balanceDiff / lastMonthAssets) * 100) : 0
 
-  // 计算本月收入差值和百分比（对比本月1号的收入快照）
-  const incomeDiff = monthIncome - lastMonthIncomeSnap
-  const incomePercent = lastMonthIncomeSnap > 0 ? ((incomeDiff / lastMonthIncomeSnap) * 100) : 0
+  // 计算本月收入差值和百分比（对比上月收入）
+  const incomeDiff = monthIncome - lastMonthIncome
+  const incomePercent = lastMonthIncome > 0 ? ((incomeDiff / lastMonthIncome) * 100) : 0
 
-  // 计算本月支出差值和百分比（对比本月1号的支出快照）
-  const expenseDiff = monthExpense - lastMonthExpenseSnap
-  const expensePercent = lastMonthExpenseSnap > 0 ? ((expenseDiff / lastMonthExpenseSnap) * 100) : 0
+  // 计算本月支出差值和百分比（对比上月支出）
+  const expenseDiff = monthExpense - lastMonthExpense
+  const expensePercent = lastMonthExpense > 0 ? ((expenseDiff / lastMonthExpense) * 100) : 0
 
-  // 计算本月收支差值和百分比（对比本月1号的收支快照）
-  const profitDiff = monthBalance - lastMonthBalanceSnap
-  const profitPercent = lastMonthBalanceSnap !== 0 ? ((profitDiff / Math.abs(lastMonthBalanceSnap)) * 100) : 0
+  // 计算本月收支差值和百分比（对比上月收支）
+  const profitDiff = monthBalance - lastMonthBalance
+  const profitPercent = lastMonthBalance !== 0 ? ((profitDiff / Math.abs(lastMonthBalance)) * 100) : 0
 
   // 百分比格式化：整数时不显示小数点，有小数时显示2位（四舍五入）
   const formatPercent = (percent) => {
@@ -517,9 +505,9 @@ sortedTransactions.forEach((t, idx) => {
             <div style={{ borderBottom: '1px dashed #d1d5db', marginBottom: '8px' }}></div>
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '4px' }}>上月</p>
-              <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
-                {lastMonthIncomeSnap < 0 ? '-' : ''}{Math.abs(lastMonthIncomeSnap).toLocaleString()}
-              </p>
+            <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
+              {lastMonthIncome < 0 ? '-' : ''}{Math.abs(lastMonthIncome).toLocaleString()}
+            </p>
               {incomeDiff >= 0 ? (
                 <span style={{ color: '#22c55e', fontSize: '14px', display: 'inline-block', marginRight: '4px' }}>▲</span>
               ) : (
@@ -552,9 +540,9 @@ sortedTransactions.forEach((t, idx) => {
             <div style={{ borderBottom: '1px dashed #d1d5db', marginBottom: '8px' }}></div>
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '4px' }}>上月</p>
-              <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
-                {lastMonthExpenseSnap < 0 ? '-' : ''}{Math.abs(lastMonthExpenseSnap).toLocaleString()}
-              </p>
+            <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
+              {lastMonthExpense < 0 ? '-' : ''}{Math.abs(lastMonthExpense).toLocaleString()}
+            </p>
               {expenseDiff >= 0 ? (
                 <span style={{ color: '#22c55e', fontSize: '14px', display: 'inline-block', marginRight: '4px' }}>▲</span>
               ) : (
@@ -587,9 +575,9 @@ sortedTransactions.forEach((t, idx) => {
             <div style={{ borderBottom: '1px dashed #d1d5db', marginBottom: '8px' }}></div>
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
               <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '4px' }}>上月</p>
-              <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
-                {lastMonthBalanceSnap < 0 ? '-' : ''}{Math.abs(lastMonthBalanceSnap).toLocaleString()}
-              </p>
+            <p className="text-xs font-medium mb-0" style={{ color: '#6b7280', marginRight: '8px', fontSize: '14px' }}>
+              {lastMonthBalance < 0 ? '-' : ''}{Math.abs(lastMonthBalance).toLocaleString()}
+            </p>
               {profitDiff >= 0 ? (
                 <span style={{ color: '#22c55e', fontSize: '14px', display: 'inline-block', marginRight: '4px' }}>▲</span>
               ) : (
@@ -667,20 +655,9 @@ sortedTransactions.forEach((t, idx) => {
           <Trash2 className="w-4 h-4" />
           删除
         </motion.button>
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => {
-            if (window.confirm('确定要重置交易记录数据吗？这将清除所有交易记录。')) {
-              resetTransactionsData()
-              showToast('交易记录已重置')
-            }
-          }}
-          className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2"
-        >
-          <RotateCcw className="w-4 h-4" />
-          重置
-        </motion.button>
+        </div>
+        <div className="text-sm text-gray-500" style={{ marginRight: '10px' }}>
+          共 {filteredTransactions.length} 条记录
         </div>
       </div>
 
@@ -709,8 +686,8 @@ sortedTransactions.forEach((t, idx) => {
               if (field.key === 'tradeNumber') {
                 // 交易编号显示逻辑：手动记账类型留空，股票交易从订单中获取交易编号
                 if (item.type === '手动入账' || item.type === '手动出账') {
-                  console.log('[Debug TradeNumber] 手动记账类型，返回空值', { id: item.id, type: item.type })
-                  return ''
+                  console.log('[Debug TradeNumber] 手动记账类型，返回 -', { id: item.id, type: item.type })
+                  return '-'
                 } else if (item.type === '买入' || item.type === '卖出') {
                   console.log('[Debug TradeNumber] 股票交易类型，开始匹配', { 
                     id: item.id, 

@@ -83,7 +83,7 @@ const DataForm = ({
             ) : (
               <CustomInput
                 type={field.inputType || 'text'}
-                value={formData[field.key] || ''}
+                value={formData[field.key] !== null && formData[field.key] !== undefined ? formData[field.key] : ''}
                 onChange={(value) => {
                   onChange({ ...formData, [field.key]: value })
                   if (value && formErrors[field.key]) {

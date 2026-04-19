@@ -2142,6 +2142,9 @@ const useStore = create(
           let strategyId = r.strategy_id ? Number(r.strategy_id) : (r.strategyId || null)
           const tradeNumber = r.trade_number || r.tradeNumber || r.id
           
+          // 调试：打印 buyPrice 相关的原始数据
+          console.log('[Debug importTradeRecords] record id:', r.id, 'buy_price:', r.buy_price, 'buyPrice:', r.buyPrice, 'sell_price:', r.sell_price, 'sellPrice:', r.sellPrice)
+          
           const buyOrders = allOrders.filter(o => o.tradeNumber === tradeNumber && o.type === 'buy')
           let calculatedBuyAmount = 0
           buyOrders.forEach(o => {
@@ -2194,25 +2197,88 @@ const useStore = create(
             }
           }
 
+          // 计算最终的 buyPrice 和 sellPrice
+          const finalBuyPrice = r.buy_price != null ? parseFloat(r.buy_price) : (r.buyPrice != null ? parseFloat(r.buyPrice) : null)
+          const finalSellPrice = r.sell_price != null ? parseFloat(r.sell_price) : (r.sellPrice != null ? parseFloat(r.sellPrice) : null)
+          console.log('[Debug importTradeRecords] 处理后 finalBuyPrice:', finalBuyPrice, 'finalSellPrice:', finalSellPrice)
+          
+          // 计算买入数量和卖出数量
+          const buyQuantity = buyOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0)
+          const sellQuantity = sellOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0)
+          
+          // 计算买入金额和卖出金额（使用实际买入价和实际卖出价）
+          const actualBuyAmount = finalBuyPrice && buyQuantity ? finalBuyPrice * buyQuantity : buyAmountValue
+          const actualSellAmount = finalSellPrice && sellQuantity ? finalSellPrice * sellQuantity : sellAmountValue
+          const buyAmountValueFinal = parseFloat(actualBuyAmount.toFixed(2))
+          const sellAmountValueFinal = parseFloat(actualSellAmount.toFixed(2))
+          
+          // 计算盈亏金额（使用实际买入价和实际卖出价）
+          // 对于部分卖出的情况，按卖出比例计算盈亏
+          let calculatedProfit = 0
+          if (buyQuantity > 0 && sellQuantity > 0) {
+            // 计算卖出比例
+            const sellRatio = sellQuantity / buyQuantity
+            // 按比例计算买入金额
+            const proportionalBuyAmount = buyAmountValueFinal * sellRatio
+            // 计算盈亏
+            calculatedProfit = sellAmountValueFinal - proportionalBuyAmount
+          } else {
+            // 全部卖出或未卖出的情况
+            calculatedProfit = sellAmountValueFinal - buyAmountValueFinal
+          }
+          
+          // 从买入订单中提取止盈价和止损价
+          let takeProfitPrice = null
+          let stopLossPrice = null
+          if (buyOrders.length > 0) {
+            // 从第一个买入订单中获取止盈价和止损价
+            const firstBuyOrder = buyOrders[0]
+            takeProfitPrice = firstBuyOrder.takeProfitPrice || firstBuyOrder.take_profit_price || null
+            stopLossPrice = firstBuyOrder.stopLossPrice || firstBuyOrder.stop_loss_price || null
+            
+            // 如果第一个订单没有，尝试从其他买入订单中获取
+            if (!takeProfitPrice || !stopLossPrice) {
+              for (const order of buyOrders) {
+                if (!takeProfitPrice) {
+                  takeProfitPrice = order.takeProfitPrice || order.take_profit_price || null
+                }
+                if (!stopLossPrice) {
+                  stopLossPrice = order.stopLossPrice || order.stop_loss_price || null
+                }
+                if (takeProfitPrice && stopLossPrice) {
+                  break
+                }
+              }
+            }
+          }
+          
+          // 确保止盈价和止损价是数字类型
+          if (takeProfitPrice) {
+            takeProfitPrice = parseFloat(takeProfitPrice)
+          }
+          if (stopLossPrice) {
+            stopLossPrice = parseFloat(stopLossPrice)
+          }
+          
           return {
             ...r,
             // 确保驼峰格式字段存在（兼容数据库的下划线格式和前端驼峰格式）
             // 买入数量：从订单计算，确保与股票交易列表一致
-            buyQuantity: buyOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0),
+            buyQuantity: buyQuantity,
             // 买入成交价格buy_price：人工手动填写（成交价），从数据库下划线格式读取
-            buyPrice: parseFloat(r.buy_price || r.buyPrice) || 0,
+            buyPrice: finalBuyPrice,
             // 买入订单价格buy_order_price：自动从数据库获取，为空时回退到buy_price
-            buyOrderPrice: r.buy_order_price ? parseFloat(r.buy_order_price) : (r.buyOrderPrice || parseFloat(r.buy_price) || null),
+            buyOrderPrice: r.buy_order_price != null ? parseFloat(r.buy_order_price) : (r.buyOrderPrice != null ? parseFloat(r.buyOrderPrice) : (r.buy_price != null ? parseFloat(r.buy_price) : null)),
             buyOrderTime: r.buy_order_time || r.buyOrderTime || null,
             // fillPrice使用buyOrderPrice（订单价格），为空时回退到buy_price
-            fillPrice: r.buy_order_price ? parseFloat(r.buy_order_price) : (r.fillPrice || parseFloat(r.buy_price) || null),
+            fillPrice: r.buy_order_price != null ? parseFloat(r.buy_order_price) : (r.fillPrice != null ? parseFloat(r.fillPrice) : (r.buy_price != null ? parseFloat(r.buy_price) : null)),
             buyTime: r.buy_time || r.buyTime || null,
-            buyOrderId: r.buy_order_id ? String(r.buy_order_id) : (r.buyOrderId || null),
+            buyOrderId: r.buy_order_id != null ? String(r.buy_order_id) : (r.buyOrderId != null ? String(r.buyOrderId) : null),
             // 卖出数量：从订单计算，确保与股票交易列表一致
-            sellQuantity: sellOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0),
-            sellPrice: r.sell_price ? parseFloat(r.sell_price) : (r.sellPrice || null),
+            sellQuantity: sellQuantity,
+            sellPrice: finalSellPrice,
             // 卖出订单价格sell_order_price：自动从数据库获取，为空时从订单计算
-            sellOrderPrice: r.sell_order_price ? parseFloat(r.sell_order_price) : (r.sellOrderPrice !== undefined ? r.sellOrderPrice : (sellOrderPriceFromOrders !== null ? sellOrderPriceFromOrders : null)),
+            sellOrderPrice: r.sell_order_price != null ? parseFloat(r.sell_order_price) : (r.sellOrderPrice != null ? parseFloat(r.sellOrderPrice) : (sellOrderPriceFromOrders != null ? sellOrderPriceFromOrders : null)),
             sellOrderTime: r.sell_order_time || r.sellOrderTime || latestSellOrderTime || null,
             sellTime: r.sell_time || r.sellTime || latestSellOrderTime || null,
             sellDate: r.sell_date || r.sellDate || (latestSellOrderTime ? new Date(latestSellOrderTime).toISOString().split('T')[0] : null),
@@ -2223,8 +2289,8 @@ const useStore = create(
             createdAt: r.created_at || r.createdAt || new Date().toISOString(),
             deleted: r.deleted || false,
             deletedAt: r.deleted_at || r.deletedAt || null,
-            buyAmount: buyAmountValue,
-            sellAmount: sellAmountValue,
+            buyAmount: buyAmountValueFinal,
+            sellAmount: sellAmountValueFinal,
             // 佣金和费用字段映射
             tradeCommission: r.trade_commission != null ? r.trade_commission : (r.tradeCommission != null ? r.tradeCommission : null),
             otherFees: r.other_fees != null ? r.other_fees : (r.otherFees != null ? r.otherFees : null),
@@ -2238,11 +2304,14 @@ const useStore = create(
             buyStrategyId: buyStrategyId,
             strategyId: strategyId,
             // 盈亏金额字段映射（用于当月亏损组件筛选和显示）
-            // 盈亏金额 = 卖出金额 - 买入金额
-            profit: sellAmountValue - buyAmountValue,
+            // 盈亏金额 = 卖出金额 - 买入金额（使用实际买入价和实际卖出价）
+            profit: calculatedProfit,
             profitPercent: r.profit_percent != null ? parseFloat(r.profit_percent) : (r.profitPercent || 0),
             // 买入日期字段映射
-            buyDate: r.buy_date || r.buyDate || r.buy_time || r.buyTime || null
+            buyDate: r.buy_date || r.buyDate || r.buy_time || r.buyTime || null,
+            // 止盈价和止损价字段映射
+            takeProfitPrice: takeProfitPrice,
+            stopLossPrice: stopLossPrice
           }
         })
         // 对交易记录进行去重（按交易编号+创建时间），防止数据重复

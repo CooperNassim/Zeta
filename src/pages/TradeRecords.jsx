@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Download } from 'lucide-react'
 import DataTable from '../components/DataTable'
 import Pagination from '../components/Pagination'
@@ -80,11 +80,20 @@ const formatFee = (fee) => {
 // 解析价格（支持千位分隔符格式）
 const parsePrice = (value) => {
   if (value === '' || value === null) return null
-  if (typeof value !== 'string') return parseFloat(value) || null
+  if (typeof value !== 'string') return value != null ? parseFloat(value) : null
   // 移除千位分隔符和其他非数字字符（保留小数点）
   const cleaned = value.replace(/,/g, '')
   const num = parseFloat(cleaned)
   return isNaN(num) ? null : num
+}
+
+// 格式化佣金/费用用于显示：整数取整，有小数点取小数点2位四舍五入
+const formatFeeForDisplay = (value) => {
+  if (value === null || value === undefined || value === '') return ''
+  const num = parseFloat(value)
+  if (isNaN(num)) return ''
+  const rounded = Math.round(num * 100) / 100
+  return Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(2)
 }
 
 const TradeRecords = () => {
@@ -112,6 +121,7 @@ const TradeRecords = () => {
   const [sellDetailFormErrors, setSellDetailFormErrors] = useState({})
   const [editingTradeId, setEditingTradeId] = useState(null)
   const [detailRecord, setDetailRecord] = useState(null)
+  const [recentlySavedTradeData, setRecentlySavedTradeData] = useState({})
   const pageSize = 20
 
   // 筛选条件改变时清空选中状态
@@ -126,6 +136,14 @@ const TradeRecords = () => {
   const strategyRecords = useStore(state => state.strategyRecords)
   const strategies = useStore(state => state.strategies)
   const orders = useStore(state => state.orders)
+
+  // 当 tradeRecords 变化时，清理最近保存的数据，确保使用最新的数据库数据
+  useEffect(() => {
+    if (tradeRecords.length > 0) {
+      console.log('[Debug] tradeRecords 变化，清理 recentlySavedTradeData')
+      setRecentlySavedTradeData({})
+    }
+  }, [tradeRecords])
 
   // 筛选交易记录
   const filteredRecords = (() => {
@@ -287,32 +305,104 @@ const TradeRecords = () => {
   }
 
   const handleEditSummary = () => {
+    console.log('[Debug] handleEditSummary - selectedIds:', selectedIds)
     if (selectedIds.length !== 1) return
-
+    
     // 从tradeRecords获取基础数据
-    const record = tradeRecords.find(r => r.id === selectedIds[0])
-    if (!record) return
-
+    const selectedRecord = tradeRecords.find(r => r.id === selectedIds[0])
+    console.log('[Debug] handleEditSummary - selected record:', selectedRecord)
+    if (!selectedRecord) return
+    
+    const tradeNumber = selectedRecord.tradeNumber
+    console.log('[Debug] handleEditSummary - tradeNumber:', tradeNumber)
+    
+    // 找到同一交易编号下的所有记录
+    const sameTradeRecords = tradeRecords.filter(r => r.tradeNumber === tradeNumber && !r.deleted)
+    console.log('[Debug] handleEditSummary - 同一交易编号下的记录数量:', sameTradeRecords.length)
+    console.log('[Debug] handleEditSummary - 同一交易编号下的记录:', sameTradeRecords.map(r => ({ id: r.id, buyPrice: r.buyPrice, updated_at: r.updated_at })))
+    
+    // 找到同一交易编号下最新的记录（按更新时间排序）
+    const latestRecord = sameTradeRecords.sort((a, b) => {
+      const dateA = new Date(a.updated_at || a.updatedAt || 0)
+      const dateB = new Date(b.updated_at || b.updatedAt || 0)
+      return dateB - dateA
+    })[0]
+    console.log('[Debug] handleEditSummary - 最新的记录:', latestRecord)
+    console.log('[Debug] handleEditSummary - 最新记录的buyPrice:', latestRecord?.buyPrice)
+    console.log('[Debug] handleEditSummary - 最新记录的sellPrice:', latestRecord?.sellPrice)
+    console.log('[Debug] handleEditSummary - 最新记录的updated_at:', latestRecord?.updated_at)
+    
     setEditingTradeId(selectedIds[0])
+    
+    // 从股票交易列表获取同一交易编号的订单数据来计算买入卖出信息
+    const buyOrders = orders.filter(o => o.tradeNumber === tradeNumber && o.type === 'buy')
+    const sellOrders = orders.filter(o => o.tradeNumber === tradeNumber && o.type === 'sell')
+    console.log('[Debug] handleEditSummary - buyOrders:', buyOrders)
+    console.log('[Debug] handleEditSummary - sellOrders:', sellOrders)
 
-  // 格式化交易结案的字段取值逻辑：
-  // 1.实际买入价，买入佣金，买入其他费用：优先从买入详情弹窗获取，如果为空则从tradeRecords获取
-  // 2.实际卖出价，卖出佣金，卖出其他费用：优先从卖出详情弹窗获取，如果为空则从tradeRecords获取
-  // 3.交易总结：从tradeRecords获取
-  setSummaryFormData({
-    // 买入相关字段：优先从买入详情弹窗获取，如果没有则从tradeRecords获取
-    buyPrice: buyDetailFormData.buyPrice || (record.buyPrice ? formatPrice(record.buyPrice) : ''),
-    tradeCommission: buyDetailFormData.tradeCommission || (record.tradeCommission ? formatFee(record.tradeCommission) : ''),
-    otherFees: buyDetailFormData.otherFees || (record.otherFees ? formatFee(record.otherFees) : ''),
+    // 检查是否有最近保存的数据
+    const recentData = recentlySavedTradeData[tradeNumber]
+    console.log('[Debug] handleEditSummary - 最近保存的数据:', recentData);
+    console.log('[Debug] handleEditSummary - 最近保存的buyPrice:', recentData?.buyPrice);
+    console.log('[Debug] handleEditSummary - 最近保存的sellPrice:', recentData?.sellPrice);
 
-    // 卖出相关字段：优先从卖出详情弹窗获取，如果没有则从tradeRecords获取
-    sellPrice: sellDetailFormData.sellPrice || (record.sellPrice ? formatPrice(record.sellPrice) : ''),
-    sellTradeCommission: sellDetailFormData.sellTradeCommission || (record.sellTradeCommission ? formatFee(record.sellTradeCommission) : ''),
-    sellOtherFees: sellDetailFormData.sellOtherFees || (record.sellOtherFees ? formatFee(record.sellOtherFees) : ''),
+    // 计算买入相关字段
+    let buyTotalAmount = 0
+    let buyTotalQuantity = 0
+    buyOrders.forEach(o => {
+      const quantity = parseFloat(o.quantity) || 0
+      const price = parseFloat(o.price) || 0
+      buyTotalAmount += price * quantity
+      buyTotalQuantity += quantity
+    })
+    const calculatedBuyPrice = buyTotalQuantity > 0 ? (buyTotalAmount / buyTotalQuantity) : 0
+    console.log('[Debug] handleEditSummary - calculatedBuyPrice:', calculatedBuyPrice)
 
-    // 交易总结：从tradeRecords获取
-    tradeSummary: record.tradeSummary || ''
-  })
+    // 计算卖出相关字段
+    let sellTotalAmount = 0
+    let sellTotalQuantity = 0
+    sellOrders.forEach(o => {
+      const quantity = parseFloat(o.quantity) || 0
+      const price = parseFloat(o.price) || 0
+      sellTotalAmount += price * quantity
+      sellTotalQuantity += quantity
+    })
+    const calculatedSellPrice = sellTotalQuantity > 0 ? (sellTotalAmount / sellTotalQuantity) : 0
+    console.log('[Debug] handleEditSummary - calculatedSellPrice:', calculatedSellPrice)
+
+    // 查看latestRecord中的值
+    console.log('[Debug] handleEditSummary - latest record buyPrice:', latestRecord?.buyPrice)
+    console.log('[Debug] handleEditSummary - latest record sellPrice:', latestRecord?.sellPrice)
+    console.log('[Debug] handleEditSummary - latest record tradeCommission:', latestRecord?.tradeCommission)
+    console.log('[Debug] handleEditSummary - latest record otherFees:', latestRecord?.otherFees)
+    console.log('[Debug] handleEditSummary - latest record sellTradeCommission:', latestRecord?.sellTradeCommission)
+    console.log('[Debug] handleEditSummary - latest record sellOtherFees:', latestRecord?.sellOtherFees)
+    console.log('[Debug] handleEditSummary - latest record tradeSummary:', latestRecord?.tradeSummary)
+
+    // 格式化交易结案的字段取值逻辑：
+    // 1.实际买入价：优先用最近保存的数据，其次用latestRecord的值，最后用计算值（理想买入价）
+    // 2.实际卖出价：优先用最近保存的数据，其次用latestRecord的值，最后用计算值
+    // 3.交易总结：从latestRecord获取
+    const finalBuyPrice = recentData?.buyPrice != null ? recentData.buyPrice : (latestRecord?.buyPrice != null ? latestRecord.buyPrice : (calculatedBuyPrice > 0 ? calculatedBuyPrice : ''))
+    const finalSellPrice = recentData?.sellPrice != null ? recentData.sellPrice : (latestRecord?.sellPrice != null ? latestRecord.sellPrice : (calculatedSellPrice > 0 ? calculatedSellPrice : ''))
+    console.log('[Debug] handleEditSummary - 最终确定的buyPrice:', finalBuyPrice, '(recentData:', recentData?.buyPrice, 'latestRecord:', latestRecord?.buyPrice, 'calculated:', calculatedBuyPrice, ')')
+    console.log('[Debug] handleEditSummary - 最终确定的sellPrice:', finalSellPrice, '(recentData:', recentData?.sellPrice, 'latestRecord:', latestRecord?.sellPrice, 'calculated:', calculatedSellPrice, ')')
+    
+    setSummaryFormData({
+      // 买入相关字段 - 优先使用最近保存的数据
+      buyPrice: finalBuyPrice,
+      tradeCommission: formatFeeForDisplay(recentData?.tradeCommission != null ? recentData.tradeCommission : (latestRecord?.tradeCommission != null ? latestRecord.tradeCommission : '')),
+      otherFees: formatFeeForDisplay(recentData?.otherFees != null ? recentData.otherFees : (latestRecord?.otherFees != null ? latestRecord.otherFees : '')),
+
+      // 卖出相关字段 - 优先使用最近保存的数据
+      sellPrice: finalSellPrice,
+      sellTradeCommission: formatFeeForDisplay(recentData?.sellTradeCommission != null ? recentData.sellTradeCommission : (latestRecord?.sellTradeCommission != null ? latestRecord.sellTradeCommission : '')),
+      sellOtherFees: formatFeeForDisplay(recentData?.sellOtherFees != null ? recentData.sellOtherFees : (latestRecord?.sellOtherFees != null ? latestRecord.sellOtherFees : '')),
+
+      // 交易总结：从latestRecord获取
+      tradeSummary: (latestRecord?.tradeSummary || selectedRecord.tradeSummary) || ''
+    })
+    console.log('[Debug] handleEditSummary - formData set to:', summaryFormData)
     setSummaryFormErrors({})
     setShowSummaryModal(true)
   }
@@ -338,6 +428,8 @@ const TradeRecords = () => {
     }
 
     try {
+      console.log('[Debug] handleSummaryFormSubmit - summaryFormData:', summaryFormData)
+
       // 获取当前记录的交易编号
       const currentRecord = tradeRecords.find(r => r.id === editingTradeId)
       if (!currentRecord) {
@@ -349,28 +441,58 @@ const TradeRecords = () => {
       // 找到同一交易编号下的所有记录ID
       const sameTradeRecords = tradeRecords.filter(r => r.tradeNumber === tradeNumber && !r.deleted)
       const recordIds = sameTradeRecords.map(r => r.id)
+      console.log('[Debug] 同一交易编号下的记录ID:', recordIds)
+      console.log('[Debug] 同一交易编号下的记录详情:', sameTradeRecords.map(r => ({ id: r.id, buyPrice: r.buyPrice, tradeNumber: r.tradeNumber })))
 
       // 更新同一交易编号下的所有记录
+      const requestBody = {
+        buy_price: summaryFormData.buyPrice != null && summaryFormData.buyPrice !== '' ? parsePrice(summaryFormData.buyPrice) : (summaryFormData.buyPrice === '' ? null : undefined),
+        trade_commission: summaryFormData.tradeCommission != null && summaryFormData.tradeCommission !== '' ? parseFloat(summaryFormData.tradeCommission.trim()) : (summaryFormData.tradeCommission === '' ? null : undefined),
+        other_fees: summaryFormData.otherFees != null && summaryFormData.otherFees !== '' ? parseFloat(summaryFormData.otherFees.trim()) : (summaryFormData.otherFees === '' ? null : undefined),
+        sell_price: summaryFormData.sellPrice != null && summaryFormData.sellPrice !== '' ? parsePrice(summaryFormData.sellPrice) : (summaryFormData.sellPrice === '' ? null : undefined),
+        sell_trade_commission: summaryFormData.sellTradeCommission != null && summaryFormData.sellTradeCommission !== '' ? parseFloat(summaryFormData.sellTradeCommission.trim()) : (summaryFormData.sellTradeCommission === '' ? null : undefined),
+        sell_other_fees: summaryFormData.sellOtherFees != null && summaryFormData.sellOtherFees !== '' ? parseFloat(summaryFormData.sellOtherFees.trim()) : (summaryFormData.sellOtherFees === '' ? null : undefined),
+        trade_summary: summaryFormData.tradeSummary ? summaryFormData.tradeSummary.trim() : (summaryFormData.tradeSummary === '' ? '' : undefined)
+      }
+      console.log('[Debug] PUT request body:', requestBody)
+
       const updatePromises = recordIds.map(id =>
         fetch('/api/trade_records/' + id, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            buy_price: summaryFormData.buyPrice ? parsePrice(summaryFormData.buyPrice) : (summaryFormData.buyPrice === '' ? null : undefined),
-            trade_commission: summaryFormData.tradeCommission ? parseFloat(summaryFormData.tradeCommission.trim()) : (summaryFormData.tradeCommission === '' ? null : undefined),
-            other_fees: summaryFormData.otherFees ? parseFloat(summaryFormData.otherFees.trim()) : (summaryFormData.otherFees === '' ? null : undefined),
-            sell_price: summaryFormData.sellPrice ? parsePrice(summaryFormData.sellPrice) : (summaryFormData.sellPrice === '' ? null : undefined),
-            sell_trade_commission: summaryFormData.sellTradeCommission ? parseFloat(summaryFormData.sellTradeCommission.trim()) : (summaryFormData.sellTradeCommission === '' ? null : undefined),
-            sell_other_fees: summaryFormData.sellOtherFees ? parseFloat(summaryFormData.sellOtherFees.trim()) : (summaryFormData.sellOtherFees === '' ? null : undefined),
-            trade_summary: summaryFormData.tradeSummary ? summaryFormData.tradeSummary.trim() : (summaryFormData.tradeSummary === '' ? '' : undefined)
-          })
+          body: JSON.stringify(requestBody)
         }).then(res => res.json())
       )
 
       const responses = await Promise.all(updatePromises)
+      console.log('[Debug] PUT responses:', responses)
+      console.log('[Debug] PUT responses details:', responses.map(r => ({ success: r.success, message: r.message, error: r.error })))
       const allSuccess = responses.every(r => r.success)
 
       if (allSuccess) {
+        // 存储最新保存的交易数据，供Buy Detail弹窗使用
+        const tradeNumber = currentRecord.tradeNumber
+        console.log('[Debug] 存储临时数据 - tradeNumber:', tradeNumber);
+        console.log('[Debug] 存储临时数据 - summaryFormData.buyPrice:', summaryFormData.buyPrice);
+        console.log('[Debug] 存储临时数据 - parsePrice结果:', parsePrice(summaryFormData.buyPrice));
+        
+        setRecentlySavedTradeData(prev => {
+          const newData = {
+            ...prev,
+            [tradeNumber]: {
+              buyPrice: parsePrice(summaryFormData.buyPrice),
+              sellPrice: parsePrice(summaryFormData.sellPrice),
+              tradeCommission: summaryFormData.tradeCommission,
+              otherFees: summaryFormData.otherFees,
+              sellTradeCommission: summaryFormData.sellTradeCommission,
+              sellOtherFees: summaryFormData.sellOtherFees,
+              tradeSummary: summaryFormData.tradeSummary
+            }
+          };
+          console.log('[Debug] 存储临时数据 - 新数据:', newData);
+          return newData;
+        })
+        
         // 从数据库重新同步数据，确保数据一致性
         await fetch('/api/sync/all')
           .then(res => res.json())
@@ -378,6 +500,8 @@ const TradeRecords = () => {
             if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
               const { trade_records, trade_orders } = syncResponse.data
               useStore.getState().importTradeRecords(trade_records, trade_orders)
+              // 不要立即清空临时数据，让Buy Detail有机会使用
+              // setRecentlySavedTradeData({})
             }
           })
         showToast('保存成功', 'success')
@@ -394,7 +518,54 @@ const TradeRecords = () => {
   }
 
   const handleShowBuyDetail = (record) => {
-    setDetailRecord(record)
+    console.log('🔍 [Debug Buy Detail] 传入的record:', record);
+    console.log('🔍 [Debug Buy Detail] record.buyPrice:', record.buyPrice);
+    console.log('🔍 [Debug Buy Detail] record.id:', record.id);
+    console.log('🔍 [Debug Buy Detail] record.tradeNumber:', record.tradeNumber);
+    
+    const tradeNumber = record.tradeNumber;
+    console.log('🔍 [Debug Buy Detail] tradeNumber:', tradeNumber);
+    
+    let recordWithLatestData;
+    
+    // 检查是否有最近保存的交易数据（优先使用）
+    console.log('🔍 [Debug Buy Detail] recentlySavedTradeData:', recentlySavedTradeData);
+    const recentData = recentlySavedTradeData[tradeNumber];
+    console.log('🔍 [Debug Buy Detail] 最近保存的数据:', recentData);
+    console.log('🔍 [Debug Buy Detail] 最近保存的buyPrice:', recentData?.buyPrice);
+    
+    if (recentData) {
+      // 如果有最近保存的数据，使用它
+      recordWithLatestData = {
+        ...record,
+        buyPrice: recentData.buyPrice,
+        tradeCommission: recentData.tradeCommission,
+        otherFees: recentData.otherFees
+      };
+      console.log('🔍 [Debug Buy Detail] 使用最近保存的数据:', recordWithLatestData);
+      console.log('🔍 [Debug Buy Detail] 使用最近保存的buyPrice:', recordWithLatestData.buyPrice);
+      setDetailRecord(recordWithLatestData);
+    } else {
+      // 从最新的 tradeRecords 中获取同一交易编号下的所有记录
+      const sameTradeRecords = tradeRecords.filter(r => r.tradeNumber === tradeNumber && !r.deleted);
+      console.log('🔍 [Debug Buy Detail] 同一交易编号下的记录数量:', sameTradeRecords.length);
+      console.log('🔍 [Debug Buy Detail] 同一交易编号下的记录:', sameTradeRecords.map(r => ({ id: r.id, buyPrice: r.buyPrice })));
+      
+      // 找到同一交易编号下最新的记录（按更新时间排序）
+      const latestRecord = sameTradeRecords.sort((a, b) => {
+        const dateA = new Date(a.updated_at || a.updatedAt || 0);
+        const dateB = new Date(b.updated_at || b.updatedAt || 0);
+        return dateB - dateA;
+      })[0];
+      console.log('🔍 [Debug Buy Detail] 最新的记录:', latestRecord);
+      console.log('🔍 [Debug Buy Detail] 最新记录的buyPrice:', latestRecord?.buyPrice);
+      
+      // 使用最新记录的数据
+      recordWithLatestData = latestRecord || record;
+      console.log('🔍 [Debug Buy Detail] 最终使用的数据:', recordWithLatestData);
+      console.log('🔍 [Debug Buy Detail] 最终使用的buyPrice:', recordWithLatestData.buyPrice);
+      setDetailRecord(recordWithLatestData);
+    }
     // 理想买入价：从股票交易模块获取同一交易编号的买入类型订单
     const buyOrders = orders.filter(o => o.tradeNumber === record.tradeNumber && o.type === 'buy')
     let buyOrderPriceValue = ''       // 显示用的理想买入价（四舍五入）
@@ -422,17 +593,16 @@ const TradeRecords = () => {
       }
     }
     // 买入成交价格取交易结案弹窗的值(record.buyPrice)，如果未填写则默认使用理想买入价
-    // 实际买入价通过金额和数量反推，因为数据库只存储金额不存储单价
-    const buyAmount = parseFloat(record.buyAmount) || 0
-    const actualBuyPriceFromAmount = buyOrdersTotalQuantity > 0 ? buyAmount / buyOrdersTotalQuantity : 0
-    const buyPriceValue = record.buyPrice ? formatPrice(record.buyPrice) : (buyOrderPriceValue ? formatPrice(buyOrderPriceValue) : '')
-    // 计算买入滑点：使用精确的理想买入价计算，避免四舍五入误差
+    // 实际买入价使用用户输入的值
+    const userBuyPrice = recordWithLatestData.buyPrice != null ? recordWithLatestData.buyPrice : null
+    console.log('🔍 [Debug Buy Detail] userBuyPrice:', userBuyPrice);
+    const buyPriceValue = userBuyPrice != null ? formatPrice(userBuyPrice) : (buyOrderPriceValue ? formatPrice(buyOrderPriceValue) : '')
+    console.log('🔍 [Debug Buy Detail] buyPriceValue:', buyPriceValue);
+    // 计算买入滑点：(理想买入价 - 实际买入价) × 买入数量
     // 成交价格 > 订单价格 = 亏钱（负数），成交价格 < 订单价格 = 赚钱（正数）
     let buySlippage = null
-    if (buyOrderPriceExact > 0 &&
-        (record.buyPrice !== null && record.buyPrice !== undefined || buyOrderPriceValue) &&
-        buyOrdersTotalQuantity > 0) {
-      const priceDiff = buyOrderPriceExact - actualBuyPriceFromAmount
+    if (buyOrderPriceExact > 0 && userBuyPrice != null && buyOrdersTotalQuantity > 0) {
+      const priceDiff = buyOrderPriceExact - userBuyPrice
       buySlippage = priceDiff * buyOrdersTotalQuantity
     }
     // 获取买入策略名称：从同一交易编号的买入订单获取
@@ -449,9 +619,11 @@ const TradeRecords = () => {
       const strategy = buyStrategiesList.find(s => String(s.id) === String(strategyIdToUse))
       buyStrategyValue = strategy ? strategy.name : ''
     }
+    // 计算买入金额：使用实际买入价 × 买入数量，这样可以更准确反映实际买入金额
+    const calculatedBuyAmount = userBuyPrice > 0 && buyOrdersTotalQuantity > 0 ? userBuyPrice * buyOrdersTotalQuantity : (buyOrdersTotalAmount > 0 ? buyOrdersTotalAmount : 0);
     // 买入金额 = 股票交易列表买入总金额（与交易记录列表一致的取值逻辑）
-    const buyAmountValue = buyOrdersTotalAmount > 0
-      ? formatAmount(buyOrdersTotalAmount)
+    const buyAmountValue = calculatedBuyAmount > 0
+      ? formatAmount(calculatedBuyAmount)
       : ''
 
     // 买入实际时间 = 股票交易列表-买入类型-交易时间
@@ -472,22 +644,14 @@ const TradeRecords = () => {
       buyPrice: buyPriceValue || '-',
       buyOrderPrice: buyOrderPriceValue ? formatPrice(buyOrderPriceValue) : (buyOrders.length > 0 ? '' : '-'),
       buySlippage: buySlippage !== null ? formatSlippage(buySlippage) : (buyOrders.length > 0 ? '-' : '-'),
-      tradeCommission: formatFee(record.tradeCommission) || (buyOrders.length > 0 ? '' : '-'),
-      otherFees: formatFee(record.otherFees) || (buyOrders.length > 0 ? '' : '-'),
+      tradeCommission: formatFee(recordWithLatestData.tradeCommission) || (buyOrders.length > 0 ? '' : '-'),
+      otherFees: formatFee(recordWithLatestData.otherFees) || (buyOrders.length > 0 ? '' : '-'),
       buyStrategy: buyStrategyValue || (buyOrders.length > 0 ? '' : '-'),
       buyTime: buyTimeValue || (buyOrders.length > 0 ? '' : '-')
     }
-    // 如果buyDetailFormData已有值，保留用户编辑的值，只更新只读字段
-    if (buyDetailFormData.buyPrice || buyDetailFormData.tradeCommission) {
-      setBuyDetailFormData({
-        ...formData,
-        buyPrice: buyDetailFormData.buyPrice,
-        tradeCommission: buyDetailFormData.tradeCommission,
-        otherFees: buyDetailFormData.otherFees
-      })
-    } else {
-      setBuyDetailFormData(formData)
-    }
+    console.log('🔍 [Debug Buy Detail] formData:', formData);
+    // 不要保留旧值，总是使用新计算的值
+    setBuyDetailFormData(formData)
     setBuyDetailFormErrors({})
     setShowBuyDetailModal(true)
   }
@@ -495,8 +659,53 @@ const TradeRecords = () => {
   const handleShowSellDetail = (record) => {
     console.log('handleShowSellDetail record:', record);
     console.log('Record keys:', Object.keys(record));
+    console.log('🔍 [Debug Sell Detail] record.sellPrice:', record.sellPrice);
+    console.log('🔍 [Debug Sell Detail] record.id:', record.id);
+    console.log('🔍 [Debug Sell Detail] record.tradeNumber:', record.tradeNumber);
     
-    setDetailRecord(record)
+    const tradeNumber = record.tradeNumber;
+    console.log('🔍 [Debug Sell Detail] tradeNumber:', tradeNumber);
+    
+    let recordWithLatestDataForSell;
+    
+    // 检查是否有最近保存的交易数据（优先使用）
+    console.log('🔍 [Debug Sell Detail] recentlySavedTradeData:', recentlySavedTradeData);
+    const recentData = recentlySavedTradeData[tradeNumber];
+    console.log('🔍 [Debug Sell Detail] 最近保存的数据:', recentData);
+    console.log('🔍 [Debug Sell Detail] 最近保存的sellPrice:', recentData?.sellPrice);
+    
+    if (recentData) {
+      // 如果有最近保存的数据，使用它
+      recordWithLatestDataForSell = {
+        ...record,
+        sellPrice: recentData.sellPrice,
+        sellTradeCommission: recentData.sellTradeCommission,
+        sellOtherFees: recentData.sellOtherFees
+      };
+      console.log('🔍 [Debug Sell Detail] 使用最近保存的数据:', recordWithLatestDataForSell);
+      console.log('🔍 [Debug Sell Detail] 使用最近保存的sellPrice:', recordWithLatestDataForSell.sellPrice);
+      setDetailRecord(recordWithLatestDataForSell);
+    } else {
+      // 从最新的 tradeRecords 中获取同一交易编号下的所有记录
+      const sameTradeRecords = tradeRecords.filter(r => r.tradeNumber === tradeNumber && !r.deleted);
+      console.log('🔍 [Debug Sell Detail] 同一交易编号下的记录数量:', sameTradeRecords.length);
+      console.log('🔍 [Debug Sell Detail] 同一交易编号下的记录:', sameTradeRecords.map(r => ({ id: r.id, sellPrice: r.sellPrice })));
+      
+      // 找到同一交易编号下最新的记录（按更新时间排序）
+      const latestRecord = sameTradeRecords.sort((a, b) => {
+        const dateA = new Date(a.updated_at || a.updatedAt || 0);
+        const dateB = new Date(b.updated_at || b.updatedAt || 0);
+        return dateB - dateA;
+      })[0];
+      console.log('🔍 [Debug Sell Detail] 最新的记录:', latestRecord);
+      console.log('🔍 [Debug Sell Detail] 最新记录的sellPrice:', latestRecord?.sellPrice);
+      
+      // 使用最新记录的数据
+      recordWithLatestDataForSell = latestRecord || record;
+      console.log('🔍 [Debug Sell Detail] 最终使用的数据:', recordWithLatestDataForSell);
+      console.log('🔍 [Debug Sell Detail] 最终使用的sellPrice:', recordWithLatestDataForSell.sellPrice);
+      setDetailRecord(recordWithLatestDataForSell);
+    }
     // 理想卖出价：从股票交易模块获取同一交易编号的卖出类型订单
     const sellOrders = orders.filter(o => o.tradeNumber === record.tradeNumber && o.type === 'sell')
     console.log('sellOrders:', sellOrders);
@@ -548,7 +757,7 @@ const TradeRecords = () => {
     
     console.log('🔍 [Debug Strategy] 查找卖出策略:')
     console.log('   - sellOrders数量:', sellOrders.length)
-    console.log('   - record.sellStrategyId:', record.sellStrategyId)
+    console.log('   - record.sellStrategyId:', (recordWithLatestDataForSell || record).sellStrategyId)
     console.log('   - strategyRecords长度:', strategyRecords.length)
     
     // 使用策略记录查找策略名称
@@ -560,11 +769,11 @@ const TradeRecords = () => {
       })
       console.log('   - 查找结果:', strategy)
       sellStrategyValue = strategy ? strategy.name : ''
-    } else if (record.sellStrategyId) {
-      console.log('   - 从交易记录策略ID查找:', record.sellStrategyId, ', ID类型:', typeof record.sellStrategyId)
+    } else if ((fullRecord || record).sellStrategyId) {
+      console.log('   - 从交易记录策略ID查找:', (fullRecord || record).sellStrategyId, ', ID类型:', typeof (fullRecord || record).sellStrategyId)
       const strategy = strategyRecords.find(s => {
-        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', record.sellStrategyId, '(类型:', typeof record.sellStrategyId, ')')
-        return s.id === record.sellStrategyId
+        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', (fullRecord || record).sellStrategyId, '(类型:', typeof (fullRecord || record).sellStrategyId, ')')
+        return s.id === (fullRecord || record).sellStrategyId
       })
       console.log('   - 查找结果:', strategy)
       sellStrategyValue = strategy ? strategy.name : ''
@@ -584,21 +793,20 @@ const TradeRecords = () => {
     
     // 调试日志
     console.log('🔍 [Debug Sell Price] 卖出价格信息:');
-    console.log('   - record.sellPrice:', record.sellPrice);
+    console.log('   - record.sellPrice:', (recordWithLatestDataForSell || record).sellPrice);
     console.log('   - sellOrderPriceValue:', sellOrderPriceValue);
     console.log('   - sellOrders.length:', sellOrders.length);
     
     // 计算滑点：(实际卖出价 - 理想卖出价) × 卖出数量
-    // 实际卖出价 = 从订单动态计算的实际总金额 / 数量
+    // 实际卖出价 = 用户在交易结案中输入的值
     // 理想卖出价 = sellOrderPriceExact（从订单动态计算的平均价）
-    // 使用 sellOrdersTotalAmount 而不是 record.sellAmount，因为 record.sellAmount 可能没有跟随订单变化而更新
     let sellSlippageValue = '';
     const idealSellPrice = sellOrderPriceExact;  // 理想卖出价从当前订单动态计算
-    const actualSellPrice = sellOrdersTotalQuantity > 0 ? sellOrdersTotalAmount / sellOrdersTotalQuantity : 0;
+    const userInputSellPrice = recordWithLatestDataForSell.sellPrice != null ? recordWithLatestDataForSell.sellPrice : 0;
     const sellQuantity = sellOrdersTotalQuantity;
 
-    if (idealSellPrice > 0 && actualSellPrice > 0 && sellQuantity > 0) {
-      const slippageValue = (actualSellPrice - idealSellPrice) * sellQuantity;
+    if (idealSellPrice > 0 && userInputSellPrice > 0 && sellQuantity > 0) {
+      const slippageValue = (userInputSellPrice - idealSellPrice) * sellQuantity;
       // 格式化：整数取整，有小数点取小数点2位四舍五入，千位分隔符
       sellSlippageValue = formatSlippage(slippageValue);
     } else {
@@ -608,36 +816,30 @@ const TradeRecords = () => {
     // 检查记录中是否有卖出时间数据，使用格式化为年-月-日 时:分:秒
     const sellTimeValue = sellOrders.length > 0 ? (record.sellTime ? formatDate(record.sellTime) : '未设置时间') : '-';
 
-    // 计算实际卖出价默认值：始终使用理想卖出价作为初始值
-    const defaultSellPrice = sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : (sellOrders.length > 0 ? '' : '-');
+    // 计算实际卖出价默认值：优先使用用户保存的实际卖出价，否则使用理想卖出价
+    const defaultSellPrice = recordWithLatestDataForSell.sellPrice != null ? formatPrice(recordWithLatestDataForSell.sellPrice) : (sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : (sellOrders.length > 0 ? '' : '-'));
     console.log('   - 计算出的实际卖出价默认值:', defaultSellPrice);
-
+    
+    // 计算卖出金额：使用实际卖出价 × 卖出数量，这样可以更准确反映实际卖出金额
+    const calculatedSellAmount = userInputSellPrice > 0 && sellQuantity > 0 ? userInputSellPrice * sellQuantity : (sellOrdersTotalAmount > 0 ? sellOrdersTotalAmount : 0);
+    
     // 设置表单数据，使用格式化函数确保整数不显示.00
     const formData = {
       sellPrice: defaultSellPrice,  // 实际卖出价从记录获取，未填写时使用理想卖出价
       sellQuantity: sellOrdersTotalQuantity > 0 ? formatAmount(sellOrdersTotalQuantity) : '-',  // 数量使用千位分隔符
-      sellAmount: sellOrdersTotalAmount > 0 ? formatAmount(sellOrdersTotalAmount) : '-',
+      sellAmount: calculatedSellAmount > 0 ? formatAmount(calculatedSellAmount) : '-',  // 使用实际卖出价 × 卖出数量
       sellOrderPrice: sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : '-',  // 使用计算出的理想卖出价
       sellTime: sellTimeValue,
       sellSlippage: sellSlippageValue,  // 已在计算逻辑中使用了千位分隔符
       sellStrategy: sellStrategyValue,  // 使用从orders获取的策略名称
-      sellTradeCommission: record.sellTradeCommission ? formatFee(record.sellTradeCommission) : '-',
-      sellOtherFees: record.sellOtherFees ? formatFee(record.sellOtherFees) : '-',
+      sellTradeCommission: recordWithLatestDataForSell.sellTradeCommission ? formatFee(recordWithLatestDataForSell.sellTradeCommission) : '-',
+      sellOtherFees: recordWithLatestDataForSell.sellOtherFees ? formatFee(recordWithLatestDataForSell.sellOtherFees) : '-',
       high: record.buyChannel?.high ? formatAmount(record.buyChannel.high) : (sellOrders.length > 0 ? '-' : '-'),
       low: record.buyChannel?.low ? formatAmount(record.buyChannel.low) : (sellOrders.length > 0 ? '-' : '-')
     }
 
-    // 如果sellDetailFormData已有值，保留用户编辑的值，只更新只读字段
-    if (sellDetailFormData.sellPrice || sellDetailFormData.sellTradeCommission) {
-      setSellDetailFormData({
-        ...formData,
-        sellPrice: sellDetailFormData.sellPrice,
-        sellTradeCommission: sellDetailFormData.sellTradeCommission,
-        sellOtherFees: sellDetailFormData.sellOtherFees
-      });
-    } else {
-      setSellDetailFormData(formData);
-    }
+    // 不要保留旧值，总是使用新计算的值
+    setSellDetailFormData(formData);
     setSellDetailFormErrors({});
     setShowSellDetailModal(true);
   }
@@ -827,6 +1029,7 @@ const TradeRecords = () => {
   }
 
   const handleSummaryFormDataChange = (newFormData, clearError = null) => {
+    console.log('[Debug] handleSummaryFormDataChange:', { newFormData, oldFormData: summaryFormData })
     setSummaryFormData(newFormData)
     if (clearError) {
       setSummaryFormErrors(prev => ({ ...prev, ...clearError }))
@@ -1085,19 +1288,20 @@ const TradeRecords = () => {
     // 反推买入价和卖出价，因为数据库只存储金额不存储单价
     const buyAmountFromRecord = parseFloat(item.buyAmount) || 0
     const sellAmountFromRecord = parseFloat(item.sellAmount) || 0
-    const buyPrice = buyQuantity > 0 ? buyAmountFromRecord / buyQuantity : 0
-    const sellPrice = sellQuantity > 0 ? sellAmountFromRecord / sellQuantity : 0
+    // 使用用户输入的实际买入价/卖出价，如果为空则使用从订单反推的价格
+    const buyPrice = item.buyPrice != null ? item.buyPrice : (buyQuantity > 0 ? buyAmountFromRecord / buyQuantity : 0)
+    const sellPrice = item.sellPrice != null ? item.sellPrice : (sellQuantity > 0 ? sellAmountFromRecord / sellQuantity : 0)
     const buyAmount = buyAmountFromRecord
     const sellAmount = sellAmountFromRecord
     
-    // 计算买入滑点
+    // 计算买入滑点：使用用户输入的实际买入价
     let buySlippage = 0
     if (buyQuantity > 0 && buyOrdersTotalAmount > 0) {
       const idealBuyPrice = buyOrdersTotalAmount / buyQuantity
       buySlippage = (idealBuyPrice - buyPrice) * buyQuantity
     }
     
-    // 计算卖出滑点
+    // 计算卖出滑点：使用用户输入的实际卖出价
     let sellSlippage = 0
     if (sellQuantity > 0 && sellOrdersTotalAmount > 0) {
       const idealSellPrice = sellOrdersTotalAmount / sellQuantity
@@ -1123,8 +1327,27 @@ const TradeRecords = () => {
         return item.name || '-'
       case 'buyAmount':
         return item.buyAmount ? formatAmount(item.buyAmount) : '-'
-      case 'sellAmount':
-        return item.sellAmount ? formatAmount(item.sellAmount) : '-'
+      case 'sellAmount': {
+        // 使用实际卖出价 × 卖出数量计算，与卖出详情弹窗保持一致
+        // 使用订单中的卖出数量，而不是数据库中的sellQuantity
+        const sellOrdersForItem = orders.filter(o => o.tradeNumber === item.tradeNumber && o.type === 'sell')
+        let sellOrdersTotalQuantity = 0
+        sellOrdersForItem.forEach(o => {
+          sellOrdersTotalQuantity += parseFloat(o.quantity) || 0
+        })
+        const sellQty = sellOrdersTotalQuantity > 0 ? sellOrdersTotalQuantity : (parseFloat(item.sellQuantity) || 0)
+        const sellPrice = item.sellPrice != null ? item.sellPrice : 0
+        const calculatedSellAmount = sellQty > 0 && sellPrice > 0 ? sellQty * sellPrice : (item.sellAmount || 0)
+        if (!calculatedSellAmount || calculatedSellAmount === 0) return <span>-</span>
+        return (
+          <button
+            onClick={() => handleShowSellDetail(item)}
+            className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition-colors"
+          >
+            {formatAmount(calculatedSellAmount)}
+          </button>
+        )
+      }
       case 'tradeStatus': {
         const sellQty = parseFloat(item.sellQuantity) || 0
         const buyQty = parseFloat(item.buyQuantity) || 0
@@ -1374,26 +1597,42 @@ const TradeRecords = () => {
                     return <span>{item.name || '-'}</span>
                   }
                   if (field.key === 'buyAmount') {
-                    const amount = item.buyAmount
-                    if (amount === null || amount === undefined) return <span>-</span>
+                    // 使用实际买入价 × 买入数量计算，与买入详情弹窗保持一致
+                    const buyOrdersForItem = orders.filter(o => o.tradeNumber === item.tradeNumber && o.type === 'buy')
+                    let buyOrdersTotalQuantity = 0
+                    buyOrdersForItem.forEach(o => {
+                      buyOrdersTotalQuantity += parseFloat(o.quantity) || 0
+                    })
+                    const buyQty = buyOrdersTotalQuantity > 0 ? buyOrdersTotalQuantity : (parseFloat(item.buyQuantity) || 0)
+                    const buyPrice = item.buyPrice != null ? item.buyPrice : 0
+                    const calculatedBuyAmount = buyQty > 0 && buyPrice > 0 ? buyQty * buyPrice : (item.buyAmount || 0)
+                    if (!calculatedBuyAmount || calculatedBuyAmount === 0) return <span>-</span>
                     return (
                       <button
                         onClick={() => handleShowBuyDetail(item)}
                         className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition-colors"
                       >
-                        {formatAmount(amount)}
+                        {formatAmount(calculatedBuyAmount)}
                       </button>
                     )
                   }
                   if (field.key === 'sellAmount') {
-                    const amount = item.sellAmount
-                    if (!amount || amount === null || amount === undefined) return <span>-</span>
+                    // 使用实际卖出价 × 卖出数量计算，与卖出详情弹窗保持一致
+                    const sellOrdersForItem = orders.filter(o => o.tradeNumber === item.tradeNumber && o.type === 'sell')
+                    let sellOrdersTotalQuantity = 0
+                    sellOrdersForItem.forEach(o => {
+                      sellOrdersTotalQuantity += parseFloat(o.quantity) || 0
+                    })
+                    const sellQty = sellOrdersTotalQuantity > 0 ? sellOrdersTotalQuantity : (parseFloat(item.sellQuantity) || 0)
+                    const sellPrice = item.sellPrice != null ? item.sellPrice : 0
+                    const calculatedSellAmount = sellQty > 0 && sellPrice > 0 ? sellQty * sellPrice : (item.sellAmount || 0)
+                    if (!calculatedSellAmount || calculatedSellAmount === 0) return <span>-</span>
                     return (
                       <button
                         onClick={() => handleShowSellDetail(item)}
                         className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition-colors"
                       >
-                        {formatAmount(amount)}
+                        {formatAmount(calculatedSellAmount)}
                       </button>
                     )
                   }
@@ -1409,9 +1648,9 @@ const TradeRecords = () => {
                       return <span>0</span>
                     }
                     
-                    // 反推买入价和卖出价
-                    const buyPrice = buyQuantity > 0 ? buyAmount / buyQuantity : 0
-                    const sellPrice = sellQuantity > 0 ? sellAmount / sellQuantity : 0
+                    // 使用用户输入的实际买入价/卖出价，如果为空则使用从订单反推的价格
+                    const buyPrice = item.buyPrice != null ? item.buyPrice : (buyQuantity > 0 ? buyAmount / buyQuantity : 0)
+                    const sellPrice = item.sellPrice != null ? item.sellPrice : (sellQuantity > 0 ? sellAmount / sellQuantity : 0)
                     
                     // 计算已卖出部分的盈亏
                     const profit = (sellPrice - buyPrice) * sellQuantity
@@ -1435,7 +1674,7 @@ const TradeRecords = () => {
                     return <span>{formatted}</span>
                   }
                   if (field.key === 'netProfitPercent') {
-                    // 净盈亏比 = (盈亏金额 - 滑点) / (实际买入价 × 卖出数量) × 100%
+                    // 净盈亏比 = (盈亏金额 - 总手续费) / (实际买入价 × 卖出数量) × 100%
                     // 对于部分卖出的情况，分母使用已卖出部分的成本
                     // 由于数据库只存储金额不存储单价，需要通过金额和数量反推价格
                     const buyOrders = orders.filter(o => o.tradeNumber === item.tradeNumber && o.type === 'buy')
@@ -1447,11 +1686,11 @@ const TradeRecords = () => {
                     const buyQuantity = parseFloat(item.buyQuantity) || 0
                     const sellQuantity = parseFloat(item.sellQuantity) || 0
                     
-                    // 反推买入价和卖出价
-                    const buyPrice = buyQuantity > 0 ? buyAmount / buyQuantity : 0
-                    const sellPrice = sellQuantity > 0 ? sellAmount / sellQuantity : 0
+                    // 使用用户输入的实际买入价/卖出价，如果为空则使用从订单反推的价格
+                    const buyPrice = item.buyPrice != null ? item.buyPrice : (buyQuantity > 0 ? buyAmount / buyQuantity : 0)
+                    const sellPrice = item.sellPrice != null ? item.sellPrice : (sellQuantity > 0 ? sellAmount / sellQuantity : 0)
                     
-                    let buyOrdersTotalAmount = 0  // 股票交易列表买入总金额（用于计算理想买入价）
+                    let buyOrdersTotalAmount = 0
                     buyOrders.forEach(o => {
                       buyOrdersTotalAmount += (parseFloat(o.price) || 0) * (parseFloat(o.quantity) || 0)
                     })
@@ -1479,7 +1718,14 @@ const TradeRecords = () => {
                     }
                     
                     const totalSlippage = buySlippage + sellSlippage
-                    const netProfit = profit - totalSlippage
+                    // 计算总手续费
+                    const tradeCommission = parseFloat(item.tradeCommission) || 0
+                    const otherFees = parseFloat(item.otherFees) || 0
+                    const sellTradeCommission = parseFloat(item.sellTradeCommission) || 0
+                    const sellOtherFees = parseFloat(item.sellOtherFees) || 0
+                    const totalFees = tradeCommission + sellTradeCommission + otherFees + sellOtherFees
+                    // 净盈亏额 = 盈亏金额 - 总手续费
+                    const netProfit = profit - totalFees
                     
                     // 已卖出部分的成本
                     const soldCost = buyPrice * sellQuantity
@@ -1494,7 +1740,7 @@ const TradeRecords = () => {
                     return <span>-</span>
                   }
                   if (field.key === 'netProfit') {
-                    // 净盈亏额 = 盈亏金额 - 滑点
+                    // 净盈亏额 = 盈亏金额 - 手续费
                     // 盈亏金额 = (实际卖出价 - 实际买入价) × 卖出数量
                     // 由于数据库只存储金额不存储单价，需要通过金额和数量反推价格
                     const buyOrders = orders.filter(o => o.tradeNumber === item.tradeNumber && o.type === 'buy')
@@ -1510,9 +1756,9 @@ const TradeRecords = () => {
                       return <span>0</span>
                     }
                     
-                    // 反推买入价和卖出价
-                    const buyPrice = buyQuantity > 0 ? buyAmount / buyQuantity : 0
-                    const sellPrice = sellQuantity > 0 ? sellAmount / sellQuantity : 0
+                    // 使用用户输入的实际买入价/卖出价，如果为空则使用从订单反推的价格
+                    const buyPrice = item.buyPrice != null ? item.buyPrice : (buyQuantity > 0 ? buyAmount / buyQuantity : 0)
+                    const sellPrice = item.sellPrice != null ? item.sellPrice : (sellQuantity > 0 ? sellAmount / sellQuantity : 0)
                     
                     let buyOrdersTotalAmount = 0
                     buyOrders.forEach(o => {
@@ -1542,7 +1788,14 @@ const TradeRecords = () => {
                     }
                     
                     const totalSlippage = buySlippage + sellSlippage
-                    const netProfit = profit - totalSlippage
+                    // 计算总手续费
+                    const tradeCommission = parseFloat(item.tradeCommission) || 0
+                    const otherFees = parseFloat(item.otherFees) || 0
+                    const sellTradeCommission = parseFloat(item.sellTradeCommission) || 0
+                    const sellOtherFees = parseFloat(item.sellOtherFees) || 0
+                    const totalFees = tradeCommission + sellTradeCommission + otherFees + sellOtherFees
+                    // 净盈亏额 = 盈亏金额 - 总手续费
+                    const netProfit = profit - totalFees
                     
                     // 整数取整，有小数点取小数点2位四舍五入
                     const rounded = Math.round(netProfit * 100) / 100
@@ -1565,9 +1818,9 @@ const TradeRecords = () => {
                       return <span>0</span>
                     }
                     
-                    // 反推买入价和卖出价
-                    const buyPrice = buyQuantity > 0 ? buyAmount / buyQuantity : 0
-                    const sellPrice = sellQuantity > 0 ? sellAmount / sellQuantity : 0
+                    // 使用用户输入的实际买入价/卖出价，如果为空则使用从订单反推的价格
+                    const buyPrice = item.buyPrice != null ? item.buyPrice : (buyQuantity > 0 ? buyAmount / buyQuantity : 0)
+                    const sellPrice = item.sellPrice != null ? item.sellPrice : (sellQuantity > 0 ? sellAmount / sellQuantity : 0)
                     
                     // 计算买入滑点 = (理想买入价 - 实际买入价) × 买入数量
                     let buySlippage = 0
@@ -1605,9 +1858,9 @@ const TradeRecords = () => {
                       return <span>-</span>
                     }
                     
-                    // 反推买入价和卖出价
-                    const buyPrice = buyQuantity > 0 ? buyAmount / buyQuantity : 0
-                    const sellPrice = sellQuantity > 0 ? sellAmount / sellQuantity : 0
+                    // 使用用户输入的实际买入价/卖出价，如果为空则使用从订单反推的价格
+                    const buyPrice = item.buyPrice != null ? item.buyPrice : (buyQuantity > 0 ? buyAmount / buyQuantity : 0)
+                    const sellPrice = item.sellPrice != null ? item.sellPrice : (sellQuantity > 0 ? sellAmount / sellQuantity : 0)
                     
                     // 计算已卖出部分的盈亏
                     const profit = (sellPrice - buyPrice) * sellQuantity
@@ -1633,7 +1886,14 @@ const TradeRecords = () => {
                     const sellSlippage = (actualSellPrice - idealSellPrice) * sellQuantity
                     
                     const totalSlippage = buySlippage + sellSlippage
-                    const netProfit = profit - totalSlippage
+                    // 计算总手续费
+                    const tradeCommission = parseFloat(item.tradeCommission) || 0
+                    const otherFees = parseFloat(item.otherFees) || 0
+                    const sellTradeCommission = parseFloat(item.sellTradeCommission) || 0
+                    const sellOtherFees = parseFloat(item.sellOtherFees) || 0
+                    const totalFees = tradeCommission + sellTradeCommission + otherFees + sellOtherFees
+                    // 净盈亏额 = 盈亏金额 - 总手续费
+                    const netProfit = profit - totalFees
                     
                     // 滑净盈比 = 滑点 / 净盈亏额 × 100%
                     if (netProfit !== 0) {
@@ -1657,9 +1917,9 @@ const TradeRecords = () => {
                       return <span>-</span>
                     }
                     
-                    // 反推买入价和卖出价
-                    const buyPrice = buyQuantity > 0 ? buyAmount / buyQuantity : 0
-                    const sellPrice = sellQuantity > 0 ? sellAmount / sellQuantity : 0
+                    // 使用用户输入的实际买入价/卖出价，如果为空则使用从订单反推的价格
+                    const buyPrice = item.buyPrice != null ? item.buyPrice : (buyQuantity > 0 ? buyAmount / buyQuantity : 0)
+                    const sellPrice = item.sellPrice != null ? item.sellPrice : (sellQuantity > 0 ? sellAmount / sellQuantity : 0)
                     
                     if (buyPrice > 0) {
                       const profitPercent = (sellPrice - buyPrice) / buyPrice * 100

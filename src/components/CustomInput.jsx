@@ -65,13 +65,13 @@ const CustomInput = ({ value, onChange, placeholder = '请输入', className = '
   return (
     <input
       type={type}
-      value={value || ''}
+      value={value !== null && value !== undefined ? value : ''}
       onChange={handleChange}
       onBlur={handleBlur}
       onFocus={handleFocus}
       className={`w-full px-3 py-2 border rounded focus:outline-none transition-colors text-sm ${error ? 'border-red-500' : 'border-gray-300'} ${className}`}
       placeholder={placeholder}
-      style={{ color: value ? '#1f2937' : '#9ca3af' }}
+      style={{ color: value != null && value !== '' ? '#1f2937' : '#9ca3af' }}
       {...props}
     />
   )

@@ -1232,7 +1232,20 @@ const useStore = create(
         }))
 
         console.log('[Store] 导入的交易策略数据:', newData.map(d => ({ id: d.id, name: d.name })))
-        return { strategyRecords: newData }
+
+        // 同时更新 strategies (用于 getStrategyName) 和 strategyRecords (用于交易策略列表)
+        // strategies 结构: { buy: [...], sell: [...] }
+        const strategiesBuy = newData.filter(d => d.strategyType === 'buy')
+        const strategiesSell = newData.filter(d => d.strategyType === 'sell')
+
+        return {
+          strategyRecords: newData,
+          strategies: {
+            ...state.strategies,
+            buy: strategiesBuy,
+            sell: strategiesSell
+          }
+        }
       }),
 
       // 添加预约单
@@ -1374,10 +1387,9 @@ const useStore = create(
 
                 // 更新交易记录数据
                 if (syncResponse.data.trade_records) {
-                  const { trade_records } = syncResponse.data
-                  console.log('[Store] 同步到的交易记录数量:', trade_records.length)
+                  const { trade_records, trade_orders } = syncResponse.data
                   useStore.setState((state) => {
-                    state.importTradeRecords(trade_records)
+                    state.importTradeRecords(trade_records, trade_orders)
                     return {}
                   })
                 }
@@ -1592,7 +1604,7 @@ const useStore = create(
           apiCall('/api/sync/all', 'GET')
             .then(syncResponse => {
               if (syncResponse.success && syncResponse.data) {
-                get().importTradeRecords(syncResponse.data.trade_records || [])
+                get().importTradeRecords(syncResponse.data.trade_records || [], syncResponse.data.trade_orders || [])
               }
             })
             .finally(() => {
@@ -2037,10 +2049,6 @@ const useStore = create(
             buyOrderPrice: o.buy_order_price ? parseFloat(o.buy_order_price) : (o.buyOrderPrice || null),
             notes: o.notes
           }))
-        // 直接使用数据库数据，不与本地数据合并
-        // 这样可以确保删除后，已删除的订单不会保留在本地状态中
-        console.log('[Store] importOrders - 使用数据库数据，不与本地合并')
-        console.log('[Store] importOrders - 数据库订单数量:', newOrders.length)
         return { orders: newOrders }
       }),
 
@@ -2090,10 +2098,6 @@ const useStore = create(
         
         const latestBalance = latestTransaction ? latestTransaction.balance || 0 : 0
         
-        console.log('[Store] importTransactions - 使用数据库数据，不与本地合并')
-        console.log('[Store] importTransactions - 数据库账单数量:', newTransactions.length)
-        console.log('[Store] importTransactions - 最新余额:', latestBalance)
-        
         return { 
           transactions: newTransactions,
           account: {
@@ -2107,15 +2111,33 @@ const useStore = create(
       }),
 
       // 批量导入交易记录（从数据库同步）- 直接使用数据库数据，不合并本地数据
-      importTradeRecords: (records) => set((state) => {
+      importTradeRecords: (records, ordersData) => set((state) => {
         if (!records || records.length === 0) {
           return state
         }
         
-        const allOrders = state.orders || []
+        // 使用传入的订单数据（如果有的话），否则使用 state.orders
+        const allOrders = ordersData 
+          ? ordersData.filter(o => !o.deleted).map(o => ({
+              ...o,
+              tradeNumber: o.trade_number || o.tradeNumber,
+              type: (o.order_type === '买入' ? 'buy' : (o.order_type === '卖出' ? 'sell' : o.order_type)) || o.type
+            }))
+          : (state.orders || [])
+        
         const filteredRecords = records.filter(r => !r.deleted)
         
-        const newRecords = filteredRecords.map(r => {
+        // 过滤掉没有对应订单的记录（订单被删除但交易记录还在的情况）
+        const recordsWithOrders = filteredRecords.filter(r => {
+          const tradeNumber = r.trade_number || r.tradeNumber
+          if (!tradeNumber) return true // 没有交易编号的记录保留
+          const hasOrders = allOrders.some(o => 
+            (o.tradeNumber === tradeNumber || o.trade_number === tradeNumber) && !o.deleted
+          )
+          return hasOrders
+        })
+        
+        const newRecords = recordsWithOrders.map(r => {
           let buyStrategyId = r.buy_strategy_id ? Number(r.buy_strategy_id) : (r.buyStrategyId || null)
           let strategyId = r.strategy_id ? Number(r.strategy_id) : (r.strategyId || null)
           const tradeNumber = r.trade_number || r.tradeNumber || r.id
@@ -2127,16 +2149,18 @@ const useStore = create(
             const price = parseFloat(o.price) || 0
             calculatedBuyAmount += quantity * price
           })
-          calculatedBuyAmount = calculatedBuyAmount.toFixed(2)
+          const buyAmountValue = buyOrders.length > 0 ? parseFloat(calculatedBuyAmount.toFixed(2)) : null
 
           const sellOrders = allOrders.filter(o => o.tradeNumber === tradeNumber && o.type === 'sell')
           let calculatedSellAmount = 0
           let sellOrderPriceFromOrders = null
+          let latestSellOrderTime = null
           if (sellOrders.length === 1) {
             const price = parseFloat(sellOrders[0].price) || 0
             const quantity = parseFloat(sellOrders[0].quantity) || 0
             calculatedSellAmount = price * quantity
             sellOrderPriceFromOrders = price
+            latestSellOrderTime = sellOrders[0].order_time || sellOrders[0].created_at || sellOrders[0].createdAt
           } else if (sellOrders.length > 1) {
             let totalQuantity = 0
             sellOrders.forEach(o => {
@@ -2144,12 +2168,19 @@ const useStore = create(
               const quantity = parseFloat(o.quantity) || 0
               calculatedSellAmount += price * quantity
               totalQuantity += quantity
+              // 找到最新的卖出订单时间
+              const orderTime = o.order_time || o.created_at || o.createdAt
+              if (orderTime) {
+                if (!latestSellOrderTime || new Date(orderTime) > new Date(latestSellOrderTime)) {
+                  latestSellOrderTime = orderTime
+                }
+              }
             })
             if (totalQuantity > 0) {
               sellOrderPriceFromOrders = calculatedSellAmount / totalQuantity
             }
           }
-          calculatedSellAmount = calculatedSellAmount.toFixed(2)
+          const sellAmountValue = parseFloat(calculatedSellAmount.toFixed(2))
           if (!buyStrategyId && tradeNumber && allOrders.length > 0) {
             const relatedOrders = allOrders.filter(o => o.tradeNumber === tradeNumber)
             const strategyBuyOrders = relatedOrders.filter(o => o.type === 'buy')
@@ -2182,8 +2213,9 @@ const useStore = create(
             sellPrice: r.sell_price ? parseFloat(r.sell_price) : (r.sellPrice || null),
             // 卖出订单价格sell_order_price：自动从数据库获取，为空时从订单计算
             sellOrderPrice: r.sell_order_price ? parseFloat(r.sell_order_price) : (r.sellOrderPrice !== undefined ? r.sellOrderPrice : (sellOrderPriceFromOrders !== null ? sellOrderPriceFromOrders : null)),
-            sellOrderTime: r.sell_order_time || r.sellOrderTime || null,
-            sellTime: r.sell_time || r.sellTime || null,
+            sellOrderTime: r.sell_order_time || r.sellOrderTime || latestSellOrderTime || null,
+            sellTime: r.sell_time || r.sellTime || latestSellOrderTime || null,
+            sellDate: r.sell_date || r.sellDate || (latestSellOrderTime ? new Date(latestSellOrderTime).toISOString().split('T')[0] : null),
             tradeNumber: tradeNumber,
             // 明确映射股票代码和名称字段（兼容数据库的下划线格式和前端驼峰格式）
             symbol: r.symbol || '-',
@@ -2191,8 +2223,8 @@ const useStore = create(
             createdAt: r.created_at || r.createdAt || new Date().toISOString(),
             deleted: r.deleted || false,
             deletedAt: r.deleted_at || r.deletedAt || null,
-            buyAmount: calculatedBuyAmount,
-            sellAmount: calculatedSellAmount,
+            buyAmount: buyAmountValue,
+            sellAmount: sellAmountValue,
             // 佣金和费用字段映射
             tradeCommission: r.trade_commission != null ? r.trade_commission : (r.tradeCommission != null ? r.tradeCommission : null),
             otherFees: r.other_fees != null ? r.other_fees : (r.otherFees != null ? r.otherFees : null),
@@ -2206,7 +2238,8 @@ const useStore = create(
             buyStrategyId: buyStrategyId,
             strategyId: strategyId,
             // 盈亏金额字段映射（用于当月亏损组件筛选和显示）
-            profit: r.profit != null ? parseFloat(r.profit) : (r.profit || 0),
+            // 盈亏金额 = 卖出金额 - 买入金额
+            profit: sellAmountValue - buyAmountValue,
             profitPercent: r.profit_percent != null ? parseFloat(r.profit_percent) : (r.profitPercent || 0),
             // 买入日期字段映射
             buyDate: r.buy_date || r.buyDate || r.buy_time || r.buyTime || null
@@ -2217,8 +2250,6 @@ const useStore = create(
           const key = `${record.tradeNumber}_${record.createdAt}`
           if (!acc[key]) {
             acc[key] = record
-          } else {
-            console.log('[Store] importTradeRecords - 发现重复记录，已去重:', record.tradeNumber)
           }
           return acc
         }, {})
@@ -2406,9 +2437,9 @@ const useStore = create(
           // 从数据库重新同步数据（添加自动刷新机制）
           const syncResponse = await apiCall('/api/sync/all')
           if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
-            const { trade_records } = syncResponse.data
+            const { trade_records, trade_orders } = syncResponse.data
             set((state) => {
-              state.importTradeRecords(trade_records)
+              state.importTradeRecords(trade_records, trade_orders)
               return {}
             })
           }
@@ -2427,9 +2458,9 @@ const useStore = create(
           // 从数据库重新同步数据（添加自动刷新机制）
           const syncResponse = await apiCall('/api/sync/all')
           if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
-            const { trade_records } = syncResponse.data
+            const { trade_records, trade_orders } = syncResponse.data
             set((state) => {
-              state.importTradeRecords(trade_records)
+              state.importTradeRecords(trade_records, trade_orders)
               return {}
             })
           }

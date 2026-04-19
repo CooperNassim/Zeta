@@ -376,8 +376,8 @@ const TradeRecords = () => {
           .then(res => res.json())
           .then(syncResponse => {
             if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
-              const { trade_records } = syncResponse.data
-              useStore.getState().importTradeRecords(trade_records)
+              const { trade_records, trade_orders } = syncResponse.data
+              useStore.getState().importTradeRecords(trade_records, trade_orders)
             }
           })
         showToast('保存成功', 'success')
@@ -435,40 +435,20 @@ const TradeRecords = () => {
       const priceDiff = buyOrderPriceExact - actualBuyPriceFromAmount
       buySlippage = priceDiff * buyOrdersTotalQuantity
     }
-    // 获取买入策略名称：从股票交易列表的策略名称取值
+    // 获取买入策略名称：从同一交易编号的买入订单获取
     const buyOrder = orders.find(o => String(o.id) === String(record.buyOrderId))
+    const buyOrdersOfSameTrade = orders.filter(o => o.tradeNumber === record.tradeNumber && o.type === 'buy')
+    const firstBuyOrderWithStrategy = buyOrdersOfSameTrade.find(o => o.strategyId)
     let buyStrategyValue = ''
-    
-    console.log('🔍 [Debug Strategy] 查找买入策略:')
-    console.log('   - buyOrder:', buyOrder)
-    console.log('   - record.buyStrategyId:', record.buyStrategyId)
-    console.log('   - strategyRecords长度:', strategyRecords.length)
-    
-    // 详细记录所有的策略ID
-    const strategyIds = strategyRecords.map(s => s.id)
-    console.log('   - 所有策略ID:', strategyIds)
-    console.log('   - 策略记录详细:', strategyRecords)
-    
-    // 使用策略记录查找策略名称
-    if (buyOrder && buyOrder.strategyId) {
-      console.log('   - 从订单策略ID查找:', buyOrder.strategyId, ', ID类型:', typeof buyOrder.strategyId)
-      const strategy = strategyRecords.find(s => {
-        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', buyOrder.strategyId, '(类型:', typeof buyOrder.strategyId, ')')
-        return s.id === buyOrder.strategyId
-      })
-      console.log('   - 查找结果:', strategy)
-      buyStrategyValue = strategy ? strategy.name : ''
-    } else if (record.buyStrategyId) {
-      console.log('   - 从交易记录策略ID查找:', record.buyStrategyId, ', ID类型:', typeof record.buyStrategyId)
-      const strategy = strategyRecords.find(s => {
-        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', record.buyStrategyId, '(类型:', typeof record.buyStrategyId, ')')
-        return s.id === record.buyStrategyId
-      })
-      console.log('   - 查找结果:', strategy)
+
+    // 使用 strategyRecords 查找策略名称
+    const buyStrategiesList = strategyRecords || []
+    const strategyIdToUse = buyOrder?.strategyId || firstBuyOrderWithStrategy?.strategyId || record.buyStrategyId
+
+    if (strategyIdToUse) {
+      const strategy = buyStrategiesList.find(s => String(s.id) === String(strategyIdToUse))
       buyStrategyValue = strategy ? strategy.name : ''
     }
-    
-    console.log('   - 最终策略名称:', buyStrategyValue)
     // 买入金额 = 股票交易列表买入总金额（与交易记录列表一致的取值逻辑）
     const buyAmountValue = buyOrdersTotalAmount > 0
       ? formatAmount(buyOrdersTotalAmount)
@@ -489,7 +469,7 @@ const TradeRecords = () => {
       low: record.buyChannel?.low ? formatAmount(record.buyChannel.low) : (buyOrders.length > 0 ? '' : '-'),
       buyQuantity: buyOrdersTotalQuantity > 0 ? formatAmount(buyOrdersTotalQuantity) : (buyOrders.length > 0 ? '' : '-'),
       buyAmount: buyAmountValue || (buyOrders.length > 0 ? '' : '-'),
-      buyPrice: buyPriceValue || (buyOrders.length > 0 ? '' : '-'),
+      buyPrice: buyPriceValue || '-',
       buyOrderPrice: buyOrderPriceValue ? formatPrice(buyOrderPriceValue) : (buyOrders.length > 0 ? '' : '-'),
       buySlippage: buySlippage !== null ? formatSlippage(buySlippage) : (buyOrders.length > 0 ? '-' : '-'),
       tradeCommission: formatFee(record.tradeCommission) || (buyOrders.length > 0 ? '' : '-'),
@@ -726,8 +706,8 @@ const TradeRecords = () => {
           .then(res => res.json())
           .then(syncResponse => {
             if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
-              const { trade_records } = syncResponse.data
-              useStore.getState().importTradeRecords(trade_records)
+              const { trade_records, trade_orders } = syncResponse.data
+              useStore.getState().importTradeRecords(trade_records, trade_orders)
             }
           })
         showToast('保存成功', 'success')
@@ -776,8 +756,8 @@ const TradeRecords = () => {
           .then(res => res.json())
           .then(syncResponse => {
             if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
-              const { trade_records } = syncResponse.data
-              useStore.getState().importTradeRecords(trade_records)
+              const { trade_records, trade_orders } = syncResponse.data
+              useStore.getState().importTradeRecords(trade_records, trade_orders)
             }
           })
         showToast('保存成功', 'success')
@@ -840,8 +820,9 @@ const TradeRecords = () => {
   }
 
   const getStrategyName = (strategyId, type) => {
+    if (!strategyId) return '-'
     const strategyList = strategies[type] || []
-    const strategy = strategyList.find(s => s.id === String(strategyId))
+    const strategy = strategyList.find(s => String(s.id) === String(strategyId))
     return strategy ? strategy.name : '-'
   }
 
@@ -1171,17 +1152,17 @@ const TradeRecords = () => {
         return 'D'
       }
       case 'profit':
-        return buyQuantity > 0 || sellQuantity > 0 ? formatNum(profit) : '-'
+        return sellQuantity > 0 ? formatNum(profit) : '0'
       case 'profitPercent':
-        if (buyPrice > 0) {
+        if (buyPrice > 0 && sellQuantity > 0) {
           const profitPercent = (sellPrice - buyPrice) / buyPrice * 100
           return formatNum(profitPercent) + '%'
         }
         return '-'
       case 'netProfit':
-        return buyQuantity > 0 || sellQuantity > 0 ? formatNum(netProfit) : '-'
+        return sellQuantity > 0 ? formatNum(netProfit) : '0'
       case 'netProfitPercent':
-        if (buyPrice > 0) {
+        if (buyPrice > 0 && sellQuantity > 0) {
           const netProfitPercent = netProfit / (buyPrice * sellQuantity) * 100
           return formatNum(netProfitPercent) + '%'
         }
@@ -1195,9 +1176,9 @@ const TradeRecords = () => {
         return formatNum(totalFees)
       }
       case 'slippage':
-        return buyQuantity > 0 || sellQuantity > 0 ? formatNum(totalSlippage) : '-'
+        return sellQuantity > 0 ? formatNum(totalSlippage) : '0'
       case 'slippageNetProfitRatio':
-        if (netProfit !== 0) {
+        if (netProfit !== 0 && sellQuantity > 0) {
           const ratio = totalSlippage / Math.abs(netProfit) * 100
           return formatNum(ratio) + '%'
         }
@@ -1424,6 +1405,10 @@ const TradeRecords = () => {
                     const buyQuantity = parseFloat(item.buyQuantity) || 0
                     const sellQuantity = parseFloat(item.sellQuantity) || 0
                     
+                    if (sellQuantity === 0) {
+                      return <span>0</span>
+                    }
+                    
                     // 反推买入价和卖出价
                     const buyPrice = buyQuantity > 0 ? buyAmount / buyQuantity : 0
                     const sellPrice = sellQuantity > 0 ? sellAmount / sellQuantity : 0
@@ -1521,6 +1506,10 @@ const TradeRecords = () => {
                     const buyQuantity = parseFloat(item.buyQuantity) || 0
                     const sellQuantity = parseFloat(item.sellQuantity) || 0
                     
+                    if (sellQuantity === 0) {
+                      return <span>0</span>
+                    }
+                    
                     // 反推买入价和卖出价
                     const buyPrice = buyQuantity > 0 ? buyAmount / buyQuantity : 0
                     const sellPrice = sellQuantity > 0 ? sellAmount / sellQuantity : 0
@@ -1572,6 +1561,10 @@ const TradeRecords = () => {
                     const buyQuantity = parseFloat(item.buyQuantity) || 0
                     const sellQuantity = parseFloat(item.sellQuantity) || 0
                     
+                    if (sellQuantity === 0) {
+                      return <span>0</span>
+                    }
+                    
                     // 反推买入价和卖出价
                     const buyPrice = buyQuantity > 0 ? buyAmount / buyQuantity : 0
                     const sellPrice = sellQuantity > 0 ? sellAmount / sellQuantity : 0
@@ -1607,6 +1600,10 @@ const TradeRecords = () => {
                     const sellAmount = parseFloat(item.sellAmount) || 0
                     const buyQuantity = parseFloat(item.buyQuantity) || 0
                     const sellQuantity = parseFloat(item.sellQuantity) || 0
+                    
+                    if (sellQuantity === 0) {
+                      return <span>-</span>
+                    }
                     
                     // 反推买入价和卖出价
                     const buyPrice = buyQuantity > 0 ? buyAmount / buyQuantity : 0
@@ -1655,6 +1652,10 @@ const TradeRecords = () => {
                     const sellAmount = parseFloat(item.sellAmount) || 0
                     const buyQuantity = parseFloat(item.buyQuantity) || 0
                     const sellQuantity = parseFloat(item.sellQuantity) || 0
+                    
+                    if (sellQuantity === 0) {
+                      return <span>-</span>
+                    }
                     
                     // 反推买入价和卖出价
                     const buyPrice = buyQuantity > 0 ? buyAmount / buyQuantity : 0

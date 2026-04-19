@@ -458,28 +458,55 @@ const AccountRisk = () => {
       const sellQty = parseFloat(r.sellQuantity) || 0
       const buyQty = parseFloat(r.buyQuantity) || 0
       const isEndStatus = sellQty >= buyQty
+
+      // 2. 卖出时间=当月：使用卖出时间来判断月份（亏损在卖出时确定）
+      // 优先使用明确的卖出时间字段
+      const sellDateStr = r.sellDate || r.sellTime
+      if (!sellDateStr) {
+        // 如果没有明确的卖出时间，跳过这条记录
+        return false
+      }
+      const sellDate = new Date(sellDateStr)
+      if (isNaN(sellDate.getTime())) {
+        // 如果日期无效，跳过这条记录
+        return false
+      }
       
-      // 2. 买入时间=当月：买入时间是当前月份
-      const buyDate = new Date(r.buyDate || r.buyTime || r.createdAt)
-      const isCurrentMonth = buyDate.getMonth() === currentMonth && buyDate.getFullYear() === currentYear
-      
+      // 确保是当前月份
+      const isCurrentMonth = sellDate.getMonth() === currentMonth && sellDate.getFullYear() === currentYear
+      if (!isCurrentMonth) {
+        return false
+      }
+
       // 3. 盈亏金额为负数：亏损记录
       const profit = parseFloat(r.profit) || 0
       const isLoss = profit < 0
-      
-      return isEndStatus && isCurrentMonth && isLoss
+
+      return isEndStatus && isLoss
     })
-  
-  console.log('🔍 [monthlyLoss] 筛选后的亏损记录:', monthlyLossFiltered)
-  console.log('🔍 [monthlyLoss] 亏损记录详情:', monthlyLossFiltered.map(r => ({
+    // 按交易编号去重，确保每个交易编号只计算一次
+    .reduce((acc, r) => {
+      if (!acc[r.tradeNumber]) {
+        acc[r.tradeNumber] = r
+      }
+      return acc
+    }, {})
+
+  // 转换为数组
+  const monthlyLossFilteredArray = Object.values(monthlyLossFiltered)
+
+  console.log('🔍 [monthlyLoss] 去重后的亏损记录:', monthlyLossFilteredArray)
+  console.log('🔍 [monthlyLoss] 亏损记录详情:', monthlyLossFilteredArray.map(r => ({
     tradeNumber: r.tradeNumber,
     buyQuantity: r.buyQuantity,
     sellQuantity: r.sellQuantity,
     profit: r.profit,
-    buyDate: r.buyDate || r.buyTime || r.createdAt
+    sellDate: r.sellDate,
+    sellTime: r.sellTime,
+    calculatedDate: r.sellDate || r.sellTime
   })))
-  
-  const monthlyLoss = monthlyLossFiltered.reduce((sum, r) => sum + Math.abs(parseFloat(r.profit) || 0), 0)
+
+  const monthlyLoss = monthlyLossFilteredArray.reduce((sum, r) => sum + Math.abs(parseFloat(r.profit) || 0), 0)
     
   // 只使用实盘数据（用于计算月初账户总额）
   const currentTransactions = transactions
@@ -549,9 +576,26 @@ const AccountRisk = () => {
       // 保存时取整
       const savedAccountAvailable = Math.round(accountAvailable)
       const savedSingleAvailable = Math.round(singleAvailable)
+      
+      // 计算当前账户（总资产）
+      const currentAccount = startMonthTotal - monthlyLoss
+      
+      // 计算风险比例（已用额度 / 月初账户）
+      const riskRatio = (usedRiskAmount / startMonthTotal) * 100
+      
+      // 更新 store 中的 accountRiskData
+      useStore.getState().updateAccountRiskData({
+        monthlyLoss: Math.round(monthlyLoss),
+        startMonthTotal: startMonthTotal,
+        currentAccount: Math.round(currentAccount),
+        riskRatio: Math.round(riskRatio * 100) / 100,
+        accountAvailable: savedAccountAvailable,
+        singleAvailable: savedSingleAvailable
+      })
+      
       saveRiskModelData(startMonthTotal, savedAccountAvailable, savedSingleAvailable)
     }
-  }, [startMonthTotal, accountAvailable, singleAvailable])
+  }, [startMonthTotal, accountAvailable, singleAvailable, monthlyLoss, usedRiskAmount])
 
   return (
     <div style={{
@@ -729,24 +773,44 @@ const StrategyRanking = () => {
   const currentYear = new Date().getFullYear()
 
   // 当月亏损列表实时查询交易记录数据表
-  const lossRankings = tradeRecords
+  const lossRankingsFiltered = tradeRecords
     .filter(r => !r.deleted) // 排除已删除的记录
     .filter(r => {
       // 1. 交易状态=结束：卖出数量 ≥ 买入数量
       const sellQty = parseFloat(r.sellQuantity) || 0
       const buyQty = parseFloat(r.buyQuantity) || 0
       const isEndStatus = sellQty >= buyQty
-      
-      // 2. 买入时间=当月：买入时间是当前月份
-      const buyDate = new Date(r.buyDate || r.buyTime || r.createdAt)
-      const isCurrentMonth = buyDate.getMonth() === currentMonth && buyDate.getFullYear() === currentYear
-      
+
+      // 2. 卖出时间=当月：使用卖出时间来判断月份（亏损在卖出时确定）
+      // 优先使用明确的卖出时间字段
+      const sellDateStr = r.sellDate || r.sellTime
+      if (!sellDateStr) {
+        // 如果没有明确的卖出时间，跳过这条记录
+        return false
+      }
+      const sellDate = new Date(sellDateStr)
+      if (isNaN(sellDate.getTime())) {
+        // 如果日期无效，跳过这条记录
+        return false
+      }
+      const isCurrentMonth = sellDate.getMonth() === currentMonth && sellDate.getFullYear() === currentYear
+
       // 3. 盈亏金额为负数：亏损记录
       const profit = parseFloat(r.profit) || 0
       const isLoss = profit < 0
-      
+
       return isEndStatus && isCurrentMonth && isLoss
     })
+    // 按交易编号去重
+    .reduce((acc, r) => {
+      if (!acc[r.tradeNumber]) {
+        acc[r.tradeNumber] = r
+      }
+      return acc
+    }, {})
+
+  // 转换为数组并排序
+  const lossRankingsArray = Object.values(lossRankingsFiltered)
     .sort((a, b) => {
       // 按亏损金额降序排列（亏损多的排在前面）
       const profitA = parseFloat(a.profit) || 0
@@ -838,10 +902,10 @@ const StrategyRanking = () => {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {lossRankings.length === 0 ? (
+        {lossRankingsArray.length === 0 ? (
           <EmptyState message="暂无数据" height="100%" />
         ) : (
-          lossRankings.map((item, index) => (
+          lossRankingsArray.map((item, index) => (
             <div
               key={item.rank}
               style={{

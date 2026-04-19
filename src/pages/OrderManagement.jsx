@@ -362,13 +362,23 @@ const OrderManagement = () => {
           const sellQty = parseFloat(r.sellQuantity) || 0
           const buyQty = parseFloat(r.buyQuantity) || 0
           const isEndStatus = sellQty >= buyQty
-          
-          const buyDate = new Date(r.buyDate || r.buyTime || r.createdAt)
-          const isCurrentMonth = buyDate.getMonth() === currentMonth && buyDate.getFullYear() === currentYear
-          
+
+          // 优先使用明确的卖出时间字段
+          const sellDateStr = r.sellDate || r.sellTime
+          if (!sellDateStr) {
+            // 如果没有明确的卖出时间，跳过这条记录
+            return false
+          }
+          const sellDate = new Date(sellDateStr)
+          if (isNaN(sellDate.getTime())) {
+            // 如果日期无效，跳过这条记录
+            return false
+          }
+          const isCurrentMonth = sellDate.getMonth() === currentMonth && sellDate.getFullYear() === currentYear
+
           const profit = parseFloat(r.profit) || 0
           const isLoss = profit < 0
-          
+
           return isEndStatus && isCurrentMonth && isLoss
         })
         .reduce((sum, r) => sum + Math.abs(parseFloat(r.profit) || 0), 0)

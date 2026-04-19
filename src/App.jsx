@@ -167,7 +167,8 @@ function DataSync() {
           // 总是导入数据，即使是空数组也会清空本地旧数据
           if (trade_orders) store.importOrders(trade_orders)
           if (transactions) store.importTransactions(transactions)
-          if (trade_records) store.importTradeRecords(trade_records)
+          // 传入订单数据，用于过滤没有对应订单的交易记录
+          if (trade_records) store.importTradeRecords(trade_records, trade_orders)
           if (stock_pool) store.importStocks(stock_pool)
           if (daily_work_data !== undefined) store.importDailyWorkData(daily_work_data)
           if (psychological_test_results !== undefined) store.importPsychologicalTestResults(psychological_test_results)

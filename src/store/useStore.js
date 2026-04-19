@@ -1403,179 +1403,214 @@ const useStore = create(
       deleteOrder: (id) => set((state) => {
         const order = state.orders.find(o => o.id === id)
         const tradeNumber = order?.tradeNumber
-        
-        if (order) {
-          // 查找关联的交易记录和账单明细
-          Promise.all([
-            apiCall(`/api/transactions`, 'GET'),
-            apiCall(`/api/trade_records`, 'GET')
-          ])
-            .then(([transactionsResult, tradeRecordsResult]) => {
-              // 处理账单明细：只在删除最后一个同交易编号的订单时才删除账单明细
-              if (transactionsResult.success && transactionsResult.data) {
-                // 检查是否还有其他同交易编号的未删除订单
-                const remainingOrders = state.orders.filter(o => 
-                  o.tradeNumber === tradeNumber && 
-                  o.id !== id && 
-                  !o.deleted
-                )
-                
-                // 如果没有其他同交易编号的订单，才删除账单明细
-                if (remainingOrders.length === 0) {
-                  const matchedTransactions = transactionsResult.data.filter(t => {
-                    if (tradeNumber && (t.trade_number === tradeNumber || t.tradeNumber === tradeNumber)) {
-                      return true
-                    }
-                    if (!tradeNumber && t.type && (t.type === '买入' || t.type === '卖出')) {
-                      return t.symbol === order.symbol && 
-                             t.name === order.name && 
-                             Math.abs(parseFloat(t.amount || 0)) === Math.abs(parseFloat(order.price || 0) * parseFloat(order.quantity || 0))
-                    }
-                    return false
-                  })
-                  if (matchedTransactions.length > 0) {
-                    const transactionIds = matchedTransactions.map(t => t.id)
-                    apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
-                      .then(() => console.log(`[Store] 删除对应账单明细成功: ${transactionIds.length}条`))
-                      .catch(err => console.error('[Store] 删除账单明细失败:', err))
-                  }
-                } else {
-                  console.log(`[Store] 还有其他同交易编号的订单，保留账单明细: ${remainingOrders.length}条`)
-                }
+
+        console.log('[Store] deleteOrder 开始删除:', { id, tradeNumber, orderType: order?.type })
+        console.log('[Store] deleteOrder 当前transactions数量:', state.transactions.length)
+        console.log('[Store] deleteOrder 当前orders数量:', state.orders.length)
+
+        // 找出需要删除的账单明细和交易记录ID
+        const transactionIdsToDelete = []
+        const tradeRecordIdsToDelete = []
+
+        // 获取同交易编号下的所有未删除订单（排除当前订单）
+        const otherOrders = state.orders.filter(o =>
+          o.tradeNumber === tradeNumber &&
+          o.id !== id &&
+          !o.deleted
+        )
+        console.log('[Store] deleteOrder 同交易编号的其他订单数量:', otherOrders.length)
+
+        // 删除该订单关联的账单明细
+        if (tradeNumber) {
+          console.log('[Store] deleteOrder 使用交易编号匹配')
+          // 有交易编号的订单：直接通过交易类型匹配
+          state.transactions.forEach(t => {
+            console.log('[Store] deleteOrder 检查账单:', { tid: t.id, tTradeNumber: t.tradeNumber, tType: t.type, tTransType: t.transaction_type, tAmount: t.amount })
+            if (t.tradeNumber === tradeNumber || t.trade_number === tradeNumber) {
+              console.log('[Store] deleteOrder 找到匹配的tradeNumber')
+              // 修复：订单type是'sell'/'buy'，账单type可能是'卖出'/'买入'或'股票卖出'/'股票买入'
+              const isSellType = t.type === '卖出' || t.type === '股票卖出' || t.transaction_type === '卖出' || t.transaction_type === '股票卖出'
+              const isBuyType = t.type === '买入' || t.type === '股票买入' || t.transaction_type === '买入' || t.transaction_type === '股票买入'
+              if (order.type === 'sell' && isSellType) {
+                console.log('[Store] deleteOrder 匹配卖出订单，添加到删除列表')
+                transactionIdsToDelete.push(t.id)
+              } else if (order.type === 'buy' && isBuyType) {
+                console.log('[Store] deleteOrder 匹配买入订单，添加到删除列表')
+                transactionIdsToDelete.push(t.id)
               }
-              
-              // 处理交易记录：只在删除最后一个同交易编号的订单时才删除交易记录
-              if (tradeRecordsResult.success && tradeRecordsResult.data) {
-                // 检查是否还有其他同交易编号的未删除订单
-                const remainingOrders = state.orders.filter(o => 
-                  o.tradeNumber === tradeNumber && 
-                  o.id !== id && 
-                  !o.deleted
-                )
-                
-                // 如果没有其他同交易编号的订单，才删除交易记录
-                if (remainingOrders.length === 0) {
-                  const matchedTradeRecords = tradeRecordsResult.data.filter(r => {
-                    if (tradeNumber && (r.trade_number === tradeNumber || r.tradeNumber === tradeNumber)) {
-                      return true
-                    }
-                    return false
-                  })
-                  if (matchedTradeRecords.length > 0) {
-                    const tradeRecordIds = matchedTradeRecords.map(r => r.id)
-                    apiCall('/api/trade_records/bulk/delete', 'POST', { ids: tradeRecordIds })
-                      .then(() => console.log(`[Store] 删除对应交易记录成功: ${tradeRecordIds.length}条`))
-                      .catch(err => console.error('[Store] 删除交易记录失败:', err))
-                  }
-                } else {
-                  console.log(`[Store] 还有其他同交易编号的订单，保留交易记录: ${remainingOrders.length}条`)
-                }
+            }
+          })
+        } else {
+          console.log('[Store] deleteOrder 无交易编号，使用symbol/name/金额匹配')
+          // 没有交易编号的订单：通过 symbol、name、金额匹配
+          state.transactions.forEach(t => {
+            if (t.type && (t.type === '买入' || t.type === '卖出')) {
+              if (t.symbol === order.symbol &&
+                  t.name === order.name &&
+                  Math.abs(parseFloat(t.amount || 0)) === Math.abs(parseFloat(order.price || 0) * parseFloat(order.quantity || 0))) {
+                transactionIdsToDelete.push(t.id)
               }
-            })
-            .catch(err => console.error('[Store] 查找关联记录失败:', err))
+            }
+          })
         }
-        
+        console.log('[Store] deleteOrder 准备删除的账单明细IDs:', transactionIdsToDelete)
+
+        // 只有当同交易编号下没有其他未删除订单时，才删除交易记录
+        if (otherOrders.length === 0) {
+          state.tradeRecords.forEach(r => {
+            if (r.tradeNumber === tradeNumber || r.trade_number === tradeNumber) {
+              tradeRecordIdsToDelete.push(r.id)
+            }
+          })
+        }
+
+        // 异步删除关联的账单明细和交易记录
+        if (transactionIdsToDelete.length > 0) {
+          console.log('[Store] 删除账单明细 API 调用, IDs:', transactionIdsToDelete)
+          apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIdsToDelete })
+            .then(result => {
+              console.log(`[Store] 删除对应账单明细 API 返回:`, result)
+              console.log(`[Store] 删除对应账单明细成功: ${transactionIdsToDelete.length}条`)
+            })
+            .catch(err => console.error('[Store] 删除账单明细失败:', err))
+        } else {
+          console.log('[Store] 没有需要删除的账单明细')
+        }
+
+        if (tradeRecordIdsToDelete.length > 0) {
+          console.log('[Store] 准备删除交易记录, IDs:', tradeRecordIdsToDelete)
+          apiCall('/api/trade_records/bulk/delete', 'POST', { ids: tradeRecordIdsToDelete })
+            .then(result => {
+              console.log(`[Store] 删除对应交易记录 API 返回:`, result)
+              console.log(`[Store] 删除对应交易记录成功: ${tradeRecordIdsToDelete.length}条`)
+            })
+            .catch(err => console.error('[Store] 删除交易记录失败:', err))
+        } else {
+          console.log('[Store] 没有需要删除的交易记录')
+        }
+
         // 删除订单
         apiCall(`/api/trade_orders/${id}`, 'DELETE')
+
+        // 同步更新前端state
         return {
           orders: state.orders.map(o =>
             o.id === id ? { ...o, deleted: true, deletedAt: new Date().toISOString() } : o
+          ),
+          transactions: state.transactions.map(t =>
+            transactionIdsToDelete.includes(t.id) ? { ...t, deleted: true, deletedAt: new Date().toISOString() } : t
+          ),
+          tradeRecords: state.tradeRecords.map(r =>
+            tradeRecordIdsToDelete.includes(r.id) ? { ...r, deleted: true, deletedAt: new Date().toISOString() } : r
           )
         }
       }),
 
       // 批量删除预约单
       deleteMultipleOrders: (ids) => set((state) => {
-        // 查找所有要删除的订单
+        localStorage.setItem('is_deleting_orders', 'true')
+
         const ordersToDelete = state.orders.filter(o => ids.includes(o.id))
-        
-        // 删除关联的账单明细和交易记录
-        if (ordersToDelete.length > 0) {
-          // 获取所有交易编号
-          const tradeNumbers = [...new Set(ordersToDelete.map(o => o.tradeNumber).filter(Boolean))]
-          
-          // 先通过交易编号删除
-          if (tradeNumbers.length > 0) {
-            tradeNumbers.forEach(tradeNumber => {
-              // 检查是否还有其他同交易编号的未删除订单
-              const remainingOrders = state.orders.filter(o => 
-                o.tradeNumber === tradeNumber && 
-                !ids.includes(o.id) && 
-                !o.deleted
-              )
-              
-              // 如果没有其他同交易编号的订单，才删除关联记录
-              if (remainingOrders.length === 0) {
-                Promise.all([
-                  apiCall(`/api/transactions?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET'),
-                  apiCall(`/api/trade_records?where=${encodeURIComponent(JSON.stringify({ trade_number: tradeNumber }))}`, 'GET')
-                ])
-                  .then(([transactionsResult, tradeRecordsResult]) => {
-                    // 处理账单明细
-                    if (transactionsResult.success && transactionsResult.data) {
-                      const matchedTransactions = transactionsResult.data.filter(t => t.trade_number === tradeNumber)
-                      if (matchedTransactions.length > 0) {
-                        const transactionIds = matchedTransactions.map(t => t.id)
-                        apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
-                          .then(() => console.log(`[Store] 删除对应账单明细成功: ${tradeNumber} -> ${transactionIds.length}条`))
-                          .catch(err => console.error('[Store] 删除账单明细失败:', err))
-                      }
-                    }
-                    
-                    // 处理交易记录
-                    if (tradeRecordsResult.success && tradeRecordsResult.data) {
-                      const matchedTradeRecords = tradeRecordsResult.data.filter(r => r.trade_number === tradeNumber)
-                      if (matchedTradeRecords.length > 0) {
-                        const tradeRecordIds = matchedTradeRecords.map(r => r.id)
-                        apiCall('/api/trade_records/bulk/delete', 'POST', { ids: tradeRecordIds })
-                          .then(() => console.log(`[Store] 删除对应交易记录成功: ${tradeNumber} -> ${tradeRecordIds.length}条`))
-                          .catch(err => console.error('[Store] 删除交易记录失败:', err))
-                      }
-                    }
-                  })
-                  .catch(err => console.error('[Store] 查找关联记录失败:', err))
-              } else {
-                console.log(`[Store] 还有其他同交易编号的订单，保留关联记录: ${tradeNumber} -> ${remainingOrders.length}条`)
-              }
-            })
-          }
-          
-          // 再处理没有交易编号的订单
-          const ordersWithoutTradeNumber = ordersToDelete.filter(o => !o.tradeNumber)
-          if (ordersWithoutTradeNumber.length > 0) {
-            apiCall(`/api/transactions`, 'GET')
-              .then(result => {
-                if (result.success && result.data) {
-                  const matchedTransactions = result.data.filter(t => {
-                    if (t.type && (t.type === '买入' || t.type === '卖出')) {
-                      return ordersWithoutTradeNumber.some(order => 
-                        t.symbol === order.symbol && 
-                        t.name === order.name && 
-                        Math.abs(parseFloat(t.amount || 0)) === Math.abs(parseFloat(order.price || 0) * parseFloat(order.quantity || 0))
-                      )
-                    }
-                    return false
-                  })
-                  if (matchedTransactions.length > 0) {
-                    const transactionIds = matchedTransactions.map(t => t.id)
-                    apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIds })
-                      .then(() => console.log(`[Store] 删除无交易编号的账单明细成功: ${transactionIds.length}条`))
-                      .catch(err => console.error('[Store] 删除账单明细失败:', err))
+        const tradeNumbers = [...new Set(ordersToDelete.map(o => o.tradeNumber).filter(Boolean))]
+        const transactionIdsToDelete = []
+        const tradeRecordIdsToDelete = []
+
+        if (tradeNumbers.length > 0) {
+          tradeNumbers.forEach(tradeNumber => {
+            const remainingOrders = state.orders.filter(o =>
+              o.tradeNumber === tradeNumber &&
+              !ids.includes(o.id) &&
+              !o.deleted
+            )
+
+            const deleteTypes = ordersToDelete
+              .filter(o => o.tradeNumber === tradeNumber)
+              .map(o => o.type)
+
+            state.transactions.forEach(t => {
+              if (t.tradeNumber === tradeNumber || t.trade_number === tradeNumber) {
+                const isSellType = t.type === '卖出' || t.type === '股票卖出' || t.transaction_type === '卖出' || t.transaction_type === '股票卖出'
+                const isBuyType = t.type === '买入' || t.type === '股票买入' || t.transaction_type === '买入' || t.transaction_type === '股票买入'
+                if (deleteTypes.includes('sell') && isSellType) {
+                  if (!transactionIdsToDelete.includes(t.id)) {
+                    transactionIdsToDelete.push(t.id)
                   }
                 }
+                if (deleteTypes.includes('buy') && isBuyType) {
+                  if (!transactionIdsToDelete.includes(t.id)) {
+                    transactionIdsToDelete.push(t.id)
+                  }
+                }
+              }
+            })
+
+            if (remainingOrders.length === 0) {
+              state.tradeRecords.forEach(r => {
+                if (r.tradeNumber === tradeNumber || r.trade_number === tradeNumber) {
+                  tradeRecordIdsToDelete.push(r.id)
+                }
               })
-              .catch(err => console.error('[Store] 查找账单明细失败:', err))
-          }
+            }
+          })
         }
-        
-        // 同步到数据库
-        apiCall(`/api/trade_orders/bulk/delete`, 'POST', { ids })
-          .then(result => console.log('[Store] 删除订单成功:', result))
+
+        const ordersWithoutTradeNumber = ordersToDelete.filter(o => !o.tradeNumber)
+        if (ordersWithoutTradeNumber.length > 0) {
+          state.transactions.forEach(t => {
+            if (t.type && (t.type === '买入' || t.type === '卖出')) {
+              const isMatch = ordersWithoutTradeNumber.some(order =>
+                t.symbol === order.symbol &&
+                t.name === order.name &&
+                Math.abs(parseFloat(t.amount || 0)) === Math.abs(parseFloat(order.price || 0) * parseFloat(order.quantity || 0))
+              )
+              if (isMatch && !transactionIdsToDelete.includes(t.id)) {
+                transactionIdsToDelete.push(t.id)
+              }
+            }
+          })
+        }
+
+        const deletePromises = []
+
+        if (transactionIdsToDelete.length > 0) {
+          const promise = apiCall('/api/transactions/bulk/delete', 'POST', { ids: transactionIdsToDelete })
+            .catch(err => console.error('[Store] 删除账单明细失败:', err))
+          deletePromises.push(promise)
+        }
+
+        if (tradeRecordIdsToDelete.length > 0) {
+          const promise = apiCall('/api/trade_records/bulk/delete', 'POST', { ids: tradeRecordIdsToDelete })
+            .catch(err => console.error('[Store] 删除交易记录失败:', err))
+          deletePromises.push(promise)
+        }
+
+        const orderPromise = apiCall(`/api/trade_orders/bulk/delete`, 'POST', { ids })
           .catch(err => console.error('[Store] 删除订单失败:', err))
+        deletePromises.push(orderPromise)
+
+        Promise.all(deletePromises).finally(() => {
+          apiCall('/api/sync/all', 'GET')
+            .then(syncResponse => {
+              if (syncResponse.success && syncResponse.data) {
+                get().importTradeRecords(syncResponse.data.trade_records || [])
+              }
+            })
+            .finally(() => {
+              setTimeout(() => {
+                localStorage.removeItem('is_deleting_orders')
+              }, 1000)
+            })
+        })
 
         return {
           orders: state.orders.map(o =>
             ids.includes(o.id) ? { ...o, deleted: true, deletedAt: new Date().toISOString() } : o
+          ),
+          transactions: state.transactions.map(t =>
+            transactionIdsToDelete.includes(t.id) ? { ...t, deleted: true, deletedAt: new Date().toISOString() } : t
+          ),
+          tradeRecords: state.tradeRecords.map(r =>
+            tradeRecordIdsToDelete.includes(r.id) ? { ...r, deleted: true, deletedAt: new Date().toISOString() } : r
           )
         }
       }),
@@ -2074,26 +2109,17 @@ const useStore = create(
       // 批量导入交易记录（从数据库同步）- 直接使用数据库数据，不合并本地数据
       importTradeRecords: (records) => set((state) => {
         if (!records || records.length === 0) {
-          // 数据库返回空，不清空本地数据（可能是本地新建的数据还没同步到数据库）
-          console.log('[Store] importTradeRecords - 数据库返回空，保留本地数据')
           return state
         }
         
-        // 获取当前所有订单，用于策略ID查找
         const allOrders = state.orders || []
+        const filteredRecords = records.filter(r => !r.deleted)
         
-        const newRecords = records
-          .filter(r => !r.deleted) // 过滤掉已删除的记录
-          .map(r => {
-          // 从数据库获取策略ID字段
+        const newRecords = filteredRecords.map(r => {
           let buyStrategyId = r.buy_strategy_id ? Number(r.buy_strategy_id) : (r.buyStrategyId || null)
           let strategyId = r.strategy_id ? Number(r.strategy_id) : (r.strategyId || null)
-          
-          // 如果策略ID为空，尝试从相关订单中自动获取
           const tradeNumber = r.trade_number || r.tradeNumber || r.id
           
-          // 自动计算买入金额 = 买入数量 * 买入价格
-          // 通过遍历订单来计算，确保与股票交易列表中的交易金额一致
           const buyOrders = allOrders.filter(o => o.tradeNumber === tradeNumber && o.type === 'buy')
           let calculatedBuyAmount = 0
           buyOrders.forEach(o => {
@@ -2102,21 +2128,16 @@ const useStore = create(
             calculatedBuyAmount += quantity * price
           })
           calculatedBuyAmount = calculatedBuyAmount.toFixed(2)
-          console.log('[Store] 计算买入金额:', { buyOrders: buyOrders.length, calculatedBuyAmount, tradeNumber })
 
-          // 自动计算卖出金额 = 卖出数量 * 卖出价格
-          // 通过遍历订单来计算，确保与股票交易列表中的交易金额一致
           const sellOrders = allOrders.filter(o => o.tradeNumber === tradeNumber && o.type === 'sell')
           let calculatedSellAmount = 0
           let sellOrderPriceFromOrders = null
           if (sellOrders.length === 1) {
-            // 只有一个卖出订单，直接取交易价格
             const price = parseFloat(sellOrders[0].price) || 0
             const quantity = parseFloat(sellOrders[0].quantity) || 0
             calculatedSellAmount = price * quantity
             sellOrderPriceFromOrders = price
           } else if (sellOrders.length > 1) {
-            // 多个卖出订单，计算平均价格
             let totalQuantity = 0
             sellOrders.forEach(o => {
               const price = parseFloat(o.price) || 0
@@ -2129,22 +2150,16 @@ const useStore = create(
             }
           }
           calculatedSellAmount = calculatedSellAmount.toFixed(2)
-          console.log('[Store] 计算卖出金额:', { sellOrders: sellOrders.length, calculatedSellAmount, tradeNumber, sellOrderPriceFromOrders })
           if (!buyStrategyId && tradeNumber && allOrders.length > 0) {
-            // 查找对应交易编号的订单
             const relatedOrders = allOrders.filter(o => o.tradeNumber === tradeNumber)
             const strategyBuyOrders = relatedOrders.filter(o => o.type === 'buy')
             
             if (!buyStrategyId && strategyBuyOrders.length > 0 && strategyBuyOrders[0].strategyId) {
               buyStrategyId = Number(strategyBuyOrders[0].strategyId)
-              console.log('[Store] importTradeRecords - 从买入订单自动获取策略ID:', 
-                { tradeNumber, buyStrategyId, symbol: r.symbol || r.name })
             }
             
             if (!strategyId && relatedOrders.length > 0 && relatedOrders[0].strategyId) {
               strategyId = Number(relatedOrders[0].strategyId)
-              console.log('[Store] importTradeRecords - 从订单自动获取策略ID:', 
-                { tradeNumber, strategyId, symbol: r.symbol || r.name })
             }
           }
 
@@ -2210,28 +2225,7 @@ const useStore = create(
         
         const finalRecords = Object.values(uniqueRecords)
         
-        // 智能合并模式：保留本地状态中的记录，用数据库数据更新或补充
-        const mergedRecords = state.tradeRecords.map(localRecord => {
-          const dbRecord = finalRecords.find(r => r.id === localRecord.id)
-          if (dbRecord) {
-            // 如果数据库中有对应记录，合并数据（优先使用数据库数据）
-            return { ...localRecord, ...dbRecord }
-          }
-          // 如果数据库中没有，保留本地记录（可能是用户刚修改但还未同步到数据库的数据）
-          return localRecord
-        })
-        
-        // 添加数据库中有但本地没有的新记录
-        const localIds = new Set(mergedRecords.map(r => r.id))
-        const newDbRecords = finalRecords.filter(r => !localIds.has(r.id))
-        const completeMergedRecords = [...mergedRecords, ...newDbRecords]
-        
-        console.log('[Store] importTradeRecords - 智能合并模式')
-        console.log('[Store] importTradeRecords - 本地记录数量:', state.tradeRecords.length)
-        console.log('[Store] importTradeRecords - 数据库记录数量:', finalRecords.length)
-        console.log('[Store] importTradeRecords - 合并后记录数量:', completeMergedRecords.length)
-        
-        return { tradeRecords: completeMergedRecords }
+        return { tradeRecords: finalRecords }
       }),
 
       // 批量导入股票（从数据库同步）- 合并到现有数据

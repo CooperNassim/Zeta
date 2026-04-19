@@ -88,6 +88,14 @@ function DataSync() {
       return
     }
 
+    // 检查是否在删除操作过程中，如果是则跳过同步
+    const isDeleting = localStorage.getItem('is_deleting_orders') === 'true'
+    if (isDeleting) {
+      console.log('[DataSync] ⚠️ 检测到删除操作，跳过同步以防止数据不一致')
+      syncedRef.current = false
+      return
+    }
+
     // 忽略可见性变化期间的同步（防止 HMR 触发的重复请求）
     if (now < ignoreVisibilityChangeUntil) {
       console.log('[DataSync] 忽略可见性变化期间的同步')

@@ -289,27 +289,27 @@ const TradeRecords = () => {
   const handleEditSummary = () => {
     if (selectedIds.length !== 1) return
 
-    // 从tradeRecords获取最新数据，因为buyDetailFormData/sellDetailFormData可能已被详情弹窗保存后清空
+    // 从tradeRecords获取基础数据
     const record = tradeRecords.find(r => r.id === selectedIds[0])
     if (!record) return
 
     setEditingTradeId(selectedIds[0])
-    
+
   // 格式化交易结案的字段取值逻辑：
-  // 1.实际买入价，买入佣金，买入其他费用：从tradeRecords获取最新数据
-  // 2.实际卖出价，卖出佣金，卖出其他费用：从tradeRecords获取最新数据
+  // 1.实际买入价，买入佣金，买入其他费用：优先从买入详情弹窗获取，如果为空则从tradeRecords获取
+  // 2.实际卖出价，卖出佣金，卖出其他费用：优先从卖出详情弹窗获取，如果为空则从tradeRecords获取
   // 3.交易总结：从tradeRecords获取
   setSummaryFormData({
-    // 买入相关字段：从tradeRecords获取最新数据
-    buyPrice: record.buyPrice ? formatPrice(record.buyPrice) : '',
-    tradeCommission: record.tradeCommission ? formatFee(record.tradeCommission) : '',
-    otherFees: record.otherFees ? formatFee(record.otherFees) : '',
-    
-    // 卖出相关字段：从tradeRecords获取最新数据
-    sellPrice: record.sellPrice ? formatPrice(record.sellPrice) : '',
-    sellTradeCommission: record.sellTradeCommission ? formatFee(record.sellTradeCommission) : '',
-    sellOtherFees: record.sellOtherFees ? formatFee(record.sellOtherFees) : '',
-    
+    // 买入相关字段：优先从买入详情弹窗获取，如果没有则从tradeRecords获取
+    buyPrice: buyDetailFormData.buyPrice || (record.buyPrice ? formatPrice(record.buyPrice) : ''),
+    tradeCommission: buyDetailFormData.tradeCommission || (record.tradeCommission ? formatFee(record.tradeCommission) : ''),
+    otherFees: buyDetailFormData.otherFees || (record.otherFees ? formatFee(record.otherFees) : ''),
+
+    // 卖出相关字段：优先从卖出详情弹窗获取，如果没有则从tradeRecords获取
+    sellPrice: sellDetailFormData.sellPrice || (record.sellPrice ? formatPrice(record.sellPrice) : ''),
+    sellTradeCommission: sellDetailFormData.sellTradeCommission || (record.sellTradeCommission ? formatFee(record.sellTradeCommission) : ''),
+    sellOtherFees: sellDetailFormData.sellOtherFees || (record.sellOtherFees ? formatFee(record.sellOtherFees) : ''),
+
     // 交易总结：从tradeRecords获取
     tradeSummary: record.tradeSummary || ''
   })
@@ -384,8 +384,6 @@ const TradeRecords = () => {
         setShowSummaryModal(false)
         setEditingTradeId(null)
         setSelectedIds([])  // 清空选中状态
-        // 清空详情表单数据
-        clearDetailFormData()
       } else {
         showToast('保存失败', 'error')
       }
@@ -487,19 +485,29 @@ const TradeRecords = () => {
     }
 
     const formData = {
-      high: record.buyChannel?.high ? formatAmount(record.buyChannel.high) : '',
-      low: record.buyChannel?.low ? formatAmount(record.buyChannel.low) : '',
-      buyQuantity: buyOrdersTotalQuantity > 0 ? formatAmount(buyOrdersTotalQuantity) : '',  // 数量也使用千位分隔符
-      buyAmount: buyAmountValue,
-      buyPrice: buyPriceValue,
-      buyOrderPrice: buyOrderPriceValue ? formatPrice(buyOrderPriceValue) : '',
-      buySlippage: buySlippage !== null ? formatSlippage(buySlippage) : '-',  // 滑点使用千位分隔符
-      tradeCommission: formatFee(record.tradeCommission),
-      otherFees: formatFee(record.otherFees),
-      buyStrategy: buyStrategyValue,
-      buyTime: buyTimeValue
+      high: record.buyChannel?.high ? formatAmount(record.buyChannel.high) : (buyOrders.length > 0 ? '' : '-'),
+      low: record.buyChannel?.low ? formatAmount(record.buyChannel.low) : (buyOrders.length > 0 ? '' : '-'),
+      buyQuantity: buyOrdersTotalQuantity > 0 ? formatAmount(buyOrdersTotalQuantity) : (buyOrders.length > 0 ? '' : '-'),
+      buyAmount: buyAmountValue || (buyOrders.length > 0 ? '' : '-'),
+      buyPrice: buyPriceValue || (buyOrders.length > 0 ? '' : '-'),
+      buyOrderPrice: buyOrderPriceValue ? formatPrice(buyOrderPriceValue) : (buyOrders.length > 0 ? '' : '-'),
+      buySlippage: buySlippage !== null ? formatSlippage(buySlippage) : (buyOrders.length > 0 ? '-' : '-'),
+      tradeCommission: formatFee(record.tradeCommission) || (buyOrders.length > 0 ? '' : '-'),
+      otherFees: formatFee(record.otherFees) || (buyOrders.length > 0 ? '' : '-'),
+      buyStrategy: buyStrategyValue || (buyOrders.length > 0 ? '' : '-'),
+      buyTime: buyTimeValue || (buyOrders.length > 0 ? '' : '-')
     }
-    setBuyDetailFormData(formData)
+    // 如果buyDetailFormData已有值，保留用户编辑的值，只更新只读字段
+    if (buyDetailFormData.buyPrice || buyDetailFormData.tradeCommission) {
+      setBuyDetailFormData({
+        ...formData,
+        buyPrice: buyDetailFormData.buyPrice,
+        tradeCommission: buyDetailFormData.tradeCommission,
+        otherFees: buyDetailFormData.otherFees
+      })
+    } else {
+      setBuyDetailFormData(formData)
+    }
     setBuyDetailFormErrors({})
     setShowBuyDetailModal(true)
   }
@@ -586,12 +594,12 @@ const TradeRecords = () => {
     
     // 如果仍然为空，设置默认值
     if (!sellStrategyValue) {
-      sellStrategyValue = sellOrders.length > 0 ? '未设置策略' : '无卖出订单'
+      sellStrategyValue = sellOrders.length > 0 ? '未设置策略' : '-'
     }
     
     // 如果卖出策略为空，设置默认值
     if (!sellStrategyValue) {
-      sellStrategyValue = sellOrders.length > 0 ? '未设置策略' : '无卖出订单';
+      sellStrategyValue = sellOrders.length > 0 ? '未设置策略' : '-';
     }
     
     // 调试日志
@@ -608,37 +616,48 @@ const TradeRecords = () => {
     const idealSellPrice = sellOrderPriceExact;  // 理想卖出价从当前订单动态计算
     const actualSellPrice = sellOrdersTotalQuantity > 0 ? sellOrdersTotalAmount / sellOrdersTotalQuantity : 0;
     const sellQuantity = sellOrdersTotalQuantity;
-    
+
     if (idealSellPrice > 0 && actualSellPrice > 0 && sellQuantity > 0) {
       const slippageValue = (actualSellPrice - idealSellPrice) * sellQuantity;
       // 格式化：整数取整，有小数点取小数点2位四舍五入，千位分隔符
       sellSlippageValue = formatSlippage(slippageValue);
     } else {
-      sellSlippageValue = sellOrders.length > 0 ? '计算失败' : '无卖出订单';
+      sellSlippageValue = sellOrders.length > 0 ? '计算失败' : '-';
     }
-    
+
     // 检查记录中是否有卖出时间数据，使用格式化为年-月-日 时:分:秒
-    const sellTimeValue = record.sellTime ? formatDate(record.sellTime) : (sellOrders.length > 0 ? '未设置时间' : '无卖出订单');
-    
+    const sellTimeValue = sellOrders.length > 0 ? (record.sellTime ? formatDate(record.sellTime) : '未设置时间') : '-';
+
     // 计算实际卖出价默认值：始终使用理想卖出价作为初始值
-    const defaultSellPrice = sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : (sellOrders.length > 0 ? '' : '无卖出订单');
+    const defaultSellPrice = sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : (sellOrders.length > 0 ? '' : '-');
     console.log('   - 计算出的实际卖出价默认值:', defaultSellPrice);
-    
+
     // 设置表单数据，使用格式化函数确保整数不显示.00
     const formData = {
       sellPrice: defaultSellPrice,  // 实际卖出价从记录获取，未填写时使用理想卖出价
-      sellQuantity: sellOrdersTotalQuantity > 0 ? formatAmount(sellOrdersTotalQuantity) : (sellOrders.length > 0 ? '-' : '无卖出订单'),  // 数量使用千位分隔符
-      sellAmount: sellOrdersTotalAmount > 0 ? formatAmount(sellOrdersTotalAmount) : (sellOrders.length > 0 ? '0' : '无卖出订单'),
-      sellOrderPrice: sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : (sellOrders.length > 0 ? '未设置' : '无卖出订单'),  // 使用计算出的理想卖出价
+      sellQuantity: sellOrdersTotalQuantity > 0 ? formatAmount(sellOrdersTotalQuantity) : '-',  // 数量使用千位分隔符
+      sellAmount: sellOrdersTotalAmount > 0 ? formatAmount(sellOrdersTotalAmount) : '-',
+      sellOrderPrice: sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : '-',  // 使用计算出的理想卖出价
       sellTime: sellTimeValue,
       sellSlippage: sellSlippageValue,  // 已在计算逻辑中使用了千位分隔符
       sellStrategy: sellStrategyValue,  // 使用从orders获取的策略名称
-      sellTradeCommission: record.sellTradeCommission ? formatFee(record.sellTradeCommission) : (sellOrders.length > 0 ? '' : '无卖出订单'),
-      sellOtherFees: record.sellOtherFees ? formatFee(record.sellOtherFees) : (sellOrders.length > 0 ? '' : '无卖出订单')
+      sellTradeCommission: record.sellTradeCommission ? formatFee(record.sellTradeCommission) : '-',
+      sellOtherFees: record.sellOtherFees ? formatFee(record.sellOtherFees) : '-',
+      high: record.buyChannel?.high ? formatAmount(record.buyChannel.high) : (sellOrders.length > 0 ? '-' : '-'),
+      low: record.buyChannel?.low ? formatAmount(record.buyChannel.low) : (sellOrders.length > 0 ? '-' : '-')
     }
-    
-    // 设置卖出详情弹窗数据
-    setSellDetailFormData(formData);
+
+    // 如果sellDetailFormData已有值，保留用户编辑的值，只更新只读字段
+    if (sellDetailFormData.sellPrice || sellDetailFormData.sellTradeCommission) {
+      setSellDetailFormData({
+        ...formData,
+        sellPrice: sellDetailFormData.sellPrice,
+        sellTradeCommission: sellDetailFormData.sellTradeCommission,
+        sellOtherFees: sellDetailFormData.sellOtherFees
+      });
+    } else {
+      setSellDetailFormData(formData);
+    }
     setSellDetailFormErrors({});
     setShowSellDetailModal(true);
   }
@@ -714,8 +733,6 @@ const TradeRecords = () => {
         showToast('保存成功', 'success')
         setShowSellDetailModal(false)
         setDetailRecord(null)
-        // 清空详情表单数据
-        clearDetailFormData()
       } else {
         showToast('保存失败', 'error')
       }
@@ -766,8 +783,6 @@ const TradeRecords = () => {
         showToast('保存成功', 'success')
         setShowBuyDetailModal(false)
         setDetailRecord(null)
-        // 清空详情表单数据
-        clearDetailFormData()
       } else {
         showToast('保存失败', 'error')
       }

@@ -445,14 +445,29 @@ const TradeRecords = () => {
       console.log('[Debug] 同一交易编号下的记录详情:', sameTradeRecords.map(r => ({ id: r.id, buyPrice: r.buyPrice, tradeNumber: r.tradeNumber })))
 
       // 更新同一交易编号下的所有记录
-      const requestBody = {
-        buy_price: summaryFormData.buyPrice != null && summaryFormData.buyPrice !== '' ? parsePrice(summaryFormData.buyPrice) : (summaryFormData.buyPrice === '' ? null : undefined),
-        trade_commission: summaryFormData.tradeCommission != null && summaryFormData.tradeCommission !== '' ? parseFloat(summaryFormData.tradeCommission.trim()) : (summaryFormData.tradeCommission === '' ? null : undefined),
-        other_fees: summaryFormData.otherFees != null && summaryFormData.otherFees !== '' ? parseFloat(summaryFormData.otherFees.trim()) : (summaryFormData.otherFees === '' ? null : undefined),
-        sell_price: summaryFormData.sellPrice != null && summaryFormData.sellPrice !== '' ? parsePrice(summaryFormData.sellPrice) : (summaryFormData.sellPrice === '' ? null : undefined),
-        sell_trade_commission: summaryFormData.sellTradeCommission != null && summaryFormData.sellTradeCommission !== '' ? parseFloat(summaryFormData.sellTradeCommission.trim()) : (summaryFormData.sellTradeCommission === '' ? null : undefined),
-        sell_other_fees: summaryFormData.sellOtherFees != null && summaryFormData.sellOtherFees !== '' ? parseFloat(summaryFormData.sellOtherFees.trim()) : (summaryFormData.sellOtherFees === '' ? null : undefined),
-        trade_summary: summaryFormData.tradeSummary ? summaryFormData.tradeSummary.trim() : (summaryFormData.tradeSummary === '' ? '' : undefined)
+      const requestBody = {};
+      
+      // 只添加非空值到请求体
+      if (summaryFormData.buyPrice != null && summaryFormData.buyPrice !== '') {
+        requestBody.buy_price = parsePrice(summaryFormData.buyPrice);
+      }
+      if (summaryFormData.tradeCommission != null && summaryFormData.tradeCommission !== '') {
+        requestBody.trade_commission = parseFloat(summaryFormData.tradeCommission.trim());
+      }
+      if (summaryFormData.otherFees != null && summaryFormData.otherFees !== '') {
+        requestBody.other_fees = parseFloat(summaryFormData.otherFees.trim());
+      }
+      if (summaryFormData.sellPrice != null && summaryFormData.sellPrice !== '') {
+        requestBody.sell_price = parsePrice(summaryFormData.sellPrice);
+      }
+      if (summaryFormData.sellTradeCommission != null && summaryFormData.sellTradeCommission !== '') {
+        requestBody.sell_trade_commission = parseFloat(summaryFormData.sellTradeCommission.trim());
+      }
+      if (summaryFormData.sellOtherFees != null && summaryFormData.sellOtherFees !== '') {
+        requestBody.sell_other_fees = parseFloat(summaryFormData.sellOtherFees.trim());
+      }
+      if (summaryFormData.tradeSummary != null) {
+        requestBody.trade_summary = summaryFormData.tradeSummary.trim();
       }
       console.log('[Debug] PUT request body:', requestBody)
 

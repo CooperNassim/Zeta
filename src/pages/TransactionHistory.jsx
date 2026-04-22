@@ -885,10 +885,9 @@ sortedTransactions.forEach((t, idx) => {
                 />
                 <div className={`p-4 rounded-lg border text-center transition-all ${
                   transactionForm.type === 'income'
-                    ? 'border-green-500 bg-green-500/20 text-green-600'
-                    : 'border-gray-300 text-gray-600 hover:border-green-500/50'
+                    ? 'border-0 bg-[#0F1419] text-white'
+                    : 'border-gray-300 text-gray-600 hover:border-[#0F1419]'
                 }`}>
-                  <ArrowUpCircle className="w-6 h-6 inline-block mr-4" />
                   <span className="font-medium">手动入账</span>
                 </div>
               </label>
@@ -903,10 +902,9 @@ sortedTransactions.forEach((t, idx) => {
                 />
                 <div className={`p-4 rounded-lg border text-center transition-all ${
                   transactionForm.type === 'expense'
-                    ? 'border-red-500 bg-red-500/20 text-red-600'
-                    : 'border-gray-300 text-gray-600 hover:border-red-500/50'
+                    ? 'border-0 bg-[#0F1419] text-white'
+                    : 'border-gray-300 text-gray-600 hover:border-[#0F1419]'
                 }`}>
-                  <ArrowDownCircle className="w-6 h-6 inline-block mr-4" />
                   <span className="font-medium">手动出账</span>
                 </div>
               </label>

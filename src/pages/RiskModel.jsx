@@ -473,6 +473,7 @@ const AccountRisk = () => {
   // 计算本月亏损股票：卖出时间为本月且盈亏金额为负数的绝对值总和
   const monthlyLossFiltered = tradeRecords
     .filter(r => !r.deleted) // 排除已删除的记录
+    .filter(r => r.tradeStatus === '结束') // 只包含状态为"结束"的记录
     .filter(r => {
       // 1. 卖出时间=当月：使用卖出时间来判断月份（亏损在卖出时确定）
       // 优先使用明确的卖出时间字段
@@ -794,6 +795,7 @@ const StrategyRanking = () => {
   
   const lossRankingsFiltered = tradeRecords
     .filter(r => !r.deleted) // 排除已删除的记录
+    .filter(r => r.tradeStatus === '结束') // 只包含状态为"结束"的记录
     .filter(r => {
       // 1. 卖出时间=当月：使用卖出时间来判断月份（亏损在卖出时确定）
       // 优先使用明确的卖出时间字段
@@ -824,6 +826,7 @@ const StrategyRanking = () => {
         profit: profit,
         isLoss: isLoss,
         deleted: r.deleted,
+        tradeStatus: r.tradeStatus,
         buyPrice: r.buyPrice,
         sellPrice: r.sellPrice,
         buyQuantity: r.buyQuantity,

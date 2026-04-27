@@ -2127,8 +2127,32 @@ const useStore = create(
         
         const filteredRecords = records.filter(r => !r.deleted)
         
+        // 根据 trade_orders 的 deleted 状态同步设置 trade_records 的 deleted 状态
+        // 对应关系：trade_records.trade_number + created_at = trade_orders.trade_number + created_at
+        const recordsWithDeletedSync = filteredRecords.map(r => {
+          const tradeNumber = r.trade_number || r.tradeNumber
+          const recordCreatedAt = r.created_at || r.createdAt
+          if (!tradeNumber || !recordCreatedAt) return r // 没有交易编号或创建时间的记录保留原状态
+          
+          // 查找对应的 trade_order
+          const matchingOrder = allOrders.find(o => 
+            (o.tradeNumber === tradeNumber || o.trade_number === tradeNumber) &&
+            (o.created_at === recordCreatedAt || o.createdAt === recordCreatedAt)
+          )
+          
+          // 如果找到对应的订单，根据订单的 deleted 状态设置记录的 deleted 状态
+          if (matchingOrder) {
+            return {
+              ...r,
+              deleted: matchingOrder.deleted || false,
+              deletedAt: matchingOrder.deleted ? (matchingOrder.deleted_at || matchingOrder.deletedAt || new Date().toISOString()) : null
+            }
+          }
+          return r
+        })
+
         // 过滤掉没有对应订单的记录（订单被删除但交易记录还在的情况）
-        const recordsWithOrders = filteredRecords.filter(r => {
+        const recordsWithOrders = recordsWithDeletedSync.filter(r => {
           const tradeNumber = r.trade_number || r.tradeNumber
           if (!tradeNumber) return true // 没有交易编号的记录保留
           const hasOrders = allOrders.some(o => 

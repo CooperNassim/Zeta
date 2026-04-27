@@ -121,7 +121,6 @@ const TradeRecords = () => {
   const [sellDetailFormErrors, setSellDetailFormErrors] = useState({})
   const [editingTradeId, setEditingTradeId] = useState(null)
   const [detailRecord, setDetailRecord] = useState(null)
-  const [recentlySavedTradeData, setRecentlySavedTradeData] = useState({})
   const pageSize = 20
 
   // 筛选条件改变时清空选中状态
@@ -136,14 +135,6 @@ const TradeRecords = () => {
   const strategyRecords = useStore(state => state.strategyRecords)
   const strategies = useStore(state => state.strategies)
   const orders = useStore(state => state.orders)
-
-  // 当 tradeRecords 变化时，清理最近保存的数据，确保使用最新的数据库数据
-  useEffect(() => {
-    if (tradeRecords.length > 0) {
-      console.log('[Debug] tradeRecords 变化，清理 recentlySavedTradeData')
-      setRecentlySavedTradeData({})
-    }
-  }, [tradeRecords])
 
   // 筛选交易记录
   const filteredRecords = (() => {
@@ -206,17 +197,66 @@ const TradeRecords = () => {
     }
 
     // 按交易编号合并记录，同一交易编号只显示一条记录
+    // 注意：买入记录和卖出记录需要分别处理，不能整体覆盖
     const mergedRecordsMap = new Map()
 
-    // 先处理未删除的记录，确保基础信息正确
+    // 处理未删除的记录
     result.forEach(r => {
       if (!r.deleted) {
         if (mergedRecordsMap.has(r.tradeNumber)) {
           const existing = mergedRecordsMap.get(r.tradeNumber)
-          // 更新记录保持最新的未删除状态
-          Object.assign(existing, r)
+          // 区分买入记录和卖出记录，更新对应类型的字段
+          // 关键：不管 existing 是什么类型，都应该更新对应类型的字段
+          // 这样合并后的记录会同时包含买入和卖出字段
+          if (r.buy_order_id || r.buyOrderId) {
+            // 买入记录：更新买入相关字段
+            existing.buyOrderId = r.buyOrderId
+            existing.buyPrice = r.buyPrice
+            existing.buyQuantity = r.buyQuantity
+            existing.buyTime = r.buyTime
+            existing.buyOrderPrice = r.buyOrderPrice
+            existing.buyOrderTime = r.buyOrderTime
+            existing.buyPsychologicalScore = r.buyPsychologicalScore
+            existing.buyStrategyScore = r.buyStrategyScore
+            existing.buyStrategyId = r.buyStrategyId
+            existing.buyGrade = r.buyGrade
+            existing.buyAmount = r.buyAmount
+            existing.buyChannel = r.buyChannel
+            existing.tradeCommission = r.tradeCommission
+            existing.otherFees = r.otherFees
+          }
+          if (r.sell_order_id || r.sellOrderId) {
+            // 卖出记录：更新卖出相关字段
+            existing.sellOrderId = r.sellOrderId
+            existing.sellPrice = r.sellPrice
+            existing.sellQuantity = r.sellQuantity
+            existing.sellTime = r.sellTime
+            existing.sellOrderPrice = r.sellOrderPrice
+            existing.sellOrderTime = r.sellOrderTime
+            existing.sellPsychologicalScore = r.sellPsychologicalScore
+            existing.sellStrategyScore = r.sellStrategyScore
+            existing.sellStrategyId = r.sellStrategyId
+            existing.sellGrade = r.sellGrade
+            existing.sellChannel = r.sellChannel
+            existing.sellAmount = r.sellAmount
+            existing.profit = r.profit
+            existing.profitPercent = r.profitPercent
+            existing.holdDuration = r.holdDuration
+            existing.sellTradeCommission = r.sellTradeCommission
+            existing.sellOtherFees = r.sellOtherFees
+          }
+          // 保留原有的通用字段（tradeSummary等）
+          if (r.tradeSummary && !existing.tradeSummary) {
+            existing.tradeSummary = r.tradeSummary
+          }
+          if (!existing.createdAt && r.createdAt) {
+            existing.createdAt = r.createdAt
+          }
+          if (!existing.overallScore && r.overallScore) {
+            existing.overallScore = r.overallScore
+          }
         } else {
-          // 新增未删除记录
+          // 新增记录
           mergedRecordsMap.set(r.tradeNumber, { ...r })
         }
       }
@@ -281,7 +321,20 @@ const TradeRecords = () => {
 
     // 转换为数组并按时间降序排序
     const mergedRecords = Array.from(mergedRecordsMap.values())
-    
+
+    // 调试：查看合并后的数据
+    console.log('🔍 [Debug Merge] 合并后 tradeNumber=20260422026 的记录:');
+    const merged20260422026 = mergedRecords.find(r => r.tradeNumber === '20260422026');
+    if (merged20260422026) {
+      console.log('   - id:', merged20260422026.id);
+      console.log('   - buyPrice:', merged20260422026.buyPrice);
+      console.log('   - sellPrice:', merged20260422026.sellPrice);
+      console.log('   - buyOrderId:', merged20260422026.buyOrderId);
+      console.log('   - sellOrderId:', merged20260422026.sellOrderId);
+    } else {
+      console.log('   - 未找到 tradeNumber=20260422026 的记录');
+    }
+
     // 最终过滤掉依然标记为删除的记录（可能是只有删除记录的交易）
     const finalRecords = mergedRecords.filter(r => !r.deleted)
     finalRecords.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
@@ -307,52 +360,44 @@ const TradeRecords = () => {
   const handleEditSummary = () => {
     console.log('[Debug] handleEditSummary - selectedIds:', selectedIds)
     if (selectedIds.length !== 1) return
-    
-    // 从tradeRecords获取基础数据
-    const selectedRecord = tradeRecords.find(r => r.id === selectedIds[0])
-    console.log('[Debug] handleEditSummary - selected record:', selectedRecord)
-    if (!selectedRecord) return
-    
-    const tradeNumber = selectedRecord.tradeNumber
-    console.log('[Debug] handleEditSummary - tradeNumber:', tradeNumber)
-    
-    // 检查是否有最近保存的数据
-    const recentData = recentlySavedTradeData[tradeNumber]
-    console.log('[Debug] handleEditSummary - 最近保存的数据:', recentData);
-    
-    // 找到同一交易编号下的所有记录
-    const sameTradeRecords = tradeRecords.filter(r => r.tradeNumber === tradeNumber && !r.deleted)
-    console.log('[Debug] handleEditSummary - 同一交易编号下的记录数量:', sameTradeRecords.length)
-    console.log('[Debug] handleEditSummary - 同一交易编号下的记录:', sameTradeRecords.map(r => ({ id: r.id, buyPrice: r.buyPrice, updated_at: r.updated_at })))
-    
-    // 找到同一交易编号下最新的记录（按更新时间排序）
-    const latestRecord = sameTradeRecords.sort((a, b) => {
-      const dateA = new Date(a.updated_at || a.updatedAt || 0)
-      const dateB = new Date(b.updated_at || b.updatedAt || 0)
-      return dateB - dateA
-    })[0]
-    console.log('[Debug] handleEditSummary - 最新的记录:', latestRecord)
-    console.log('[Debug] handleEditSummary - 最新记录的buyPrice:', latestRecord?.buyPrice)
-    console.log('[Debug] handleEditSummary - 最新记录的sellPrice:', latestRecord?.sellPrice)
-    console.log('[Debug] handleEditSummary - 最新记录的tradeCommission:', latestRecord?.tradeCommission)
-    console.log('[Debug] handleEditSummary - 最新记录的otherFees:', latestRecord?.otherFees)
-    console.log('[Debug] handleEditSummary - 最新记录的sellTradeCommission:', latestRecord?.sellTradeCommission)
-    console.log('[Debug] handleEditSummary - 最新记录的sellOtherFees:', latestRecord?.sellOtherFees)
-    console.log('[Debug] handleEditSummary - 最新记录的tradeSummary:', latestRecord?.tradeSummary)
-    
-    setEditingTradeId(selectedIds[0])
-    
-    // 优先使用最近保存的数据，其次使用latestRecord的数据
-    setSummaryFormData({
-      buyPrice: recentData?.buyPrice || latestRecord?.buyPrice || '',
-      tradeCommission: recentData?.tradeCommission || (latestRecord?.tradeCommission ? formatFeeForDisplay(latestRecord.tradeCommission) : ''),
-      otherFees: recentData?.otherFees || (latestRecord?.otherFees ? formatFeeForDisplay(latestRecord.otherFees) : ''),
-      sellPrice: recentData?.sellPrice || latestRecord?.sellPrice || '',
-      sellTradeCommission: recentData?.sellTradeCommission || (latestRecord?.sellTradeCommission ? formatFeeForDisplay(latestRecord.sellTradeCommission) : ''),
-      sellOtherFees: recentData?.sellOtherFees || (latestRecord?.sellOtherFees ? formatFeeForDisplay(latestRecord.sellOtherFees) : ''),
-      tradeSummary: recentData?.tradeSummary || latestRecord?.tradeSummary || ''
-    })
-    console.log('[Debug] handleEditSummary - formData set to:', summaryFormData)
+
+    const tradeId = selectedIds[0]
+    setEditingTradeId(tradeId)
+
+    // 从 filteredRecords 中读取现有数据（filteredRecords 是合并后的记录，包含所有字段）
+    const currentRecord = filteredRecords.find(r => r.id === tradeId)
+    if (currentRecord) {
+      console.log('[Debug] handleEditSummary - currentRecord:', currentRecord)
+      console.log('[Debug] 从记录读取的值:', {
+        buyPrice: currentRecord.buyPrice,
+        sellPrice: currentRecord.sellPrice,
+        tradeCommission: currentRecord.tradeCommission,
+        sellTradeCommission: currentRecord.sellTradeCommission,
+        otherFees: currentRecord.otherFees,
+        sellOtherFees: currentRecord.sellOtherFees,
+        tradeSummary: currentRecord.tradeSummary
+      })
+      setSummaryFormData({
+        buyPrice: currentRecord.buyPrice != null ? String(currentRecord.buyPrice) : '',
+        tradeCommission: currentRecord.tradeCommission != null ? String(currentRecord.tradeCommission) : '',
+        otherFees: currentRecord.otherFees != null ? String(currentRecord.otherFees) : '',
+        sellPrice: currentRecord.sellPrice != null ? String(currentRecord.sellPrice) : '',
+        sellTradeCommission: currentRecord.sellTradeCommission != null ? String(currentRecord.sellTradeCommission) : '',
+        sellOtherFees: currentRecord.sellOtherFees != null ? String(currentRecord.sellOtherFees) : '',
+        tradeSummary: currentRecord.tradeSummary || ''
+      })
+    } else {
+      console.log('[Debug] handleEditSummary - record not found, using empty values')
+      setSummaryFormData({
+        buyPrice: '',
+        tradeCommission: '',
+        otherFees: '',
+        sellPrice: '',
+        sellTradeCommission: '',
+        sellOtherFees: '',
+        tradeSummary: ''
+      })
+    }
     setSummaryFormErrors({})
     setShowSummaryModal(true)
   }
@@ -381,80 +426,83 @@ const TradeRecords = () => {
       console.log('[Debug] handleSummaryFormSubmit - summaryFormData:', summaryFormData)
 
       // 获取当前记录的交易编号
-      const currentRecord = tradeRecords.find(r => r.id === editingTradeId)
+      const currentRecord = filteredRecords.find(r => r.id === editingTradeId)
       if (!currentRecord) {
         showToast('记录不存在', 'error')
         return
       }
       const tradeNumber = currentRecord.tradeNumber
+      console.log('[Debug] 交易编号:', tradeNumber)
 
-      // 找到同一交易编号下的所有记录ID
-      const sameTradeRecords = tradeRecords.filter(r => r.tradeNumber === tradeNumber && !r.deleted)
-      const recordIds = sameTradeRecords.map(r => r.id)
-      console.log('[Debug] 同一交易编号下的记录ID:', recordIds)
-      console.log('[Debug] 同一交易编号下的记录详情:', sameTradeRecords.map(r => ({ id: r.id, buyPrice: r.buyPrice, tradeNumber: r.tradeNumber })))
+      // 查找买入记录和卖出记录
+      const buyRecord = tradeRecords.find(r => r.tradeNumber === tradeNumber && (r.buy_order_id || r.buyOrderId) && !r.deleted)
+      const sellRecord = tradeRecords.find(r => r.tradeNumber === tradeNumber && (r.sell_order_id || r.sellOrderId) && !r.deleted)
+      
+      console.log('[Debug] 找到的记录:')
+      console.log('   - 买入记录:', buyRecord ? { id: buyRecord.id, buyPrice: buyRecord.buyPrice } : '未找到')
+      console.log('   - 卖出记录:', sellRecord ? { id: sellRecord.id, sellPrice: sellRecord.sellPrice } : '未找到')
 
-      // 更新同一交易编号下的所有记录
-      const requestBody = {
-        buy_price: summaryFormData.buyPrice != null && summaryFormData.buyPrice !== '' ? parsePrice(summaryFormData.buyPrice) : null,
-        trade_commission: summaryFormData.tradeCommission != null && summaryFormData.tradeCommission !== '' ? parseFloat(summaryFormData.tradeCommission.trim()) : null,
-        other_fees: summaryFormData.otherFees != null && summaryFormData.otherFees !== '' ? parseFloat(summaryFormData.otherFees.trim()) : null,
-        sell_price: summaryFormData.sellPrice != null && summaryFormData.sellPrice !== '' ? parsePrice(summaryFormData.sellPrice) : null,
-        sell_trade_commission: summaryFormData.sellTradeCommission != null && summaryFormData.sellTradeCommission !== '' ? parseFloat(summaryFormData.sellTradeCommission.trim()) : null,
-        sell_other_fees: summaryFormData.sellOtherFees != null && summaryFormData.sellOtherFees !== '' ? parseFloat(summaryFormData.sellOtherFees.trim()) : null,
-        trade_summary: summaryFormData.tradeSummary != null ? summaryFormData.tradeSummary.trim() : null
+      // 分别更新买入记录和卖出记录
+      const promises = []
+
+      // 更新买入记录
+      if (buyRecord) {
+        const buyRequest = {
+          buy_price: summaryFormData.buyPrice != null && summaryFormData.buyPrice !== '' ? parsePrice(summaryFormData.buyPrice) : null,
+          trade_commission: summaryFormData.tradeCommission != null && summaryFormData.tradeCommission !== '' ? parseFloat(summaryFormData.tradeCommission.trim()) : null,
+          other_fees: summaryFormData.otherFees != null && summaryFormData.otherFees !== '' ? parseFloat(summaryFormData.otherFees.trim()) : null,
+          trade_summary: summaryFormData.tradeSummary != null ? summaryFormData.tradeSummary.trim() : null
+        }
+        console.log('[Debug] 买入记录更新请求:', buyRequest)
+        promises.push(
+          fetch('/api/trade_records/' + buyRecord.id, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buyRequest)
+          }).then(res => res.json())
+        )
       }
-      console.log('[Debug] PUT request body:', requestBody)
 
-      const updatePromises = recordIds.map(id =>
-        fetch('/api/trade_records/' + id, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody)
-        }).then(res => res.json())
-      )
+      // 更新卖出记录
+      if (sellRecord) {
+        const sellRequest = {
+          sell_price: summaryFormData.sellPrice != null && summaryFormData.sellPrice !== '' ? parsePrice(summaryFormData.sellPrice) : null,
+          sell_trade_commission: summaryFormData.sellTradeCommission != null && summaryFormData.sellTradeCommission !== '' ? parseFloat(summaryFormData.sellTradeCommission.trim()) : null,
+          sell_other_fees: summaryFormData.sellOtherFees != null && summaryFormData.sellOtherFees !== '' ? parseFloat(summaryFormData.sellOtherFees.trim()) : null,
+          trade_summary: summaryFormData.tradeSummary != null ? summaryFormData.tradeSummary.trim() : null
+        }
+        console.log('[Debug] 卖出记录更新请求:', sellRequest)
+        promises.push(
+          fetch('/api/trade_records/' + sellRecord.id, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sellRequest)
+          }).then(res => res.json())
+        )
+      }
 
-      const responses = await Promise.all(updatePromises)
-      console.log('[Debug] PUT responses:', responses)
-      console.log('[Debug] PUT responses details:', responses.map(r => ({ success: r.success, message: r.message, error: r.error })))
+      if (promises.length === 0) {
+        showToast('未找到可更新的记录', 'error')
+        return
+      }
+
+      // 执行所有更新请求
+      const responses = await Promise.all(promises)
+      console.log('[Debug] 更新响应:', responses)
       const allSuccess = responses.every(r => r.success)
 
       if (allSuccess) {
-        // 直接更新本地状态，确保立即看到变化
-        const tradeNumber = currentRecord.tradeNumber
-        setRecentlySavedTradeData(prev => {
-          const newData = {
-            ...prev,
-            [tradeNumber]: {
-              buyPrice: parsePrice(summaryFormData.buyPrice),
-              sellPrice: parsePrice(summaryFormData.sellPrice),
-              tradeCommission: summaryFormData.tradeCommission,
-              otherFees: summaryFormData.otherFees,
-              sellTradeCommission: summaryFormData.sellTradeCommission,
-              sellOtherFees: summaryFormData.sellOtherFees,
-              tradeSummary: summaryFormData.tradeSummary
-            }
-          };
-          return newData;
-        })
-        
         // 从数据库重新同步数据，确保数据一致性
-        await fetch('/api/sync/all')
-          .then(res => res.json())
-          .then(syncResponse => {
-            if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
-              const { trade_records, trade_orders } = syncResponse.data
-              useStore.getState().importTradeRecords(trade_records, trade_orders)
-              // 同步完成后，清空临时数据，确保下次打开弹窗时使用最新的数据库数据
-              setTimeout(() => {
-                setRecentlySavedTradeData({})
-              }, 1000)
-            }
-          })
+        const syncResponse = await fetch('/api/sync/all')
+        const syncData = await syncResponse.json()
+        if (syncData.success && syncData.data && syncData.data.trade_records !== undefined) {
+          const { trade_records, trade_orders } = syncData.data
+          useStore.getState().importTradeRecords(trade_records, trade_orders)
+        }
         showToast('保存成功', 'success')
         setShowSummaryModal(false)
         setEditingTradeId(null)
-        setSelectedIds([])  // 清空选中状态
+        setSelectedIds([])
       } else {
         showToast('保存失败', 'error')
       }
@@ -469,52 +517,15 @@ const TradeRecords = () => {
     console.log('🔍 [Debug Buy Detail] record.buyPrice:', record.buyPrice);
     console.log('🔍 [Debug Buy Detail] record.id:', record.id);
     console.log('🔍 [Debug Buy Detail] record.tradeNumber:', record.tradeNumber);
-    
-    const tradeNumber = record.tradeNumber;
-    console.log('🔍 [Debug Buy Detail] tradeNumber:', tradeNumber);
-    
-    let recordWithLatestData;
-    
-    // 检查是否有最近保存的交易数据（优先使用）
-    console.log('🔍 [Debug Buy Detail] recentlySavedTradeData:', recentlySavedTradeData);
-    const recentData = recentlySavedTradeData[tradeNumber];
-    console.log('🔍 [Debug Buy Detail] 最近保存的数据:', recentData);
-    console.log('🔍 [Debug Buy Detail] 最近保存的buyPrice:', recentData?.buyPrice);
-    
-    if (recentData) {
-      // 如果有最近保存的数据，使用它
-      recordWithLatestData = {
-        ...record,
-        buyPrice: recentData.buyPrice,
-        tradeCommission: recentData.tradeCommission,
-        otherFees: recentData.otherFees
-      };
-      console.log('🔍 [Debug Buy Detail] 使用最近保存的数据:', recordWithLatestData);
-      console.log('🔍 [Debug Buy Detail] 使用最近保存的buyPrice:', recordWithLatestData.buyPrice);
-      setDetailRecord(recordWithLatestData);
-    } else {
-      // 从最新的 tradeRecords 中获取同一交易编号下的所有记录
-      const sameTradeRecords = tradeRecords.filter(r => r.tradeNumber === tradeNumber && !r.deleted);
-      console.log('🔍 [Debug Buy Detail] 同一交易编号下的记录数量:', sameTradeRecords.length);
-      console.log('🔍 [Debug Buy Detail] 同一交易编号下的记录:', sameTradeRecords.map(r => ({ id: r.id, buyPrice: r.buyPrice })));
-      
-      // 找到同一交易编号下最新的记录（按更新时间排序）
-      const latestRecord = sameTradeRecords.sort((a, b) => {
-        const dateA = new Date(a.updated_at || a.updatedAt || 0);
-        const dateB = new Date(b.updated_at || b.updatedAt || 0);
-        return dateB - dateA;
-      })[0];
-      console.log('🔍 [Debug Buy Detail] 最新的记录:', latestRecord);
-      console.log('🔍 [Debug Buy Detail] 最新记录的buyPrice:', latestRecord?.buyPrice);
-      
-      // 使用最新记录的数据
-      recordWithLatestData = latestRecord || record;
-      console.log('🔍 [Debug Buy Detail] 最终使用的数据:', recordWithLatestData);
-      console.log('🔍 [Debug Buy Detail] 最终使用的buyPrice:', recordWithLatestData.buyPrice);
-      setDetailRecord(recordWithLatestData);
-    }
-    // 理想买入价：从股票交易模块获取同一交易编号的买入类型订单
-    const buyOrders = orders.filter(o => o.tradeNumber === record.tradeNumber && o.type === 'buy')
+
+    // 直接用传入的record.id查找对应的记录，确保获取的是正确的记录
+    // 并且该记录不能是软删除状态
+    const recordWithLatestData = tradeRecords.find(r => r.id === record.id && !r.deleted) || record;
+    console.log('🔍 [Debug Buy Detail] 最终使用的数据:', recordWithLatestData);
+    console.log('🔍 [Debug Buy Detail] 最终使用的buyPrice:', recordWithLatestData.buyPrice);
+    setDetailRecord(recordWithLatestData);
+    // 理想买入价：从股票交易模块获取同一交易编号的买入类型订单（过滤软删除）
+    const buyOrders = orders.filter(o => o.tradeNumber === record.tradeNumber && o.type === 'buy' && !o.deleted)
     let buyOrderPriceValue = ''       // 显示用的理想买入价（四舍五入）
     let buyOrderPriceExact = 0        // 计算用的精确理想买入价
     let buyOrdersTotalQuantity = 0    // 股票交易列表的买入总数量
@@ -541,7 +552,7 @@ const TradeRecords = () => {
     }
     // 买入成交价格取交易结案弹窗的值(record.buyPrice)，如果未填写则默认使用理想买入价
     // 实际买入价使用用户输入的值
-    const userBuyPrice = recordWithLatestData.buyPrice != null ? recordWithLatestData.buyPrice : null
+    const userBuyPrice = record.buyPrice != null ? record.buyPrice : null
     console.log('🔍 [Debug Buy Detail] userBuyPrice:', userBuyPrice);
     const buyPriceValue = userBuyPrice != null ? formatPrice(userBuyPrice) : (buyOrderPriceValue ? formatPrice(buyOrderPriceValue) : '')
     console.log('🔍 [Debug Buy Detail] buyPriceValue:', buyPriceValue);
@@ -591,8 +602,8 @@ const TradeRecords = () => {
       buyPrice: buyPriceValue || '-',
       buyOrderPrice: buyOrderPriceValue ? formatPrice(buyOrderPriceValue) : (buyOrders.length > 0 ? '' : '-'),
       buySlippage: buySlippage !== null ? formatSlippage(buySlippage) : (buyOrders.length > 0 ? '-' : '-'),
-      tradeCommission: formatFee(recordWithLatestData.tradeCommission) || (buyOrders.length > 0 ? '' : '-'),
-      otherFees: formatFee(recordWithLatestData.otherFees) || (buyOrders.length > 0 ? '' : '-'),
+      tradeCommission: formatFee(record.tradeCommission) || (buyOrders.length > 0 ? '' : '-'),
+      otherFees: formatFee(record.otherFees) || (buyOrders.length > 0 ? '' : '-'),
       buyStrategy: buyStrategyValue || (buyOrders.length > 0 ? '' : '-'),
       buyTime: buyTimeValue || (buyOrders.length > 0 ? '' : '-')
     }
@@ -609,52 +620,21 @@ const TradeRecords = () => {
     console.log('🔍 [Debug Sell Detail] record.sellPrice:', record.sellPrice);
     console.log('🔍 [Debug Sell Detail] record.id:', record.id);
     console.log('🔍 [Debug Sell Detail] record.tradeNumber:', record.tradeNumber);
-    
-    const tradeNumber = record.tradeNumber;
-    console.log('🔍 [Debug Sell Detail] tradeNumber:', tradeNumber);
-    
-    let recordWithLatestDataForSell;
-    
-    // 检查是否有最近保存的交易数据（优先使用）
-    console.log('🔍 [Debug Sell Detail] recentlySavedTradeData:', recentlySavedTradeData);
-    const recentData = recentlySavedTradeData[tradeNumber];
-    console.log('🔍 [Debug Sell Detail] 最近保存的数据:', recentData);
-    console.log('🔍 [Debug Sell Detail] 最近保存的sellPrice:', recentData?.sellPrice);
-    
-    if (recentData) {
-      // 如果有最近保存的数据，使用它
-      recordWithLatestDataForSell = {
-        ...record,
-        sellPrice: recentData.sellPrice,
-        sellTradeCommission: recentData.sellTradeCommission,
-        sellOtherFees: recentData.sellOtherFees
-      };
-      console.log('🔍 [Debug Sell Detail] 使用最近保存的数据:', recordWithLatestDataForSell);
-      console.log('🔍 [Debug Sell Detail] 使用最近保存的sellPrice:', recordWithLatestDataForSell.sellPrice);
-      setDetailRecord(recordWithLatestDataForSell);
-    } else {
-      // 从最新的 tradeRecords 中获取同一交易编号下的所有记录
-      const sameTradeRecords = tradeRecords.filter(r => r.tradeNumber === tradeNumber && !r.deleted);
-      console.log('🔍 [Debug Sell Detail] 同一交易编号下的记录数量:', sameTradeRecords.length);
-      console.log('🔍 [Debug Sell Detail] 同一交易编号下的记录:', sameTradeRecords.map(r => ({ id: r.id, sellPrice: r.sellPrice })));
-      
-      // 找到同一交易编号下最新的记录（按更新时间排序）
-      const latestRecord = sameTradeRecords.sort((a, b) => {
-        const dateA = new Date(a.updated_at || a.updatedAt || 0);
-        const dateB = new Date(b.updated_at || b.updatedAt || 0);
-        return dateB - dateA;
-      })[0];
-      console.log('🔍 [Debug Sell Detail] 最新的记录:', latestRecord);
-      console.log('🔍 [Debug Sell Detail] 最新记录的sellPrice:', latestRecord?.sellPrice);
-      
-      // 使用最新记录的数据
-      recordWithLatestDataForSell = latestRecord || record;
-      console.log('🔍 [Debug Sell Detail] 最终使用的数据:', recordWithLatestDataForSell);
-      console.log('🔍 [Debug Sell Detail] 最终使用的sellPrice:', recordWithLatestDataForSell.sellPrice);
-      setDetailRecord(recordWithLatestDataForSell);
-    }
-    // 理想卖出价：从股票交易模块获取同一交易编号的卖出类型订单
-    const sellOrders = orders.filter(o => o.tradeNumber === record.tradeNumber && o.type === 'sell')
+
+    // 直接用传入的record.id查找对应的记录，确保获取的是正确的记录
+    // 并且该记录不能是软删除状态
+    const recordWithLatestDataForSell = tradeRecords.find(r => r.id === record.id && !r.deleted) || record;
+    console.log('🔍 [Debug Sell Detail] 查找结果:');
+    console.log('   - record.id:', record.id);
+    console.log('   - recordWithLatestDataForSell.id:', recordWithLatestDataForSell.id);
+    console.log('   - recordWithLatestDataForSell.sellPrice:', recordWithLatestDataForSell.sellPrice);
+    console.log('   - recordWithLatestDataForSell.sellOrderId:', recordWithLatestDataForSell.sellOrderId);
+    console.log('   - recordWithLatestDataForSell.buyOrderId:', recordWithLatestDataForSell.buyOrderId);
+    console.log('🔍 [Debug Sell Detail] 最终使用的数据:', recordWithLatestDataForSell);
+    console.log('🔍 [Debug Sell Detail] 最终使用的sellPrice:', recordWithLatestDataForSell.sellPrice);
+    setDetailRecord(recordWithLatestDataForSell);
+    // 理想卖出价：从股票交易模块获取同一交易编号的卖出类型订单（过滤软删除）
+    const sellOrders = orders.filter(o => o.tradeNumber === record.tradeNumber && o.type === 'sell' && !o.deleted)
     console.log('sellOrders:', sellOrders);
     
     // 调试：打印所有订单，确认是否有卖出订单
@@ -704,7 +684,7 @@ const TradeRecords = () => {
     
     console.log('🔍 [Debug Strategy] 查找卖出策略:')
     console.log('   - sellOrders数量:', sellOrders.length)
-    console.log('   - record.sellStrategyId:', (recordWithLatestDataForSell || record).sellStrategyId)
+    console.log('   - record.sellStrategyId:', record.sellStrategyId)
     console.log('   - strategyRecords长度:', strategyRecords.length)
     
     // 使用策略记录查找策略名称
@@ -740,7 +720,7 @@ const TradeRecords = () => {
     
     // 调试日志
     console.log('🔍 [Debug Sell Price] 卖出价格信息:');
-    console.log('   - record.sellPrice:', (recordWithLatestDataForSell || record).sellPrice);
+    console.log('   - record.sellPrice:', record.sellPrice);
     console.log('   - sellOrderPriceValue:', sellOrderPriceValue);
     console.log('   - sellOrders.length:', sellOrders.length);
     
@@ -749,7 +729,7 @@ const TradeRecords = () => {
     // 理想卖出价 = sellOrderPriceExact（从订单动态计算的平均价）
     let sellSlippageValue = '';
     const idealSellPrice = sellOrderPriceExact;  // 理想卖出价从当前订单动态计算
-    const userInputSellPrice = recordWithLatestDataForSell.sellPrice != null ? recordWithLatestDataForSell.sellPrice : 0;
+    const userInputSellPrice = record.sellPrice != null ? record.sellPrice : 0;
     const sellQuantity = sellOrdersTotalQuantity;
 
     if (idealSellPrice > 0 && userInputSellPrice > 0 && sellQuantity > 0) {
@@ -764,7 +744,7 @@ const TradeRecords = () => {
     const sellTimeValue = sellOrders.length > 0 ? (record.sellTime ? formatDate(record.sellTime) : '未设置时间') : '-';
 
     // 计算实际卖出价默认值：优先使用用户保存的实际卖出价，否则使用理想卖出价
-    const defaultSellPrice = recordWithLatestDataForSell.sellPrice != null ? formatPrice(recordWithLatestDataForSell.sellPrice) : (sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : (sellOrders.length > 0 ? '' : '-'));
+    const defaultSellPrice = record.sellPrice != null ? formatPrice(record.sellPrice) : (sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : (sellOrders.length > 0 ? '' : '-'));
     console.log('   - 计算出的实际卖出价默认值:', defaultSellPrice);
     
     // 计算卖出金额：使用实际卖出价 × 卖出数量，这样可以更准确反映实际卖出金额
@@ -779,8 +759,8 @@ const TradeRecords = () => {
       sellTime: sellTimeValue,
       sellSlippage: sellSlippageValue,  // 已在计算逻辑中使用了千位分隔符
       sellStrategy: sellStrategyValue,  // 使用从orders获取的策略名称
-      sellTradeCommission: recordWithLatestDataForSell.sellTradeCommission ? formatFee(recordWithLatestDataForSell.sellTradeCommission) : '-',
-      sellOtherFees: recordWithLatestDataForSell.sellOtherFees ? formatFee(recordWithLatestDataForSell.sellOtherFees) : '-',
+      sellTradeCommission: record.sellTradeCommission ? formatFee(record.sellTradeCommission) : '-',
+      sellOtherFees: record.sellOtherFees ? formatFee(record.sellOtherFees) : '-',
       high: record.buyChannel?.high ? formatAmount(record.buyChannel.high) : (sellOrders.length > 0 ? '-' : '-'),
       low: record.buyChannel?.low ? formatAmount(record.buyChannel.low) : (sellOrders.length > 0 ? '-' : '-')
     }
@@ -1812,8 +1792,8 @@ const TradeRecords = () => {
                     // 计算已卖出部分的盈亏
                     const profit = (sellPrice - buyPrice) * sellQuantity
                     
-                    // 计算滑点：理想价和实际价都从订单计算
-                    // 买入滑点 = (理想买入价 - 实际买入价) × 买入数量
+                    // 计算滑点：理想价从订单计算，实际价使用用户输入或反推价格
+                    // 买入滑点 = (理想买入价 - 实际买入价) × 已卖出数量
                     // 理想买入价从订单的加权平均价计算
                     let buyOrdersTotalAmount = 0
                     buyOrders.forEach(o => {
@@ -1821,9 +1801,10 @@ const TradeRecords = () => {
                     })
                     const idealBuyPrice = buyQuantity > 0 ? buyOrdersTotalAmount / buyQuantity : 0
                     const actualBuyPrice = buyPrice
-                    const buySlippage = (idealBuyPrice - actualBuyPrice) * buyQuantity
+                    // 滑点计算只针对已卖出部分的数量
+                    const buySlippage = (idealBuyPrice - actualBuyPrice) * sellQuantity
                     
-                    // 卖出滑点 = (实际卖出价 - 理想卖出价) × 卖出数量
+                    // 卖出滑点 = (实际卖出价 - 理想卖出价) × 已卖出数量
                     let sellOrdersTotalAmount = 0
                     sellOrders.forEach(o => {
                       sellOrdersTotalAmount += (parseFloat(o.price) || 0) * (parseFloat(o.quantity) || 0)
@@ -1845,8 +1826,10 @@ const TradeRecords = () => {
                     // 滑净盈比 = 滑点 / 净盈亏额 × 100%
                     if (netProfit !== 0) {
                       const ratio = totalSlippage / Math.abs(netProfit) * 100
+                      // 负数显示为0%，因为滑净盈比表示滑点成本占比，负数没有实际意义
+                      const adjustedRatio = Math.max(0, ratio)
                       // 整数取整，有小数点取小数点2位四舍五入
-                      const rounded = Math.round(ratio * 100) / 100
+                      const rounded = Math.round(adjustedRatio * 100) / 100
                       const formatted = Number.isInteger(rounded) ? rounded.toLocaleString('en-US') : rounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                       return <span>{formatted}%</span>
                     }

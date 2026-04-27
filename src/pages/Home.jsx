@@ -53,31 +53,50 @@ const Home = () => {
   // 使用 tradeRecords（交易记录）而不是 transactions（账单明细）
   const tradeRecords = useStore(state => state.tradeRecords)
 
-  // 计算交易金额（所有交易的买入金额总和）
-  const tradeAmount = tradeRecords.reduce((sum, t) => {
-    // 使用 buy_amount 字段，如果没有则尝试其他字段
-    const buyAmt = parseFloat(t.buy_amount || t.buyAmount || 0)
-    return sum + buyAmt
-  }, 0)
+  // 过滤非软删除记录（统一处理）
+  const activeTradeRecords = tradeRecords.filter(t => !t.deleted)
 
-  // 计算盈亏额（所有交易的盈亏总和）
-  const profitLoss = tradeRecords.reduce((sum, t) => {
+  // 1. 交易金额：Σ(买入金额+卖出金额)，取整四舍五入
+  const tradeAmountRaw = activeTradeRecords.reduce((sum, t) => {
+    const buyAmt = parseFloat(t.buy_amount || t.buyAmount || 0)
+    const sellAmt = parseFloat(t.sell_amount || t.sellAmount || 0)
+    return sum + buyAmt + sellAmt
+  }, 0)
+  const tradeAmount = Math.round(tradeAmountRaw)
+
+  // 2. 盈亏额：Σ盈亏金额，取整四舍五入，正数不显示正号，负数显示负号
+  const profitLossRaw = activeTradeRecords.reduce((sum, t) => {
     const profit = parseFloat(t.profit || 0)
     return sum + profit
   }, 0)
+  const profitLoss = Math.round(profitLossRaw)
 
-  // 计算手续费（从 fees 或 trade_commission 字段获取）
-  const totalFee = tradeRecords.reduce((sum, t) => {
-    // 尝试从多个费用字段获取
-    const fees = parseFloat(t.fees || t.trade_commission || t.sell_trade_commission || 0)
-    return sum + fees
+  // 3. 手续费：Σ手续费，取整四舍五入
+  const totalFeeRaw = activeTradeRecords.reduce((sum, t) => {
+    const tradeCommission = parseFloat(t.trade_commission || t.tradeCommission || 0)
+    const sellTradeCommission = parseFloat(t.sell_trade_commission || t.sellTradeCommission || 0)
+    const otherFees = parseFloat(t.other_fees || t.otherFees || 0)
+    const sellOtherFees = parseFloat(t.sell_other_fees || t.sellOtherFees || 0)
+    return sum + tradeCommission + sellTradeCommission + otherFees + sellOtherFees
   }, 0)
+  const totalFee = Math.round(totalFeeRaw)
+
+  // 4. 交易记录：Σ数据量（相同交易编号的买入和卖出算1条），取整四舍五入
+  const tradeRecordsCountRaw = activeTradeRecords
+    .reduce((acc, t) => {
+      // 按 tradeNumber 去重，每个交易编号只计算一次
+      if (!acc[t.tradeNumber]) {
+        acc[t.tradeNumber] = true
+      }
+      return acc
+    }, {})
+  const tradeRecordsCount = Math.round(Object.keys(tradeRecordsCountRaw).length)
 
   const stats = [
     { label: '交易金额', value: tradeAmount, prefix: '' },
-    { label: '盈亏额', value: profitLoss, prefix: '' },
+    { label: '盈亏额', value: profitLoss, prefix: '', showSign: true },
     { label: '手续费', value: totalFee, prefix: '' },
-    { label: '交易记录', value: tradeRecords.length },
+    { label: '交易记录', value: tradeRecordsCount, prefix: '' },
   ]
 
   return (
@@ -264,7 +283,8 @@ const Home = () => {
                     <p className="text-sm text-gray-600 mb-1" style={{ fontSize: 'clamp(12px, 1.3vw, 16px)' }}>{stat.label}</p>
                     <p className="font-bold text-gray-900" style={{ fontSize: 'clamp(24px, 3vw, 32px)' }}>
                       {stat.prefix}
-                      <Counter end={stat.value} duration={2} decimals={0} />
+                      {stat.showSign && stat.value > 0 ? '+' : ''}
+                      <Counter end={Math.abs(stat.value)} duration={2} decimals={0} />
                       {stat.suffix}
                     </p>
                   </div>

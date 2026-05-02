@@ -57,6 +57,7 @@ sudo systemctl start postgresql
 
 ### 2. 创建数据库
 
+**方式A: 使用命令行**
 ```bash
 # 进入PostgreSQL命令行
 psql -U postgres
@@ -65,6 +66,23 @@ psql -U postgres
 CREATE DATABASE zeta_trading;
 
 # 退出
+\q
+```
+
+**方式B: 使用项目脚本**
+```bash
+cd backend
+node src/scripts/createDatabase.js
+```
+
+### 3. 设置数据库用户密码 (可选)
+
+```bash
+psql -U postgres
+
+# 修改 postgres 用户密码
+ALTER USER postgres WITH PASSWORD 'your_password';
+
 \q
 ```
 
@@ -245,23 +263,25 @@ npm run restore -- --file backups/zeta-backup-2024-03-06T10-30-00.json
 
 ## 数据库表结构
 
-系统包含以下14张表：
+系统包含以下17张表：
 
 - `account` - 账户信息
-- `daily_work_data` - 每日功课数据
-- `psychological_indicators` - 心理测试指标
-- `psychological_tests` - 心理测试记录
-- `trading_strategies` - 交易策略
-- `risk_models` - 风险模型
-- `risk_config` - 风险配置
 - `account_risk_data` - 账户风险数据
-- `technical_indicators` - 技术指标
-- `orders` - 预约订单
-- `transactions` - 账单明细
-- `trade_records` - 交易记录
-- `stock_pool` - 股票池
-- `stock_kline_data` - 股票K线数据
-- `strategy_records` - 策略记录
+- `orders` - 订单表
+- `transactions` - 交易记录表
+- `trading_strategies` - 交易策略表
+- `strategy_records` - 策略评估记录表
+- `trade_records` - 交易记录表
+- `daily_work_data` - 每日功课数据
+- `technical_indicators` - 技术指标表
+- `stock_pool` - 股票池表
+- `stock_kline_data` - 股票K线数据表
+- `scheduled_orders` - 计划订单表
+- `risk_config` - 风险配置表
+- `risk_models` - 风险模型表
+- `psychological_indicators` - 心理指标表
+- `psychological_test_results` - 心理测试结果表
+- `psychological_test_indicators` - 心理测试指标评分表
 
 ## 安全注意事项
 

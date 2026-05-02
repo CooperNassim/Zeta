@@ -733,9 +733,24 @@ const useStore = create(
           }
         })
         console.log('[Store] 映射后的心理测试数据:', mappedData.slice(0, 3))
-        // 按日期降序排序，最新的在第一个位置
-        mappedData.sort((a, b) => new Date(b.date) - new Date(a.date))
-        return { psychologicalTests: mappedData }
+        
+        // 增量更新：合并后端数据和本地数据
+        const existingTests = {}
+        state.psychologicalTests.forEach(test => {
+          if (test.date) {
+            existingTests[test.date] = test
+          }
+        })
+        
+        mappedData.forEach(test => {
+          if (test.date) {
+            existingTests[test.date] = test
+          }
+        })
+        
+        const mergedData = Object.values(existingTests).sort((a, b) => new Date(b.date) - new Date(a.date))
+        console.log('[Store] 合并后的心理测试数据数量:', mergedData.length)
+        return { psychologicalTests: mergedData }
       }),
 
       // 批量导入心理测试指标
@@ -744,7 +759,7 @@ const useStore = create(
           console.log('[Store] 心理测试指标数据未提供，保持现有数据，当前指标:', state.psychologicalIndicators)
           return {}
         }
-        // 确保数值字段是正确的类型
+        // 确保数值字段是正确的类型，并按 ID 排序保证顺序一致
         const mappedData = dataList.map(item => ({
           id: item.id,
           name: item.indicator_name,
@@ -752,7 +767,7 @@ const useStore = create(
           minScore: parseFloat(item.min_score) || 0,
           maxScore: parseFloat(item.max_score) || 10,
           weight: parseFloat(item.weight) || 1
-        }))
+        })).sort((a, b) => parseInt(a.id) - parseInt(b.id))
         console.log('[Store] 映射后的心理测试指标数据:', mappedData)
         console.log('[Store] 心理测试指标数量:', mappedData.length)
         return { psychologicalIndicators: mappedData }
@@ -797,7 +812,7 @@ const useStore = create(
           }).then(res => res.json())
 
           if (response.success) {
-            // 直接更新本地状态，不需要重新同步
+            // 直接更新本地状态，不需要重新同步，并确保按 ID 排序
             set((state) => ({
               psychologicalIndicators: state.psychologicalIndicators.map(item =>
                 item.id === id
@@ -810,7 +825,7 @@ const useStore = create(
                       weight: indicator.weight
                     }
                   : item
-              )
+              ).sort((a, b) => parseInt(a.id) - parseInt(b.id))
             }))
           }
           return response

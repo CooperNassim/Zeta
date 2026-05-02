@@ -232,11 +232,11 @@ function DataSync() {
 
     window.addEventListener('focus', handleFocus)
 
-    // 定时自动同步（每30秒同步一次）
+    // 定时自动同步（每60秒同步一次，避免干扰编辑）
     const syncInterval = setInterval(() => {
       console.log('[DataSync] 定时自动同步...')
       syncData()
-    }, 30000)
+    }, 60000)
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)

@@ -10,10 +10,16 @@ const pool = new Pool({
 });
 
 async function main() {
+  const force = process.argv.includes('--force');
+
   try {
     const client = await pool.connect();
 
-    // 创建数据库
+    if (force) {
+      await client.query('DROP DATABASE IF EXISTS zeta_trading');
+      console.log('🗑️  数据库 zeta_trading 已删除');
+    }
+
     await client.query('CREATE DATABASE zeta_trading');
     console.log('✅ 数据库 zeta_trading 创建成功！');
 

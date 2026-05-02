@@ -5,11 +5,13 @@ const cors = require('cors');
 const compression = require('compression');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
 const fs = require('fs');
 const { testConnection } = require('./config/database');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // 确保备份目录存在
 const backupDir = path.join(__dirname, '..', 'backups');
@@ -17,22 +19,51 @@ if (!fs.existsSync(backupDir)) {
   fs.mkdirSync(backupDir, { recursive: true });
 }
 
-// 中间件
+// 安全中间件
 app.use(helmet());
 app.use(compression());
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || true,  // 允许所有来源，方便开发
+
+// CORS 配置 - 生产环境严格限制
+const allowedOrigins = process.env.CORS_ORIGIN 
+  ? process.env.CORS_ORIGIN.split(',') 
+  : ['http://localhost:5173', 'http://localhost:3000'];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (NODE_ENV === 'development' || !origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
-}));
+};
+
+app.use(cors(corsOptions));
+
+// 速率限制 - 防止 DoS 攻击
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 分钟
+  max: NODE_ENV === 'production' ? 1000 : 5000, // 限制次数
+  message: { error: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api', apiLimiter);
+app.use('/health', apiLimiter);
+
+// 解析请求体
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-if (process.env.NODE_ENV !== 'test') {
-  app.use(morgan('combined'));
+// 请求日志
+if (NODE_ENV !== 'test') {
+  app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'));
 }
 
-// 静态文件服务（备份文件）
-app.use('/backups', express.static(backupDir));
+// 注意：已移除 /backups 静态文件服务，防止备份文件泄露
+// 如果需要备份功能，请添加认证中间件
 
 // API路由
 app.use('/api', require('./routes/api'));
@@ -57,10 +88,15 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
 
-// 错误处理
+// 错误处理 - 生产环境不泄露错误详情
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-  res.status(500).json({ error: 'Internal server error', message: err.message });
+  
+  if (NODE_ENV === 'production') {
+    res.status(500).json({ error: 'Internal server error' });
+  } else {
+    res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
 });
 
 // 启动服务器
@@ -71,7 +107,7 @@ app.listen(PORT, async () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📚 API endpoint: http://localhost:${PORT}/api`);
   console.log(`💚 Health check: http://localhost:${PORT}/health`);
-  console.log(`💾 Backup directory: ${backupDir}`);
+  console.log(`🌍 Environment: ${NODE_ENV}`);
   console.log('');
 
   // 测试数据库连接

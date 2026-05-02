@@ -1,9 +1,57 @@
 require('dotenv').config();
 const { pool } = require('../config/database');
 
+// 允许的表名白名单
+const ALLOWED_TABLES = [
+  'account', 'account_risk_data', 'daily_work_data', 'orders', 'transactions',
+  'trading_strategies', 'strategy_records', 'trade_records', 'technical_indicators',
+  'stock_pool', 'stock_kline_data', 'scheduled_orders', 'risk_config', 'risk_models',
+  'psychological_indicators', 'psychological_test_results', 'psychological_test_indicators'
+];
+
+// 允许的排序字段（简单验证）
+const ALLOWED_SORT_DIRECTIONS = ['ASC', 'DESC'];
+
+// 验证并清理表名
+const validateTableName = (table) => {
+  if (!ALLOWED_TABLES.includes(table)) {
+    throw new Error(`Invalid table name: ${table}`);
+  }
+  return table;
+};
+
+// 验证并清理 orderBy 参数
+const validateOrderBy = (orderBy) => {
+  if (!orderBy) return null;
+  
+  // 简单的白名单验证：只允许字母、数字、下划线、空格、逗号
+  const safeOrderBy = orderBy.replace(/[^a-zA-Z0-9_, ]/g, '');
+  
+  // 额外验证，防止恶意注入
+  const parts = safeOrderBy.split(',').map(part => part.trim());
+  const validatedParts = parts.map(part => {
+    const [col, dir] = part.split(/\s+/);
+    const cleanCol = col.replace(/[^a-zA-Z0-9_]/g, '');
+    const cleanDir = dir ? (ALLOWED_SORT_DIRECTIONS.includes(dir.toUpperCase()) ? dir.toUpperCase() : 'ASC') : 'ASC';
+    return `${cleanCol} ${cleanDir}`;
+  });
+  
+  return validatedParts.join(', ');
+};
+
+// 验证 limit/offset
+const validateNumber = (value, max = 1000) => {
+  const num = parseInt(value, 10);
+  if (isNaN(num) || num < 0) return null;
+  return Math.min(num, max);
+};
+
 // 查询构建器 - 动态构建SQL查询
 const buildQuery = (table, options = {}) => {
-  let query = `SELECT * FROM ${table}`;
+  // 验证表名
+  const safeTable = validateTableName(table);
+  
+  let query = `SELECT * FROM ${safeTable}`;
   const conditions = [];
   const params = [];
   let paramIndex = 1;
@@ -11,16 +59,17 @@ const buildQuery = (table, options = {}) => {
   // WHERE条件
   if (options.where) {
     for (const [key, value] of Object.entries(options.where)) {
-      conditions.push(`${key} = $${paramIndex}`);
+      // 简单的列名验证，只允许字母、数字、下划线
+      const safeKey = key.replace(/[^a-zA-Z0-9_]/g, '');
+      conditions.push(`${safeKey} = $${paramIndex}`);
       params.push(value);
       paramIndex++;
     }
   }
 
   // 自动过滤已删除的记录（除非明确指定 includeDeleted）
-  // 只对包含 deleted 字段的表进行过滤
-  const tablesWithDeleted = ['trade_orders', 'transactions', 'daily_work_data', 'psychological_test_results', 'trade_records', 'stock_pool', 'trading_strategies', 'strategy_records'];
-  if (!options.includeDeleted && tablesWithDeleted.includes(table)) {
+  const tablesWithDeleted = ['orders', 'transactions', 'daily_work_data', 'trade_records', 'stock_pool', 'trading_strategies', 'strategy_records'];
+  if (!options.includeDeleted && tablesWithDeleted.includes(safeTable)) {
     conditions.push(`deleted = false`);
   }
 
@@ -28,19 +77,22 @@ const buildQuery = (table, options = {}) => {
     query += ' WHERE ' + conditions.join(' AND ');
   }
 
-  // ORDER BY
-  if (options.orderBy) {
-    query += ` ORDER BY ${options.orderBy}`;
+  // ORDER BY - 安全处理
+  const safeOrderBy = validateOrderBy(options.orderBy);
+  if (safeOrderBy) {
+    query += ` ORDER BY ${safeOrderBy}`;
   }
 
-  // LIMIT
-  if (options.limit) {
-    query += ` LIMIT ${options.limit}`;
+  // LIMIT - 安全处理
+  const safeLimit = validateNumber(options.limit, 1000);
+  if (safeLimit) {
+    query += ` LIMIT ${safeLimit}`;
   }
 
-  // OFFSET
-  if (options.offset) {
-    query += ` OFFSET ${options.offset}`;
+  // OFFSET - 安全处理
+  const safeOffset = validateNumber(options.offset, 100000);
+  if (safeOffset) {
+    query += ` OFFSET ${safeOffset}`;
   }
 
   return { query, params };
@@ -62,33 +114,34 @@ const findOne = async (table, options = {}) => {
 
 // 根据ID查询
 const findById = async (table, id) => {
-  const result = await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
+  const safeTable = validateTableName(table);
+  const result = await pool.query(`SELECT * FROM ${safeTable} WHERE id = $1`, [id]);
   return result.rows[0] || null;
 };
 
 // 插入数据（智能处理已删除数据）
 const insert = async (table, data) => {
-  const columns = Object.keys(data);
+  const safeTable = validateTableName(table);
+  const columns = Object.keys(data).map(key => key.replace(/[^a-zA-Z0-9_]/g, ''));
   const values = Object.values(data);
   const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
 
   // 对于 daily_work_data 表，检查是否有相同日期的已删除数据
-  if (table === 'daily_work_data' && data.date) {
+  if (safeTable === 'daily_work_data' && data.date) {
     try {
       const checkResult = await pool.query(
-        `SELECT * FROM ${table} WHERE date = $1 AND deleted = true`,
+        `SELECT * FROM ${safeTable} WHERE date = $1 AND deleted = true`,
         [data.date]
       );
 
       if (checkResult.rows.length > 0) {
         // 找到已删除的数据，恢复它
         const deletedRecord = checkResult.rows[0];
-        const updateColumns = Object.keys(data).filter(key => key !== 'deleted' && key !== 'deleted_at' && key !== 'created_at');
+        const updateColumns = columns.filter(key => key !== 'deleted' && key !== 'deleted_at' && key !== 'created_at');
         const updateValues = updateColumns.map(key => data[key]);
-        const updatePlaceholders = updateColumns.map((_, i) => `$${i + 2}`).join(', ');
 
         const updateQuery = `
-          UPDATE ${table}
+          UPDATE ${safeTable}
           SET ${updateColumns.map((col, i) => `${col} = $${i + 2}`).join(', ')},
               deleted = false,
               deleted_at = null,
@@ -108,7 +161,7 @@ const insert = async (table, data) => {
 
   // 普通插入
   const query = `
-    INSERT INTO ${table} (${columns.join(', ')})
+    INSERT INTO ${safeTable} (${columns.join(', ')})
     VALUES (${placeholders})
     RETURNING *
   `;
@@ -121,7 +174,8 @@ const insert = async (table, data) => {
 const bulkInsert = async (table, dataArray) => {
   if (!dataArray || dataArray.length === 0) return [];
 
-  const columns = Object.keys(dataArray[0]);
+  const safeTable = validateTableName(table);
+  const columns = Object.keys(dataArray[0]).map(key => key.replace(/[^a-zA-Z0-9_]/g, ''));
   const placeholders = dataArray.map((_, i) =>
     `(${columns.map((_, j) => `$${i * columns.length + j + 1}`).join(', ')})`
   ).join(', ');
@@ -129,7 +183,7 @@ const bulkInsert = async (table, dataArray) => {
   const values = dataArray.flatMap(data => Object.values(data));
 
   const query = `
-    INSERT INTO ${table} (${columns.join(', ')})
+    INSERT INTO ${safeTable} (${columns.join(', ')})
     VALUES ${placeholders}
     RETURNING *
   `;
@@ -140,12 +194,16 @@ const bulkInsert = async (table, dataArray) => {
 
 // 更新数据
 const update = async (table, id, data) => {
+  const safeTable = validateTableName(table);
   const updates = Object.entries(data)
-    .map(([key, value], index) => `${key} = $${index + 2}`)
+    .map(([key, value], index) => {
+      const safeKey = key.replace(/[^a-zA-Z0-9_]/g, '');
+      return `${safeKey} = $${index + 2}`;
+    })
     .join(', ');
 
   const query = `
-    UPDATE ${table}
+    UPDATE ${safeTable}
     SET ${updates}
     WHERE id = $1
     RETURNING *
@@ -157,9 +215,10 @@ const update = async (table, id, data) => {
 
 // 删除数据（软删除，如果没有deleted字段则硬删除）
 const remove = async (table, id) => {
+  const safeTable = validateTableName(table);
   try {
     const result = await pool.query(
-      `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+      `UPDATE ${safeTable} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
       [id]
     );
     return result.rows[0] || null;
@@ -167,7 +226,7 @@ const remove = async (table, id) => {
     // 如果表没有deleted字段，改用硬删除
     if (err.message.includes('deleted')) {
       const result = await pool.query(
-        `DELETE FROM ${table} WHERE id = $1 RETURNING *`,
+        `DELETE FROM ${safeTable} WHERE id = $1 RETURNING *`,
         [id]
       );
       return result.rows[0] || null;
@@ -178,9 +237,10 @@ const remove = async (table, id) => {
 
 // 批量删除（软删除，如果没有deleted字段则硬删除）
 const bulkDelete = async (table, ids) => {
+  const safeTable = validateTableName(table);
   try {
     const result = await pool.query(
-      `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = ANY($1) RETURNING *`,
+      `UPDATE ${safeTable} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = ANY($1) RETURNING *`,
       [ids]
     );
     return result.rows;
@@ -188,7 +248,7 @@ const bulkDelete = async (table, ids) => {
     // 如果表没有deleted字段，改用硬删除
     if (err.message.includes('deleted')) {
       const result = await pool.query(
-        `DELETE FROM ${table} WHERE id = ANY($1) RETURNING *`,
+        `DELETE FROM ${safeTable} WHERE id = ANY($1) RETURNING *`,
         [ids]
       );
       return result.rows;
@@ -199,14 +259,16 @@ const bulkDelete = async (table, ids) => {
 
 // 永久删除（硬删除）
 const permanentDelete = async (table, id) => {
-  const result = await pool.query(`DELETE FROM ${table} WHERE id = $1 RETURNING *`, [id]);
+  const safeTable = validateTableName(table);
+  const result = await pool.query(`DELETE FROM ${safeTable} WHERE id = $1 RETURNING *`, [id]);
   return result.rows[0] || null;
 };
 
 // 批量永久删除（硬删除）
 const bulkPermanentDelete = async (table, ids) => {
+  const safeTable = validateTableName(table);
   const result = await pool.query(
-    `DELETE FROM ${table} WHERE id = ANY($1) RETURNING *`,
+    `DELETE FROM ${safeTable} WHERE id = ANY($1) RETURNING *`,
     [ids]
   );
   return result.rows;
@@ -214,8 +276,9 @@ const bulkPermanentDelete = async (table, ids) => {
 
 // 恢复已删除的数据
 const restore = async (table, id) => {
+  const safeTable = validateTableName(table);
   const result = await pool.query(
-    `UPDATE ${table} SET deleted = false, deleted_at = NULL WHERE id = $1 RETURNING *`,
+    `UPDATE ${safeTable} SET deleted = false, deleted_at = NULL WHERE id = $1 RETURNING *`,
     [id]
   );
   return result.rows[0] || null;
@@ -223,8 +286,9 @@ const restore = async (table, id) => {
 
 // 批量恢复已删除的数据
 const bulkRestore = async (table, ids) => {
+  const safeTable = validateTableName(table);
   const result = await pool.query(
-    `UPDATE ${table} SET deleted = false, deleted_at = NULL WHERE id = ANY($1) RETURNING *`,
+    `UPDATE ${safeTable} SET deleted = false, deleted_at = NULL WHERE id = ANY($1) RETURNING *`,
     [ids]
   );
   return result.rows;

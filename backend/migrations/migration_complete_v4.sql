@@ -1,52 +1,8 @@
 -- ========================================
--- Zeta Trading System 完整数据库迁移脚本 V4
--- 版本: 4.0.0
--- 生成时间: 2026-03-19
--- 说明: 此脚本包含所有必要的表和初始数据,包含重构后的交易策略表
---
--- 版本历史:
---   V1: 初始版本
---   V2: 添加软删除支持
---   V3: 修正时间戳为 TIMESTAMPTZ
---   V4: 重构交易策略表,参考 daily_work_data 规范
---
--- 预留表结构说明:
---   以下表结构已预留,未来可根据需求添加:
---   - portfolio_management (投资组合管理)
---   - market_analysis (市场分析)
---   - trade_simulation (交易模拟)
---   - system_logs (系统日志)
---   - user_settings (用户设置)
---
--- 注意: 新增表时请遵循以下规范:
---   1. 使用 SERIAL 主键
---   2. 统一使用 TIMESTAMPTZ 时间类型
---   3. 包含 deleted/deleted_at 软删除字段
---   4. 创建必要的索引
---   5. 添加 updated_at 触发器
---   6. 添加表和字段注释
+-- 注意: 此脚本使用 CREATE TABLE IF NOT EXISTS
+-- 不会删除已有表和数据
+-- 如需完全重建数据库,请先手动删除表
 -- ========================================
-
--- 删除现有表（如果存在）- 注意 CASCADE 会自动删除相关序列
-DROP TABLE IF EXISTS transactions CASCADE;
-DROP TABLE IF EXISTS trading_strategies CASCADE;
-DROP TABLE IF EXISTS trade_records CASCADE;
-DROP TABLE IF EXISTS technical_indicators CASCADE;
-DROP TABLE IF EXISTS strategy_records CASCADE;
-DROP TABLE IF EXISTS stock_pool CASCADE;
-DROP TABLE IF EXISTS stock_kline_data CASCADE;
-DROP TABLE IF EXISTS scheduled_orders CASCADE;
-DROP TABLE IF EXISTS risk_models CASCADE;
-DROP TABLE IF EXISTS risk_config CASCADE;
-DROP TABLE IF EXISTS psychological_tests_backup CASCADE;
-DROP TABLE IF EXISTS psychological_test_results CASCADE;
-DROP TABLE IF EXISTS psychological_test_indicators CASCADE;
-DROP TABLE IF EXISTS psychological_indicators CASCADE;
-DROP TABLE IF EXISTS orders CASCADE;
-DROP TABLE IF EXISTS daily_work_data_backup CASCADE;
-DROP TABLE IF EXISTS daily_work_data CASCADE;
-DROP TABLE IF EXISTS account_risk_data CASCADE;
-DROP TABLE IF EXISTS account CASCADE;
 
 -- ========================================
 -- 表: account
@@ -143,6 +99,8 @@ CREATE TABLE orders (
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     reason TEXT,
     notes TEXT,
+    account_name VARCHAR(50) NULL,
+    account_type VARCHAR(20) NULL,
     deleted BOOLEAN NOT NULL DEFAULT false,
     deleted_at TIMESTAMPTZ NULL,
     created_at TIMESTAMPTZ NULL DEFAULT CURRENT_TIMESTAMP,
@@ -152,6 +110,7 @@ CREATE TABLE orders (
 CREATE INDEX orders_date_idx ON orders (order_date DESC);
 CREATE INDEX orders_symbol_idx ON orders (symbol);
 CREATE INDEX orders_status_idx ON orders (status);
+CREATE INDEX orders_account_name_idx ON orders (account_name);
 
 -- ========================================
 -- 表: transactions
@@ -168,6 +127,8 @@ CREATE TABLE transactions (
     transaction_time VARCHAR(8) NOT NULL,
     fee NUMERIC NOT NULL DEFAULT 0,
     profit NUMERIC NULL,
+    account_name VARCHAR(50) NULL,
+    account_type VARCHAR(20) NOT NULL DEFAULT 'realtime',
     deleted BOOLEAN NOT NULL DEFAULT false,
     deleted_at TIMESTAMPTZ NULL,
     created_at TIMESTAMPTZ NULL DEFAULT CURRENT_TIMESTAMP,
@@ -178,6 +139,8 @@ CREATE TABLE transactions (
 CREATE INDEX transactions_order_id_idx ON transactions (order_id);
 CREATE INDEX transactions_date_idx ON transactions (transaction_date DESC);
 CREATE INDEX transactions_symbol_idx ON transactions (symbol);
+CREATE INDEX transactions_account_name_idx ON transactions (account_name);
+CREATE INDEX transactions_account_type_idx ON transactions (account_type);
 
 -- ========================================
 -- 表: trading_strategies (重构版)
@@ -375,11 +338,15 @@ CREATE TABLE risk_models (
 -- ========================================
 -- 表: psychological_indicators
 -- ========================================
-CREATE TABLE psychological_indicators (
+CREATE TABLE IF NOT EXISTS psychological_indicators (
     id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
     indicator_name VARCHAR(100) NOT NULL,
     description TEXT,
     scoring_method VARCHAR(50),
+    min_score INTEGER DEFAULT 0,
+    max_score INTEGER DEFAULT 100,
+    weight NUMERIC(5,2) DEFAULT 0.2,
     created_at TIMESTAMPTZ NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -390,12 +357,10 @@ CREATE TABLE psychological_indicators (
 CREATE TABLE psychological_test_results (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
-    test_date DATE NOT NULL,
+    test_date DATE NOT NULL UNIQUE,
     indicators JSON NOT NULL,
     total_score NUMERIC NOT NULL,
     notes TEXT,
-    deleted BOOLEAN NOT NULL DEFAULT false,
-    deleted_at TIMESTAMPTZ NULL,
     created_at TIMESTAMPTZ NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -493,7 +458,15 @@ COMMENT ON TABLE scheduled_orders IS '计划订单表';
 COMMENT ON TABLE risk_config IS '风险配置表';
 COMMENT ON TABLE risk_models IS '风险模型表';
 COMMENT ON TABLE psychological_indicators IS '心理指标表';
-COMMENT ON TABLE psychological_test_results IS '心理测试结果表';
+COMMENT ON TABLE psychological_test_results IS '心理测试结果表(按日期唯一,不支持软删除)';
 COMMENT ON TABLE psychological_test_indicators IS '心理测试指标评分表';
+
+-- ========================================
+-- 添加字段注释
+-- ========================================
+COMMENT ON COLUMN orders.account_name IS '账户名称';
+COMMENT ON COLUMN orders.account_type IS '账户类型: real=实盘, virtual=虚拟盘';
+COMMENT ON COLUMN transactions.account_name IS '账户名称';
+COMMENT ON COLUMN transactions.account_type IS '账户类型: realtime=实盘, virtual=虚拟盘';
 
 COMMIT;

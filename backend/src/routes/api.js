@@ -1,4 +1,6 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const router = express.Router();
 const { pool } = require('../config/database');
 const {
@@ -16,6 +18,17 @@ const {
   bulkRestore,
   query
 } = require('../database/queries');
+
+const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// 安全错误响应
+const safeError = (error) => {
+  console.error('API Error:', error);
+  if (NODE_ENV === 'production') {
+    return { success: false, error: 'Internal server error' };
+  }
+  return { success: false, error: error.message };
+};
 
 // 特殊路由（必须在通用CRUD路由之前）
 
@@ -35,7 +48,7 @@ router.get('/sync/all', async (req, res) => {
       'trading_strategies',
       'risk_config',
       'technical_indicators',
-      'trade_orders',
+      'orders',
       'transactions',
       'trade_records',
       'stock_pool',
@@ -48,7 +61,12 @@ router.get('/sync/all', async (req, res) => {
     for (const table of tables) {
       try {
         // 包含软删除的数据，以便前端能正确计算最大交易编号
-        const data = await findAll(table, { includeDeleted: true });
+        // 心理测试指标需要按ID排序，确保顺序一致
+        const options = { includeDeleted: true };
+        if (table === 'psychological_indicators') {
+          options.orderBy = 'id ASC';
+        }
+        const data = await findAll(table, options);
         // 特殊处理日期格式，转换为 YYYY-MM-DD 字符串
         if (table === 'psychological_test_results') {
           syncData[table] = data.map(item => ({
@@ -59,7 +77,16 @@ router.get('/sync/all', async (req, res) => {
               const month = String(dateObj.getMonth() + 1).padStart(2, '0');
               const day = String(dateObj.getDate()).padStart(2, '0');
               return `${year}-${month}-${day}`;
-            })() : null
+            })() : null,
+            date: item.test_date ? (() => {
+              const dateObj = new Date(item.test_date);
+              const year = dateObj.getFullYear();
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const day = String(dateObj.getDate()).padStart(2, '0');
+              return `${year}-${month}-${day}`;
+            })() : null,
+            scores: item.indicators,
+            overall_score: item.total_score
           }));
         } else if (table === 'daily_work_data') {
           syncData[table] = data.map(item => ({
@@ -88,90 +115,123 @@ router.get('/sync/all', async (req, res) => {
       data: syncData
     });
   } catch (error) {
-    console.error('Sync error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
   }
 });
 
-// GET /api/export - 导出所有数据
-router.get('/export/all', async (req, res) => {
+// 心理测试结果专用路由 - 必须在通用 /:table 路由之前
+router.get('/psychological_test_results/by-date/:date', async (req, res) => {
   try {
-    const tables = [
-      'account',
-      'daily_work_data',
-      'psychological_indicators',
-      'psychological_test_results',
-      'trading_strategies',
-      'risk_models',
-      'risk_config',
-      'account_risk_data',
-      'technical_indicators',
-      'trade_orders',
-      'transactions',
-      'trade_records',
-      'stock_pool',
-      'stock_kline_data',
-      'strategy_records'
-    ];
-
-    const allData = {};
-    for (const table of tables) {
-      try {
-        allData[table] = await findAll(table);
-      } catch (err) {
-        allData[table] = [];
-      }
+    const { date } = req.params;
+    const result = await pool.query(
+      'SELECT * FROM psychological_test_results WHERE test_date = $1',
+      [date]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Not found' });
     }
-
-    const backup = {
-      version: '1.0',
-      timestamp: new Date().toISOString(),
-      data: allData
-    };
-
-    const filename = `backup-${new Date().toISOString().slice(0, 10)}.json`;
-    const backupDir = path.join(__dirname, '..', '..', 'backups');
-    const filepath = path.join(backupDir, filename);
-    
-    fs.writeFileSync(filepath, JSON.stringify(backup, null, 2));
-
-    res.json({ success: true, filename, data: backup });
+    res.json({ success: true, data: result.rows[0] });
   } catch (error) {
-    console.error('Export error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
   }
 });
 
-// POST /api/import - 导入数据
-router.post('/import/all', async (req, res) => {
+router.post('/psychological_test_results', async (req, res) => {
   try {
-    const { data } = req.body;
+    const { test_date, scores, overall_score } = req.body;
 
-    if (!data || typeof data !== 'object') {
-      return res.status(400).json({ success: false, error: 'Invalid data format' });
+    const result = await pool.query(
+      `INSERT INTO psychological_test_results (test_date, indicators, total_score, user_id)
+       VALUES ($1, $2, $3, 1)
+       ON CONFLICT (test_date) DO UPDATE
+       SET indicators = EXCLUDED.indicators, total_score = EXCLUDED.total_score, updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [test_date, JSON.stringify(scores), parseFloat(overall_score)]
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('[POST /psychological_test_results] Error:', error);
+    res.status(500).json(safeError(error));
+  }
+});
+
+router.put('/psychological_test_results/by-date/:date', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const { scores, overall_score } = req.body;
+
+    const result = await pool.query(
+      `UPDATE psychological_test_results
+       SET indicators = $1, total_score = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE test_date = $3
+       RETURNING *`,
+      [JSON.stringify(scores), overall_score, date]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Not found' });
     }
 
-    const results = {};
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('[PUT /psychological_test_results] Error:', error);
+    res.status(500).json(safeError(error));
+  }
+});
 
-    for (const [table, records] of Object.entries(data)) {
-      if (!Array.isArray(records)) continue;
+// POST /api/:table/bulk/delete - 批量删除（支持 id 或 date）
+// 注意：这个路由必须在 /:table/bulk 之前，否则会被错误匹配
+router.post('/:table/bulk/delete', async (req, res) => {
+  try {
+    const { table } = req.params;
+    const { ids, dates } = req.body;
 
-      results[table] = { imported: 0, errors: [] };
+    let results = []
 
-      for (const record of records) {
-        try {
-          await insert(table, record);
-          results[table].imported++;
-        } catch (err) {
-          results[table].errors.push({ record, error: err.message });
+    // 按 id 删除
+    if (ids && Array.isArray(ids)) {
+      results = await bulkDelete(table, ids);
+    }
+
+    // 按日期删除（针对 daily_work_data 等用日期作为唯一标识的表）
+    if (dates && Array.isArray(dates) && table === 'daily_work_data') {
+      for (const date of dates) {
+        const result = await pool.query(
+          'UPDATE daily_work_data SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE date = $1 RETURNING *',
+          [date]
+        );
+        if (result.rows.length > 0) {
+          results.push(...result.rows);
         }
       }
     }
 
-    res.json({ success: true, results });
+    res.json({ success: true, data: results, count: results.length });
   } catch (error) {
-    console.error('Import error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/:table/bulk - 批量创建
+router.post('/:table/bulk', async (req, res, next) => {
+  // 如果路径是 /:table/bulk/delete，跳过这个路由
+  if (req.path.endsWith('/delete')) {
+    return next('route');
+  }
+
+  try {
+    const { table } = req.params;
+    const dataArray = req.body;
+
+    if (!Array.isArray(dataArray)) {
+      return res.status(400).json({ success: false, error: 'Data must be an array' });
+    }
+
+    const results = await bulkInsert(table, dataArray);
+    res.status(201).json({ success: true, data: results, count: results.length });
+  } catch (error) {
+    res.status(500).json(safeError(error));
   }
 });
 
@@ -196,8 +256,6 @@ router.get('/:table', async (req, res) => {
     if (table === 'daily_work_data') {
       data = data.map(row => {
         if (row.date && typeof row.date === 'string' && row.date.includes('T')) {
-          // ISO格式字符串，如 "2026-03-01T16:00:00.000Z"
-          // 转换为本地日期字符串 "2026-03-01"
           const dateObj = new Date(row.date);
           const year = dateObj.getFullYear();
           const month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -210,8 +268,7 @@ router.get('/:table', async (req, res) => {
 
     res.json({ success: true, data });
   } catch (error) {
-    console.error('GET error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
   }
 });
 
@@ -235,8 +292,7 @@ router.get('/:table/:id', async (req, res) => {
 
     res.json({ success: true, data });
   } catch (error) {
-    console.error('GET by id error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
   }
 });
 
@@ -249,75 +305,7 @@ router.post('/:table', async (req, res) => {
     const result = await insert(table, data);
     res.status(201).json({ success: true, data: result });
   } catch (error) {
-    console.error('POST error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// POST /api/:table/bulk/delete - 批量删除（支持 id 或 date）
-// 注意：这个路由必须在 /:table/bulk 之前，否则会被错误匹配
-router.post('/:table/bulk/delete', async (req, res) => {
-  console.log('[BULK DELETE] 路由被调用 v3!');
-  console.log('[BULK DELETE] 请求路径:', req.path);
-  try {
-    const { table } = req.params;
-    const { ids, dates } = req.body;
-
-    console.log('[BULK DELETE] table:', table);
-    console.log('[BULK DELETE] req.body:', req.body);
-    console.log('[BULK DELETE] ids:', ids);
-    console.log('[BULK DELETE] dates:', dates);
-
-    let results = []
-
-    // 按 id 删除
-    if (ids && Array.isArray(ids)) {
-      console.log('[BULK DELETE] 按ID删除, ids:', ids);
-      results = await bulkDelete(table, ids);
-    }
-
-    // 按日期删除（针对 daily_work_data 等用日期作为唯一标识的表）
-    if (dates && Array.isArray(dates) && table === 'daily_work_data') {
-      console.log('[BULK DELETE] 按日期删除, dates:', dates);
-      for (const date of dates) {
-        const result = await pool.query(
-          `UPDATE ${table} SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE date = $1 RETURNING *`,
-          [date]
-        );
-        if (result.rows.length > 0) {
-          results.push(...result.rows);
-        }
-      }
-    }
-
-    console.log('[BULK DELETE] results count:', results.length);
-    res.json({ success: true, data: results, count: results.length });
-  } catch (error) {
-    console.error('[BULK DELETE error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// POST /api/:table/bulk - 批量创建
-router.post('/:table/bulk', async (req, res, next) => {
-  // 如果路径是 /:table/bulk/delete，跳过这个路由
-  if (req.path.endsWith('/delete')) {
-    return next('route');
-  }
-
-  try {
-    const { table } = req.params;
-    const dataArray = req.body;
-
-    if (!Array.isArray(dataArray)) {
-      return res.status(400).json({ success: false, error: 'Data must be an array' });
-    }
-
-    const results = await bulkInsert(table, dataArray);
-    res.status(201).json({ success: true, data: results, count: results.length });
-  } catch (error) {
-    console.error('BULK POST error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
   }
 });
 
@@ -333,8 +321,7 @@ router.put('/:table/:id', async (req, res) => {
     }
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error('PUT error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
   }
 });
 
@@ -354,8 +341,7 @@ router.delete('/:table/:id', async (req, res, next) => {
     }
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error('DELETE error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
   }
 });
 
@@ -369,8 +355,7 @@ router.patch('/:table/:id/restore', async (req, res) => {
     }
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error('RESTORE error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
   }
 });
 
@@ -387,8 +372,7 @@ router.patch('/:table/bulk/restore', async (req, res) => {
     const results = await bulkRestore(table, ids);
     res.json({ success: true, data: results, count: results.length });
   } catch (error) {
-    console.error('BULK RESTORE error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
   }
 });
 
@@ -402,8 +386,7 @@ router.delete('/:table/:id/permanent', async (req, res) => {
     }
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error('PERMANENT DELETE error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
   }
 });
 
@@ -420,70 +403,7 @@ router.delete('/:table/bulk/permanent', async (req, res) => {
     const results = await bulkPermanentDelete(table, ids);
     res.json({ success: true, data: results, count: results.length });
   } catch (error) {
-    console.error('BULK PERMANENT DELETE error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// 心理测试结果专用路由 - 使用 test_date 作为唯一键
-router.get('/psychological_test_results/by-date/:date', async (req, res) => {
-  try {
-    const { date } = req.params;
-    const result = await pool.query(
-      'SELECT * FROM psychological_test_results WHERE test_date = $1 AND deleted = false',
-      [date]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Not found' });
-    }
-    res.json({ success: true, data: result.rows[0] });
-  } catch (error) {
-    console.error('GET psychological_test_results by date error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-router.post('/psychological_test_results', async (req, res) => {
-  try {
-    const { test_date, scores, overall_score } = req.body;
-
-    const result = await pool.query(
-      `INSERT INTO psychological_test_results (test_date, scores, overall_score)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (test_date) DO UPDATE
-       SET scores = EXCLUDED.scores, overall_score = EXCLUDED.overall_score, updated_at = CURRENT_TIMESTAMP
-       RETURNING *`,
-      [test_date, JSON.stringify(scores), parseFloat(overall_score)]
-    );
-
-    res.json({ success: true, data: result.rows[0] });
-  } catch (error) {
-    console.error('POST psychological_test_results error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-router.put('/psychological_test_results/by-date/:date', async (req, res) => {
-  try {
-    const { date } = req.params;
-    const { scores, overall_score } = req.body;
-
-    const result = await pool.query(
-      `UPDATE psychological_test_results
-       SET scores = $1, overall_score = $2, updated_at = CURRENT_TIMESTAMP
-       WHERE test_date = $3
-       RETURNING *`,
-      [JSON.stringify(scores), overall_score, date]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Not found' });
-    }
-
-    res.json({ success: true, data: result.rows[0] });
-  } catch (error) {
-    console.error('PUT psychological_test_results by date error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(safeError(error));
   }
 });
 

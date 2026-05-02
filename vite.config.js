@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const dockerHost = process.env.DOCKER_BACKEND_HOST || 'localhost';
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -9,11 +11,11 @@ export default defineConfig({
     open: false,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: `http://${dockerHost}:3001`,
         changeOrigin: true
       },
       '/health': {
-        target: 'http://localhost:3001',
+        target: `http://${dockerHost}:3001`,
         changeOrigin: true
       }
     }

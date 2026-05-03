@@ -56,41 +56,48 @@ const Home = () => {
   // 过滤非软删除记录（统一处理）
   const activeTradeRecords = tradeRecords.filter(t => !t.deleted)
 
+  // 按 tradeNumber 去重（与交易记录页面逻辑一致，相同交易编号只保留一条）
+  const deduplicatedRecordsMap = new Map()
+  activeTradeRecords.forEach(r => {
+    if (!deduplicatedRecordsMap.has(r.tradeNumber)) {
+      deduplicatedRecordsMap.set(r.tradeNumber, { ...r })
+    }
+  })
+  const deduplicatedRecords = Array.from(deduplicatedRecordsMap.values())
+
   // 1. 交易金额：Σ(买入金额+卖出金额)，取整四舍五入
-  const tradeAmountRaw = activeTradeRecords.reduce((sum, t) => {
-    const buyAmt = parseFloat(t.buy_amount || t.buyAmount || 0)
-    const sellAmt = parseFloat(t.sell_amount || t.sellAmount || 0)
+  const tradeAmountRaw = deduplicatedRecords.reduce((sum, t) => {
+    const buyAmt = parseFloat(t.buyAmount || t.buy_amount || 0)
+    const sellAmt = parseFloat(t.sellAmount || t.sell_amount || 0)
     return sum + buyAmt + sellAmt
   }, 0)
   const tradeAmount = Math.round(tradeAmountRaw)
 
-  // 2. 盈亏额：Σ盈亏金额，取整四舍五入，正数不显示正号，负数显示负号
-  const profitLossRaw = activeTradeRecords.reduce((sum, t) => {
-    const profit = parseFloat(t.profit || 0)
-    return sum + profit
+  // 2. 盈亏额：与交易记录页面逻辑一致，动态计算 (sellPrice - buyPrice) × sellQuantity
+  const profitLossRaw = deduplicatedRecords.reduce((sum, t) => {
+    const buyAmount = parseFloat(t.buyAmount || t.buy_amount || 0)
+    const sellAmount = parseFloat(t.sellAmount || t.sell_amount || 0)
+    const buyQuantity = parseFloat(t.buyQuantity || t.buy_quantity || 0)
+    const sellQuantity = parseFloat(t.sellQuantity || t.sell_quantity || 0)
+    if (sellQuantity === 0) return sum
+    const buyPrice = t.buyPrice != null ? t.buyPrice : (buyQuantity > 0 ? buyAmount / buyQuantity : 0)
+    const sellPrice = t.sellPrice != null ? t.sellPrice : (sellQuantity > 0 ? sellAmount / sellQuantity : 0)
+    return sum + (sellPrice - buyPrice) * sellQuantity
   }, 0)
   const profitLoss = Math.round(profitLossRaw)
 
   // 3. 手续费：Σ手续费，取整四舍五入
-  const totalFeeRaw = activeTradeRecords.reduce((sum, t) => {
-    const tradeCommission = parseFloat(t.trade_commission || t.tradeCommission || 0)
-    const sellTradeCommission = parseFloat(t.sell_trade_commission || t.sellTradeCommission || 0)
-    const otherFees = parseFloat(t.other_fees || t.otherFees || 0)
-    const sellOtherFees = parseFloat(t.sell_other_fees || t.sellOtherFees || 0)
+  const totalFeeRaw = deduplicatedRecords.reduce((sum, t) => {
+    const tradeCommission = parseFloat(t.tradeCommission || t.trade_commission || 0)
+    const sellTradeCommission = parseFloat(t.sellTradeCommission || t.sell_trade_commission || 0)
+    const otherFees = parseFloat(t.otherFees || t.other_fees || 0)
+    const sellOtherFees = parseFloat(t.sellOtherFees || t.sell_other_fees || 0)
     return sum + tradeCommission + sellTradeCommission + otherFees + sellOtherFees
   }, 0)
   const totalFee = Math.round(totalFeeRaw)
 
   // 4. 交易记录：Σ数据量（相同交易编号的买入和卖出算1条），取整四舍五入
-  const tradeRecordsCountRaw = activeTradeRecords
-    .reduce((acc, t) => {
-      // 按 tradeNumber 去重，每个交易编号只计算一次
-      if (!acc[t.tradeNumber]) {
-        acc[t.tradeNumber] = true
-      }
-      return acc
-    }, {})
-  const tradeRecordsCount = Math.round(Object.keys(tradeRecordsCountRaw).length)
+  const tradeRecordsCount = deduplicatedRecords.length
 
   const stats = [
     { label: '交易金额', value: tradeAmount, prefix: '' },
@@ -284,6 +291,7 @@ const Home = () => {
                     <p className="font-bold text-gray-900" style={{ fontSize: 'clamp(24px, 3vw, 32px)' }}>
                       {stat.prefix}
                       {stat.showSign && stat.value > 0 ? '+' : ''}
+                      {stat.showSign && stat.value < 0 ? '-' : ''}
                       <Counter end={Math.abs(stat.value)} duration={2} decimals={0} />
                       {stat.suffix}
                     </p>

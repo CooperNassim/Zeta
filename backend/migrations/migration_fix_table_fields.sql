@@ -75,6 +75,11 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'trade_records' AND column_name = 'sell_amount') THEN
         ALTER TABLE trade_records ADD COLUMN sell_amount NUMERIC NULL;
     END IF;
+
+    -- actual_sell_price 字段（用户手动录入的券商实际成交价）
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'trade_records' AND column_name = 'actual_sell_price') THEN
+        ALTER TABLE trade_records ADD COLUMN actual_sell_price NUMERIC NULL;
+    END IF;
 END $$;
 
 -- 添加表注释

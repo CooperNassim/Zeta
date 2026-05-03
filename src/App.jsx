@@ -14,35 +14,28 @@ import StockPool from './pages/StockPool'
 import useStore from './store/useStore'
 import { ToastProvider } from './contexts/ToastContext'
 
-// 清除localStorage缓存
-const CLEAR_CACHE_KEY = 'zeta_cache_cleared_v2'
-const CURRENT_CACHE_VERSION = '2026-03-12-v3'
+// 缓存版本控制 - 只在版本变化时清除过期数据，不影响用户数据
+const CACHE_VERSION_KEY = 'zeta_cache_version'
+const CURRENT_CACHE_VERSION = '2026-05-03-v4'
 
 if (typeof window !== 'undefined') {
-  // 清除可能的卡住的标志
-  localStorage.removeItem('is_deleting_orders')
-  localStorage.removeItem('is_resetting_transactions')
-  
-  const lastCleared = localStorage.getItem(CLEAR_CACHE_KEY)
-  if (lastCleared !== CURRENT_CACHE_VERSION) {
-    console.log('[Cache] 清除localStorage缓存...')
-    localStorage.clear()
-    localStorage.setItem(CLEAR_CACHE_KEY, CURRENT_CACHE_VERSION)
-    console.log('[Cache] 缓存已清除')
+  const storedVersion = localStorage.getItem(CACHE_VERSION_KEY)
+  if (storedVersion !== CURRENT_CACHE_VERSION) {
+    console.log('[Cache] 缓存版本升级，清除操作标志...')
+    // 只清除操作标志，不清除用户数据
+    localStorage.removeItem('is_deleting_orders')
+    localStorage.removeItem('is_resetting_transactions')
+    localStorage.setItem(CACHE_VERSION_KEY, CURRENT_CACHE_VERSION)
   }
 }
 
 // 使用相对路径，通过 Vite 代理到后端
 const API_BASE_URL = ''
 
-// 忽略可见性变化的标志（用于防止 HMR 等导致的重复请求）
-let ignoreVisibilityChangeUntil = 0
-
 // 数据同步组件 - 只在首次加载和页面可见时同步
 function DataSync() {
   const syncedRef = useRef(false)
   const isReadyRef = useRef(false)
-  const lastSyncTimeRef = useRef(0)
   // 防抖：记录上次同步时间，防止过于频繁的同步（10秒内最多同步一次）
   const lastFullSyncTimeRef = useRef(0)
   const store = useStore()
@@ -75,7 +68,7 @@ function DataSync() {
       console.log('[DataSync] 正在同步中，跳过本次请求')
       return
     }
-    // 防抖：10秒内最多同步一次，同时检查是否距离上次同步太近
+    // 防抖：10秒内最多同步一次
     const now = Date.now()
     if (now - lastFullSyncTimeRef.current < 10000) {
       console.log('[DataSync] 距离上次同步不足10秒，跳过')
@@ -83,32 +76,11 @@ function DataSync() {
     }
     syncedRef.current = true // 立即设置锁，防止并发请求
 
-    if (lastSyncTimeRef.current && now - lastSyncTimeRef.current < 1000) {
-      console.log('[DataSync] 距离上次同步时间太短，跳过本次请求')
-      syncedRef.current = false
-      return
-    }
-
-    // 检查是否在重置过程中，如果是则跳过同步（避免被旧数据覆盖）
-    const isResetting = localStorage.getItem('is_resetting_transactions') === 'true'
-    if (isResetting) {
-      console.log('[DataSync] ⚠️ 检测到重置操作，跳过同步以防止旧数据覆盖')
-      localStorage.removeItem('is_resetting_transactions') // 清除重置标志
-      syncedRef.current = false
-      return
-    }
-
     // 检查是否在删除操作过程中，如果是则跳过同步
     const isDeleting = localStorage.getItem('is_deleting_orders') === 'true'
     if (isDeleting) {
       console.log('[DataSync] ⚠️ 检测到删除操作，跳过同步以防止数据不一致')
-      syncedRef.current = false
-      return
-    }
-
-    // 忽略可见性变化期间的同步（防止 HMR 触发的重复请求）
-    if (now < ignoreVisibilityChangeUntil) {
-      console.log('[DataSync] 忽略可见性变化期间的同步')
+      localStorage.removeItem('is_deleting_orders')
       syncedRef.current = false
       return
     }
@@ -189,7 +161,6 @@ function DataSync() {
           await store.initializeTradeNumberCounter()
 
           // 更新上次同步时间
-          lastSyncTimeRef.current = Date.now()
           lastFullSyncTimeRef.current = Date.now()
           console.log('[DataSync] 同步完成')
         } else {
@@ -224,36 +195,18 @@ function DataSync() {
     // 首次加载时同步
     syncData()
 
-    // 监听页面可见性变化，切换回来时同步
+    // 监听页面可见性变化，切换回来时同步（2秒内最多同步一次）
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         console.log('[DataSync] 页面可见，重新同步...')
-        // 设置忽略标志，防止 HMR 等导致的重复请求
-        ignoreVisibilityChangeUntil = Date.now() + 2000
         syncData()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
-    // 监听窗口获得焦点时同步
-    const handleFocus = () => {
-      console.log('[DataSync] 窗口获得焦点，重新同步...')
-      syncData()
-    }
-
-    window.addEventListener('focus', handleFocus)
-
-    // 定时自动同步（每60秒同步一次，避免干扰编辑）
-    const syncInterval = setInterval(() => {
-      console.log('[DataSync] 定时自动同步...')
-      syncData()
-    }, 60000)
-
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('focus', handleFocus)
-      clearInterval(syncInterval)
     }
   }, [syncData])
 

@@ -713,7 +713,7 @@ const TradeRecords = () => {
     // 设置表单数据，使用格式化函数确保整数不显示.00
     const formData = {
       // 实际卖出价：有则显示实际价，无则显示理想价（方便用户参考）
-      sellPrice: actualSellPrice != null ? formatPrice(actualSellPrice) : (sellOrderPriceValue !== '' ? sellOrderPriceValue : '-'),
+      sellPrice: actualSellPrice != null ? formatPrice(actualSellPrice) : (sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : '-'),
       sellQuantity: sellOrdersTotalQuantity > 0 ? formatAmount(sellOrdersTotalQuantity) : '-',  // 数量使用千位分隔符
       sellAmount: calculatedSellAmount > 0 ? formatAmount(calculatedSellAmount) : '-',  // 使用有效卖出价 × 卖出数量
       sellOrderPrice: sellOrderPriceValue !== '' ? formatPrice(sellOrderPriceValue) : '-',  // 理想卖出价（只读，从订单动态计算）

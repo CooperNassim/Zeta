@@ -109,9 +109,6 @@ router.get('/sync/all', async (req, res) => {
       }
     }
 
-    // 调试：打印各表数据量
-    console.log('[Sync] 各表数据量:', Object.fromEntries(Object.entries(syncData).map(([k, v]) => [k, Array.isArray(v) ? v.length : v === null ? 'null' : typeof v])));
-
     res.json({
       success: true,
       version: '1.0',

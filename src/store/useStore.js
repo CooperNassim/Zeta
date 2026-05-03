@@ -405,22 +405,17 @@ const useStore = create(
 
       // 批量导入每日功课数据（从数据库同步）
       importDailyWorkData: (dataList) => set((state) => {
-        console.log('[Store] 从数据库导入的每日功课数据:', dataList)
-
         // 如果 dataList 为 null 或 undefined，保持现有数据不变
         if (dataList === null || dataList === undefined) {
-          console.log('[Store] 数据未提供，保持现有数据')
-          return {}
+          return state
         }
 
-        // 过滤已删除的数据
         const activeData = dataList.filter(d => d.deleted !== true)
-        console.log('[Store] 过滤已删除后的数据:', activeData.map(d => d.date))
 
-        // 如果数据库返回空数组，清空本地数据
-        if (activeData.length === 0) {
-          console.log('[Store] 数据库返回空数组，清空本地数据')
-          return { dailyWorkData: [] }
+        // 如果数据库返回空数组但当前有数据，不要清空
+        if (activeData.length === 0 && state.dailyWorkData && state.dailyWorkData.length > 0) {
+          console.log('[Store] importDailyWorkData 跳过空数据，保留当前', state.dailyWorkData.length, '条记录')
+          return state
         }
 
         // 转换数据库字段名 (snake_case -> camelCase)
@@ -697,15 +692,15 @@ const useStore = create(
 
       // 批量导入心理测试结果
       importPsychologicalTestResults: (dataList) => set((state) => {
-        if (!dataList || dataList === undefined) {
+        if (!dataList || dataList === null || dataList === undefined) {
           console.log('[Store] 心理测试结果数据未提供，保持现有数据')
-          return {}
+          return state
         }
 
         // 保护：如果数据为空数组但当前有数据，不要清空
         if (dataList.length === 0 && state.psychologicalTests && state.psychologicalTests.length > 0) {
           console.log('[Store] importPsychologicalTestResults 跳过空数据，保留', state.psychologicalTests.length, '条记录')
-          return {}
+          return state
         }
 
         // 参考每日功课的时区处理方式
@@ -761,15 +756,15 @@ const useStore = create(
 
       // 批量导入心理测试指标
       importPsychologicalIndicators: (dataList) => set((state) => {
-        if (!dataList || dataList === undefined) {
-          console.log('[Store] 心理测试指标数据未提供，保持现有数据，当前指标:', state.psychologicalIndicators)
-          return {}
+        if (!dataList || dataList === null || dataList === undefined) {
+          console.log('[Store] 心理测试指标数据未提供，保持现有数据')
+          return state
         }
 
         // 保护：如果数据为空数组但当前有数据，不要清空
         if (dataList.length === 0 && state.psychologicalIndicators && state.psychologicalIndicators.length > 0) {
           console.log('[Store] importPsychologicalIndicators 跳过空数据，保留', state.psychologicalIndicators.length, '条记录')
-          return {}
+          return state
         }
         // 确保数值字段是正确的类型，并按 ID 排序保证顺序一致
         const mappedData = dataList.map(item => ({
@@ -2118,6 +2113,10 @@ const useStore = create(
 
       // 批量导入订单（从数据库同步）- 合并去重，优先使用数据库数据
       importOrders: (orders) => set((state) => {
+        if (!orders || orders === null || orders === undefined) {
+          console.log('[Store] importOrders 跳过空数据')
+          return state
+        }
         // 转换数据库字段名 (snake_case -> camelCase)
         // 过滤掉已删除的订单
         const newOrders = orders
@@ -2149,6 +2148,10 @@ const useStore = create(
 
       // 批量导入账单（从数据库同步）- 直接使用数据库数据
       importTransactions: (transactions) => set((state) => {
+        if (!transactions || transactions === null || transactions === undefined) {
+          console.log('[Store] importTransactions 跳过空数据')
+          return state
+        }
         // 格式化时间：年-月-日 时:分:秒
         const formatDateTime = (dateStr) => {
           if (!dateStr) return null
@@ -2210,12 +2213,14 @@ const useStore = create(
 
       // 批量导入交易记录（从数据库同步）- 直接使用数据库数据，不合并本地数据
       importTradeRecords: (records, ordersData) => set((state) => {
-        if (!records || records.length === 0) {
-          // 保护：如果records为空数组，但当前state有数据，不要清空
-          if (state.tradeRecords && state.tradeRecords.length > 0) {
-            console.log('[Store] importTradeRecords 跳过空数据，保留当前', state.tradeRecords.length, '条记录')
-            return state
-          }
+        if (!records || records === null || records === undefined) {
+          console.log('[Store] importTradeRecords 跳过空数据')
+          return state
+        }
+        
+        const filteredRecords = records.filter(r => !r.deleted)
+        if (filteredRecords.length === 0 && state.tradeRecords && state.tradeRecords.length > 0) {
+          console.log('[Store] importTradeRecords 跳过空数据，保留当前', state.tradeRecords.length, '条记录')
           return state
         }
         
@@ -2227,8 +2232,6 @@ const useStore = create(
               type: (o.direction === 'buy' ? 'buy' : (o.direction === 'sell' ? 'sell' : (o.order_type === '买入' ? 'buy' : (o.order_type === '卖出' ? 'sell' : o.order_type)))) || o.type
             }))
           : (state.orders || [])
-        
-        const filteredRecords = records.filter(r => !r.deleted)
         
         const recordsWithOrders = filteredRecords
         
@@ -2405,6 +2408,9 @@ const useStore = create(
             // 盈亏金额 = 卖出金额 - 买入金额（使用实际买入价和实际卖出价）
             profit: calculatedProfit,
             profitPercent: r.profit_percent != null ? parseFloat(r.profit_percent) : (r.profitPercent || 0),
+            // 交易状态字段映射（用于持仓/结束状态筛选）
+            // 数据库可能有trade_status字段（中文"结束"/"持仓中"），如果没有则动态计算
+            tradeStatus: r.trade_status || r.tradeStatus || (sellQuantity >= buyQuantity && sellQuantity > 0 ? '结束' : '持仓中'),
             // 买入日期字段映射
             buyDate: r.buy_date || r.buyDate || r.buy_time || r.buyTime || null,
             // 止盈价和止损价字段映射
@@ -2428,6 +2434,10 @@ const useStore = create(
 
       // 批量导入股票（从数据库同步）- 合并到现有数据
       importStocks: (stocks) => set((state) => {
+        if (!stocks || stocks === null || stocks === undefined) {
+          console.log('[Store] importStocks 跳过空数据')
+          return state
+        }
         const newStocks = stocks.map(s => ({
           ...s,
           createdAt: s.created_at || s.createdAt || new Date().toISOString(),
@@ -2506,17 +2516,6 @@ const useStore = create(
         apiCall(`/api/stock_pool/bulk/permanent`, 'DELETE', { ids })
         return {
           stockPool: state.stockPool.filter(s => !ids.includes(s.id))
-        }
-      }),
-
-      // 批量导入股票
-      importStocks: (stocks) => set((state) => {
-        const now = new Date().toISOString()
-        return {
-          stockPool: [
-            ...state.stockPool,
-            ...stocks.map(s => ({ ...s, id: Date.now() + Math.random(), createdAt: now, deleted: false, deletedAt: null }))
-          ]
         }
       }),
 

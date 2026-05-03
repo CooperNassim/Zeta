@@ -716,6 +716,9 @@ const TradingStrategy = () => {
                 if (field.key === 'updatedAt' && item[field.key]) {
                   return format(new Date(item[field.key]), 'yyyy-MM-dd HH:mm:ss')
                 }
+                if (field.key === 'updatedAt') {
+                  return ''
+                }
                 if (field.key === 'createdAt' && item[field.key]) {
                   return format(new Date(item[field.key]), 'yyyy-MM-dd HH:mm:ss')
                 }

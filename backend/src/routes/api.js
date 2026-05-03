@@ -51,6 +51,7 @@ router.get('/sync/all', async (req, res) => {
       'orders',
       'transactions',
       'trade_records',
+      'trade_orders',
       'stock_pool',
       'stock_kline_data',
       'strategy_records'
@@ -104,9 +105,12 @@ router.get('/sync/all', async (req, res) => {
         }
       } catch (err) {
         console.error(`Sync error for table ${table}:`, err.message);
-        syncData[table] = [];
+        syncData[table] = null; // 返回 null 而不是空数组，避免覆盖前端数据
       }
     }
+
+    // 调试：打印各表数据量
+    console.log('[Sync] 各表数据量:', Object.fromEntries(Object.entries(syncData).map(([k, v]) => [k, Array.isArray(v) ? v.length : v === null ? 'null' : typeof v])));
 
     res.json({
       success: true,

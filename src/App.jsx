@@ -19,6 +19,10 @@ const CLEAR_CACHE_KEY = 'zeta_cache_cleared_v2'
 const CURRENT_CACHE_VERSION = '2026-03-12-v3'
 
 if (typeof window !== 'undefined') {
+  // 清除可能的卡住的标志
+  localStorage.removeItem('is_deleting_orders')
+  localStorage.removeItem('is_resetting_transactions')
+  
   const lastCleared = localStorage.getItem(CLEAR_CACHE_KEY)
   if (lastCleared !== CURRENT_CACHE_VERSION) {
     console.log('[Cache] 清除localStorage缓存...')
@@ -39,6 +43,8 @@ function DataSync() {
   const syncedRef = useRef(false)
   const isReadyRef = useRef(false)
   const lastSyncTimeRef = useRef(0)
+  // 防抖：记录上次同步时间，防止过于频繁的同步（10秒内最多同步一次）
+  const lastFullSyncTimeRef = useRef(0)
   const store = useStore()
 
   // 检查后端是否就绪
@@ -69,10 +75,14 @@ function DataSync() {
       console.log('[DataSync] 正在同步中，跳过本次请求')
       return
     }
+    // 防抖：10秒内最多同步一次，同时检查是否距离上次同步太近
+    const now = Date.now()
+    if (now - lastFullSyncTimeRef.current < 10000) {
+      console.log('[DataSync] 距离上次同步不足10秒，跳过')
+      return
+    }
     syncedRef.current = true // 立即设置锁，防止并发请求
 
-    // 检查是否距离上次同步太近（避免频繁同步）
-    const now = Date.now()
     if (lastSyncTimeRef.current && now - lastSyncTimeRef.current < 1000) {
       console.log('[DataSync] 距离上次同步时间太短，跳过本次请求')
       syncedRef.current = false
@@ -164,28 +174,30 @@ function DataSync() {
             risk_config: risk_config?.length || 0
           })
 
-          // 总是导入数据，即使是空数组也会清空本地旧数据
-          if (trade_orders) store.importOrders(trade_orders)
-          if (transactions) store.importTransactions(transactions)
-          // 传入订单数据，用于过滤没有对应订单的交易记录
-          if (trade_records) store.importTradeRecords(trade_records, trade_orders)
-          if (stock_pool) store.importStocks(stock_pool)
-          if (daily_work_data !== undefined) store.importDailyWorkData(daily_work_data)
-          if (psychological_test_results !== undefined) store.importPsychologicalTestResults(psychological_test_results)
-          if (psychological_indicators !== undefined) store.importPsychologicalIndicators(psychological_indicators)
-          if (trading_strategies !== undefined) store.importTradingStrategies(trading_strategies)
-          if (risk_config !== undefined) store.importRiskConfig(risk_config)
+          // 总是导入数据，即使数据为空也会清空本地旧数据
+          try { if (trade_orders) store.importOrders(trade_orders); } catch(e) { console.error('[DataSync] importOrders 失败:', e) }
+          try { if (transactions) store.importTransactions(transactions); } catch(e) { console.error('[DataSync] importTransactions 失败:', e) }
+          try { if (trade_records) store.importTradeRecords(trade_records, trade_orders); } catch(e) { console.error('[DataSync] importTradeRecords 失败:', e) }
+          try { if (stock_pool !== null) store.importStocks(stock_pool); } catch(e) { console.error('[DataSync] importStocks 失败:', e) }
+          try { if (daily_work_data !== null && daily_work_data !== undefined) store.importDailyWorkData(daily_work_data); } catch(e) { console.error('[DataSync] importDailyWorkData 失败:', e) }
+          try { store.importPsychologicalTestResults(psychological_test_results); } catch(e) { console.error('[DataSync] importPsychologicalTestResults 失败:', e) }
+          try { if (psychological_indicators !== null && psychological_indicators !== undefined) store.importPsychologicalIndicators(psychological_indicators); } catch(e) { console.error('[DataSync] importPsychologicalIndicators 失败:', e) }
+          try { if (trading_strategies !== null && trading_strategies !== undefined) store.importTradingStrategies(trading_strategies); } catch(e) { console.error('[DataSync] importTradingStrategies 失败:', e) }
+          try { if (risk_config !== null && risk_config !== undefined) store.importRiskConfig(risk_config); } catch(e) { console.error('[DataSync] importRiskConfig 失败:', e) }
 
           // 初始化交易编号计数器
           await store.initializeTradeNumberCounter()
 
           // 更新上次同步时间
           lastSyncTimeRef.current = Date.now()
+          lastFullSyncTimeRef.current = Date.now()
           console.log('[DataSync] 同步完成')
         } else {
           throw new Error(result.error || '同步响应格式错误')
         }
       } catch (error) {
+        // 无论成功、失败还是取消，都更新防抖时间戳
+        lastFullSyncTimeRef.current = Date.now()
         if (error.name === 'AbortError' || error.name === 'TypeError') {
           console.log('[DataSync] 请求已取消或超时')
           return

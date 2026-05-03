@@ -4,7 +4,7 @@ const { pool } = require('../config/database');
 // 允许的表名白名单
 const ALLOWED_TABLES = [
   'account', 'account_risk_data', 'daily_work_data', 'orders', 'transactions',
-  'trading_strategies', 'strategy_records', 'trade_records', 'technical_indicators',
+  'trading_strategies', 'strategy_records', 'trade_records', 'trade_orders', 'technical_indicators',
   'stock_pool', 'stock_kline_data', 'scheduled_orders', 'risk_config', 'risk_models',
   'psychological_indicators', 'psychological_test_results', 'psychological_test_indicators'
 ];

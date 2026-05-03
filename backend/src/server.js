@@ -44,7 +44,7 @@ app.use(cors(corsOptions));
 // 速率限制 - 防止 DoS 攻击
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 分钟
-  max: NODE_ENV === 'production' ? 1000 : 5000, // 限制次数
+  max: NODE_ENV === 'production' ? 1000 : 20000, // 开发环境放宽到20000次
   message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,

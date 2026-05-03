@@ -649,7 +649,7 @@ const useStore = create(
             await apiCall('/api/sync/all').then(syncResponse => {
               if (syncResponse.success && syncResponse.data) {
                 set((state) => {
-                  state.importPsychologicalTestResults(syncResponse.data.psychological_test_results || [])
+                  state.importPsychologicalTestResults(syncResponse.data.psychological_test_results)
                   return {}
                 })
               }
@@ -682,7 +682,7 @@ const useStore = create(
             await apiCall('/api/sync/all').then(syncResponse => {
               if (syncResponse.success && syncResponse.data) {
                 set((state) => {
-                  state.importPsychologicalTestResults(syncResponse.data.psychological_test_results || [])
+                  state.importPsychologicalTestResults(syncResponse.data.psychological_test_results)
                   return {}
                 })
               }
@@ -699,6 +699,12 @@ const useStore = create(
       importPsychologicalTestResults: (dataList) => set((state) => {
         if (!dataList || dataList === undefined) {
           console.log('[Store] 心理测试结果数据未提供，保持现有数据')
+          return {}
+        }
+
+        // 保护：如果数据为空数组但当前有数据，不要清空
+        if (dataList.length === 0 && state.psychologicalTests && state.psychologicalTests.length > 0) {
+          console.log('[Store] importPsychologicalTestResults 跳过空数据，保留', state.psychologicalTests.length, '条记录')
           return {}
         }
 
@@ -757,6 +763,12 @@ const useStore = create(
       importPsychologicalIndicators: (dataList) => set((state) => {
         if (!dataList || dataList === undefined) {
           console.log('[Store] 心理测试指标数据未提供，保持现有数据，当前指标:', state.psychologicalIndicators)
+          return {}
+        }
+
+        // 保护：如果数据为空数组但当前有数据，不要清空
+        if (dataList.length === 0 && state.psychologicalIndicators && state.psychologicalIndicators.length > 0) {
+          console.log('[Store] importPsychologicalIndicators 跳过空数据，保留', state.psychologicalIndicators.length, '条记录')
           return {}
         }
         // 确保数值字段是正确的类型，并按 ID 排序保证顺序一致
@@ -1011,6 +1023,7 @@ const useStore = create(
           eval_standard_4: record.evalStandard4,
           eval_standard_5: record.evalStandard5,
           status: record.status || '启用',
+          creator: record.creator || '系统',
           created_at: now,
           updated_at: now
         }
@@ -1219,7 +1232,8 @@ const useStore = create(
 
       // 导入交易策略 (从数据库同步)
       importTradingStrategies: (dataList) => set((state) => {
-        if (!dataList || dataList === undefined) {
+        console.log('[Store] importTradingStrategies 接收到的数据:', dataList)
+        if (!dataList || dataList === undefined || dataList === null) {
           console.log('[Store] 交易策略数据未提供,保持现有数据')
           return {}
         }
@@ -1231,7 +1245,7 @@ const useStore = create(
         // 转换数据库字段名 (snake_case -> camelCase)
         const newData = activeData.map(d => ({
           id: d.id,
-          revisionVersion: d.revision_version || '', // 修订版本
+          revisionVersion: d.revision_version || '',
           strategyType: d.strategy_type,
           name: d.name,
           evalStandard1: d.eval_standard_1,
@@ -1241,24 +1255,20 @@ const useStore = create(
           evalStandard5: d.eval_standard_5,
           status: d.status,
           createdAt: d.created_at || new Date().toISOString(),
-          updatedAt: d.updated_at || new Date().toISOString(),
+          updatedAt: (d.updated_at && d.updated_at !== d.created_at) ? d.updated_at : null,
           deleted: d.deleted || false,
           deletedAt: d.deleted_at || null
         }))
 
-        console.log('[Store] 导入的交易策略数据:', newData.map(d => ({ id: d.id, name: d.name })))
-
-        // 同时更新 strategies (用于 getStrategyName) 和 strategyRecords (用于交易策略列表)
-        // strategies 结构: { buy: [...], sell: [...] }
-        const strategiesBuy = newData.filter(d => d.strategyType === 'buy')
-        const strategiesSell = newData.filter(d => d.strategyType === 'sell')
+        console.log('[Store] 导入的交易策略数据:', newData)
 
         return {
           strategyRecords: newData,
+          tradingStrategies: newData,
           strategies: {
             ...state.strategies,
-            buy: strategiesBuy,
-            sell: strategiesSell
+            buy: newData.filter(d => d.strategyType === 'buy' || d.strategyType === '买入'),
+            sell: newData.filter(d => d.strategyType === 'sell' || d.strategyType === '卖出')
           }
         }
       }),
@@ -1287,24 +1297,22 @@ const useStore = create(
         // 映射前端字段名到数据库字段名（camelCase -> snake_case）
         const dbOrder = {
           trade_number: newOrder.tradeNumber,
-          order_type: newOrder.type === 'buy' ? '买入' : '卖出', // 转换为中文
-          symbol: newOrder.symbol,
-          name: newOrder.name,
+          direction: newOrder.type === 'buy' ? 'buy' : 'sell',
+          order_type: newOrder.type === 'buy' ? '买入' : '卖出',
+          stock_code: newOrder.symbol,
+          stock_name: newOrder.name,
           price: newOrder.price,
           quantity: newOrder.quantity,
-          stop_loss_price: newOrder.stopLossPrice,
-          take_profit_price: newOrder.takeProfitPrice,
-          psychological_score: newOrder.psychologicalScore,
-          strategy_score: newOrder.strategyScore,
-          strategy_id: newOrder.strategyId, // 添加策略ID字段
-          risk_score: newOrder.riskScore,
-          overall_score: newOrder.overallScore,
-          order_date: new Date().toISOString().split('T')[0],
-          order_time: new Date().toISOString(), // 发送完整的ISO时间戳，触发器会自动处理
+          stop_loss_price: newOrder.stopLossPrice || null,
+          take_profit_price: newOrder.takeProfitPrice || null,
+          psychological_score: newOrder.psychologicalScore || null,
+          strategy_score: newOrder.strategyScore || null,
+          strategy_id: newOrder.strategyId || null,
+          risk_score: newOrder.riskScore || null,
+          overall_score: newOrder.overallScore || null,
           status: 'executed',
-          is_virtual: newOrder.isVirtual || false,
           buy_order_id: newOrder.buyOrderId || null,
-          notes: null,
+          buy_order_price: newOrder.buyOrderPrice || null,
           deleted: false,
           deleted_at: null
         }
@@ -1382,6 +1390,80 @@ const useStore = create(
             console.error('[Store] 账单明细创建失败:', err)
           }
 
+          // === 交易记录：买入时创建，卖出时更新 ===
+          if (isBuy) {
+            const tradeRecordData = {
+              trade_number: tradeNumber,
+              // 新字段（前端使用）
+              buy_order_id: String(dbOrderId),
+              symbol: newOrder.symbol,
+              name: newOrder.name,
+              buy_price: newOrder.price,
+              buy_quantity: newOrder.quantity,
+              buy_time: new Date().toISOString(),
+              buy_order_price: newOrder.price,
+              buy_amount: parseFloat(newOrder.price) * parseFloat(newOrder.quantity),
+              // 旧字段（数据库 NOT NULL 约束，需要同时填充）
+              entry_price: newOrder.price,
+              entry_date: new Date().toISOString().split('T')[0],
+              quantity: newOrder.quantity,
+              stock_name: newOrder.name,
+              // 卖出相关字段
+              sell_order_ids: null,
+              sell_price: null,
+              sell_quantity: null,
+              sell_time: null,
+              sell_order_price: null,
+              sell_amount: null,
+              exit_price: null,
+              exit_date: null,
+              deleted: false,
+              deleted_at: null
+            }
+            try {
+              const result = await apiCall('/api/trade_records', 'POST', tradeRecordData)
+              console.log('[Store] 交易记录创建成功:', result)
+            } catch (err) {
+              console.error('[Store] 交易记录创建失败:', err)
+            }
+          } else {
+            const existingRecords = useStore.getState().tradeRecords
+            const record = existingRecords.find(r =>
+              (r.tradeNumber === tradeNumber || r.trade_number === tradeNumber) && !r.deleted
+            )
+
+            if (record) {
+              const currentSellIds = record.sellOrderIds || record.sell_order_ids || ''
+              const newSellIds = currentSellIds ? `${currentSellIds},${dbOrderId}` : String(dbOrderId)
+
+              const sellOrders = useStore.getState().orders.filter(o =>
+                o.tradeNumber === tradeNumber && o.type === 'sell' && !o.deleted
+              )
+              let totalSellAmount = 0
+              let totalSellQuantity = 0
+              sellOrders.forEach(o => {
+                totalSellAmount += (parseFloat(o.price) || 0) * (parseFloat(o.quantity) || 0)
+                totalSellQuantity += parseFloat(o.quantity) || 0
+              })
+              totalSellAmount += (parseFloat(newOrder.price) || 0) * (parseFloat(newOrder.quantity) || 0)
+              totalSellQuantity += parseFloat(newOrder.quantity) || 0
+              const avgSellPrice = totalSellQuantity > 0 ? totalSellAmount / totalSellQuantity : null
+
+              try {
+                await apiCall(`/api/trade_records/${record.id}`, 'PUT', {
+                  sell_order_ids: newSellIds,
+                  sell_price: avgSellPrice,
+                  sell_quantity: totalSellQuantity,
+                  sell_time: new Date().toISOString(),
+                  sell_order_price: avgSellPrice,
+                  sell_amount: totalSellAmount
+                })
+              } catch (err) {
+                console.error('[Store] 交易记录更新失败:', err)
+              }
+            }
+          }
+
           // 然后从数据库重新同步数据（延迟500ms，确保数据库已完成写入）
           setTimeout(async () => {
             try {
@@ -1390,9 +1472,10 @@ const useStore = create(
               console.log('[Store] 同步数据返回:', syncResponse)
               
               if (syncResponse.success && syncResponse.data) {
+                const { trade_orders, trade_records, transactions } = syncResponse.data
+                
                 // 更新订单数据
-                if (syncResponse.data.trade_orders) {
-                  const { trade_orders } = syncResponse.data
+                if (trade_orders) {
                   console.log('[Store] 同步到的订单数量:', trade_orders.length)
                   useStore.setState((state) => {
                     state.importOrders(trade_orders)
@@ -1401,10 +1484,17 @@ const useStore = create(
                 }
 
                 // 更新交易记录数据
-                if (syncResponse.data.trade_records) {
-                  const { trade_records, trade_orders } = syncResponse.data
+                if (trade_records) {
                   useStore.setState((state) => {
                     state.importTradeRecords(trade_records, trade_orders)
+                    return {}
+                  })
+                }
+                
+                // 更新账单明细数据
+                if (transactions) {
+                  useStore.setState((state) => {
+                    state.importTransactions(transactions)
                     return {}
                   })
                 }
@@ -1516,8 +1606,9 @@ const useStore = create(
           console.log('[Store] 没有需要删除的交易记录')
         }
 
-        // 删除订单
+        // 删除订单（不调用setTimeout同步，避免覆盖数据）
         apiCall(`/api/trade_orders/${id}`, 'DELETE')
+          .catch(err => console.error('[Store] 删除订单失败:', err))
 
         // 同步更新前端state
         return {
@@ -1616,17 +1707,15 @@ const useStore = create(
         deletePromises.push(orderPromise)
 
         Promise.all(deletePromises).finally(() => {
+          // 无论如何都清除删除标志
+          localStorage.removeItem('is_deleting_orders')
           apiCall('/api/sync/all', 'GET')
             .then(syncResponse => {
               if (syncResponse.success && syncResponse.data) {
                 get().importTradeRecords(syncResponse.data.trade_records || [], syncResponse.data.trade_orders || [])
               }
             })
-            .finally(() => {
-              setTimeout(() => {
-                localStorage.removeItem('is_deleting_orders')
-              }, 1000)
-            })
+            .catch(err => console.error('[Store] 批量删除后同步失败:', err))
         })
 
         return {
@@ -1762,32 +1851,25 @@ const useStore = create(
           deletedAt: null 
         }
 
-        // 构造数据库格式的数据
+        // 构造数据库格式的数据（适配 transactions 表结构）
         const now = new Date()
-        const transactionDate = now.toISOString().split('T')[0] // YYYY-MM-DD
-        const transactionTime = now.toTimeString().split(' ')[0].substring(0, 8) // HH:mm:ss
+        const transactionDate = now.toISOString().split('T')[0]
+        const transactionTime = now.toTimeString().split(' ')[0].substring(0, 8)
 
-        // 兼容新旧数据库结构：
-        // - 旧结构需要：order_id, transaction_type, symbol, price, quantity, total_price
-        // - 新结构需要：transaction_type, symbol, name, description, amount, balance
         const dbTransaction = {
-          // 新结构字段
           transaction_type: transaction.type || '入账',
           symbol: transaction.symbol || '',
-          name: transaction.name || null,
-          description: transaction.description || null,
-          amount: transaction.amount != null ? String(transaction.amount) : null,
-          balance: transaction.balance != null ? String(transaction.balance) : null,
-          trade_number: transaction.tradeNumber || null,  // 添加交易编号关联
+          price: transaction.quantity ? Math.abs(transaction.amount) / transaction.quantity : 0,
+          quantity: transaction.quantity || 1,
+          total_price: transaction.amount || 0,
           transaction_date: transactionDate,
           transaction_time: transactionTime,
-          // 旧结构兼容字段（当数据库还没迁移时使用）
-          order_id: 0,  // 手动记账没有关联订单，使用0
-          price: Math.abs(transaction.amount) || 0,
-          quantity: 1,
-          total_price: transaction.amount || 0,
           fee: 0,
-          profit: null
+          profit: null,
+          account_type: accountType === 'virtual' ? 'virtual' : 'real',
+          trade_number: transaction.tradeNumber || null,
+          deleted: false,
+          deleted_at: null
         }
 
         // 同步到数据库
@@ -2039,13 +2121,13 @@ const useStore = create(
         // 转换数据库字段名 (snake_case -> camelCase)
         // 过滤掉已删除的订单
         const newOrders = orders
-          .filter(o => !o.deleted)  // 过滤掉已删除的订单
+          .filter(o => !o.deleted)
           .map(o => ({
             id: o.id?.toString(),
             tradeNumber: o.trade_number || o.tradeNumber || o.id?.toString(),
-            type: (o.order_type === '买入' ? 'buy' : (o.order_type === '卖出' ? 'sell' : o.order_type)) || o.type,
-            symbol: o.symbol,
-            name: o.name,
+            type: (o.direction === 'buy' ? 'buy' : (o.direction === 'sell' ? 'sell' : (o.order_type === '买入' ? 'buy' : (o.order_type === '卖出' ? 'sell' : o.order_type)))) || o.type,
+            symbol: o.stock_code || o.symbol,
+            name: o.stock_name || o.name,
             price: o.price,
             quantity: o.quantity,
             stopLossPrice: o.stop_loss_price || o.stopLossPrice,
@@ -2059,10 +2141,8 @@ const useStore = create(
             deleted: o.deleted || false,
             deletedAt: o.deleted_at || o.deletedAt || null,
             status: o.status,
-            isVirtual: o.is_virtual || o.isVirtual,
             buyOrderId: (o.buy_order_id != null ? String(o.buy_order_id) : (o.buyOrderId != null ? String(o.buyOrderId) : null)),
-            buyOrderPrice: o.buy_order_price ? parseFloat(o.buy_order_price) : (o.buyOrderPrice || null),
-            notes: o.notes
+            buyOrderPrice: o.buy_order_price ? parseFloat(o.buy_order_price) : (o.buyOrderPrice || null)
           }))
         return { orders: newOrders }
       }),
@@ -2089,16 +2169,19 @@ const useStore = create(
           id: t.id,
           type: t.transaction_type || t.type || null,
           symbol: t.symbol || null,
-          name: t.name || null,
-          description: t.description || null,
-          amount: t.amount != null ? parseFloat(t.amount) : (t.amount || null),
-          balance: t.balance != null ? parseFloat(t.balance) : (t.balance || null),
+          name: t.symbol || null,
+          description: `${(t.transaction_type || t.type || '').replace('股票', '')}${t.quantity || 0}股`,
+          // DB没有amount字段，使用total_price作为amount
+          amount: t.total_price != null ? parseFloat(t.total_price) : null,
+          // DB没有balance字段
+          balance: null,
+          // DB有quantity字段
+          quantity: t.quantity != null ? parseFloat(t.quantity) : null,
           createdAt: formatDateTime(t.created_at) || formatDateTime(t.createdAt) || new Date().toISOString(),
           deleted: t.deleted || false,
           deletedAt: t.deleted_at || t.deletedAt || null,
           // 关键修复：添加交易编号字段映射
           tradeNumber: t.trade_number || t.tradeNumber || null,
-          // 添加交易状态字段映射 - 尝试不同的字段名
           status: t.交易状态 || t.trade_status || t.tradeStatus || t.status || null
         }))
         
@@ -2128,6 +2211,11 @@ const useStore = create(
       // 批量导入交易记录（从数据库同步）- 直接使用数据库数据，不合并本地数据
       importTradeRecords: (records, ordersData) => set((state) => {
         if (!records || records.length === 0) {
+          // 保护：如果records为空数组，但当前state有数据，不要清空
+          if (state.tradeRecords && state.tradeRecords.length > 0) {
+            console.log('[Store] importTradeRecords 跳过空数据，保留当前', state.tradeRecords.length, '条记录')
+            return state
+          }
           return state
         }
         
@@ -2136,53 +2224,18 @@ const useStore = create(
           ? ordersData.filter(o => !o.deleted).map(o => ({
               ...o,
               tradeNumber: o.trade_number || o.tradeNumber,
-              type: (o.order_type === '买入' ? 'buy' : (o.order_type === '卖出' ? 'sell' : o.order_type)) || o.type
+              type: (o.direction === 'buy' ? 'buy' : (o.direction === 'sell' ? 'sell' : (o.order_type === '买入' ? 'buy' : (o.order_type === '卖出' ? 'sell' : o.order_type)))) || o.type
             }))
           : (state.orders || [])
         
         const filteredRecords = records.filter(r => !r.deleted)
         
-        // 根据 trade_orders 的 deleted 状态同步设置 trade_records 的 deleted 状态
-        // 对应关系：trade_records.trade_number + created_at = trade_orders.trade_number + created_at
-        const recordsWithDeletedSync = filteredRecords.map(r => {
-          const tradeNumber = r.trade_number || r.tradeNumber
-          const recordCreatedAt = r.created_at || r.createdAt
-          if (!tradeNumber || !recordCreatedAt) return r // 没有交易编号或创建时间的记录保留原状态
-          
-          // 查找对应的 trade_order
-          const matchingOrder = allOrders.find(o => 
-            (o.tradeNumber === tradeNumber || o.trade_number === tradeNumber) &&
-            (o.created_at === recordCreatedAt || o.createdAt === recordCreatedAt)
-          )
-          
-          // 如果找到对应的订单，根据订单的 deleted 状态设置记录的 deleted 状态
-          if (matchingOrder) {
-            return {
-              ...r,
-              deleted: matchingOrder.deleted || false,
-              deletedAt: matchingOrder.deleted ? (matchingOrder.deleted_at || matchingOrder.deletedAt || new Date().toISOString()) : null
-            }
-          }
-          return r
-        })
-
-        // 过滤掉没有对应订单的记录（订单被删除但交易记录还在的情况）
-        const recordsWithOrders = recordsWithDeletedSync.filter(r => {
-          const tradeNumber = r.trade_number || r.tradeNumber
-          if (!tradeNumber) return true // 没有交易编号的记录保留
-          const hasOrders = allOrders.some(o => 
-            (o.tradeNumber === tradeNumber || o.trade_number === tradeNumber) && !o.deleted
-          )
-          return hasOrders
-        })
+        const recordsWithOrders = filteredRecords
         
         const newRecords = recordsWithOrders.map(r => {
           let buyStrategyId = r.buy_strategy_id ? Number(r.buy_strategy_id) : (r.buyStrategyId || null)
           let strategyId = r.strategy_id ? Number(r.strategy_id) : (r.strategyId || null)
           const tradeNumber = r.trade_number || r.tradeNumber || r.id
-          
-          // 调试：打印 buyPrice 相关的原始数据
-          console.log('[Debug importTradeRecords] record id:', r.id, 'buy_price:', r.buy_price, 'buyPrice:', r.buyPrice, 'sell_price:', r.sell_price, 'sellPrice:', r.sellPrice)
           
           const buyOrders = allOrders.filter(o => o.tradeNumber === tradeNumber && o.type === 'buy')
           let calculatedBuyAmount = 0
@@ -2239,17 +2292,20 @@ const useStore = create(
           // 计算最终的 buyPrice 和 sellPrice
           const finalBuyPrice = r.buy_price != null ? parseFloat(r.buy_price) : (r.buyPrice != null ? parseFloat(r.buyPrice) : null)
           const finalSellPrice = r.sell_price != null ? parseFloat(r.sell_price) : (r.sellPrice != null ? parseFloat(r.sellPrice) : null)
-          console.log('[Debug importTradeRecords] 处理后 finalBuyPrice:', finalBuyPrice, 'finalSellPrice:', finalSellPrice)
+          // 实际卖出价：用户录入的券商成交价，优先使用
+          const actualSellPriceValue = r.actual_sell_price != null ? parseFloat(r.actual_sell_price) : (r.actualSellPrice != null ? parseFloat(r.actualSellPrice) : null)
+          // 计算卖出金额时使用的价格：优先用实际卖出价，没有时用理想卖出价
+          const effectiveSellPriceForAmount = actualSellPriceValue != null ? actualSellPriceValue : finalSellPrice
           
           // 计算买入数量和卖出数量
           const buyQuantity = buyOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0)
           const sellQuantity = sellOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0)
           
-          // 计算买入金额和卖出金额（使用实际买入价和实际卖出价）
+          // 计算买入金额和卖出金额
           const actualBuyAmount = finalBuyPrice && buyQuantity ? finalBuyPrice * buyQuantity : buyAmountValue
-          const actualSellAmount = finalSellPrice && sellQuantity ? finalSellPrice * sellQuantity : sellAmountValue
-          const buyAmountValueFinal = parseFloat(actualBuyAmount.toFixed(2))
-          const sellAmountValueFinal = parseFloat(actualSellAmount.toFixed(2))
+          const actualSellAmount = effectiveSellPriceForAmount && sellQuantity ? effectiveSellPriceForAmount * sellQuantity : sellAmountValue
+          const buyAmountValueFinal = actualBuyAmount != null ? parseFloat(actualBuyAmount.toFixed(2)) : null
+          const sellAmountValueFinal = actualSellAmount != null ? parseFloat(actualSellAmount.toFixed(2)) : null
           
           // 计算盈亏金额（使用实际买入价和实际卖出价）
           // 对于部分卖出的情况，按卖出比例计算盈亏
@@ -2315,7 +2371,10 @@ const useStore = create(
             buyOrderId: r.buy_order_id != null ? String(r.buy_order_id) : (r.buyOrderId != null ? String(r.buyOrderId) : null),
             // 卖出数量：从订单计算，确保与股票交易列表一致
             sellQuantity: sellQuantity,
+            // sellPrice = 理想卖出价（系统自动计算的多笔卖出订单均价）
             sellPrice: finalSellPrice,
+            // actual_sell_price = 实际卖出价（用户手动录入券商成交价）
+            actualSellPrice: r.actual_sell_price != null ? parseFloat(r.actual_sell_price) : (r.actualSellPrice != null ? parseFloat(r.actualSellPrice) : null),
             // 卖出订单价格sell_order_price：自动从数据库获取，为空时从订单计算
             sellOrderPrice: r.sell_order_price != null ? parseFloat(r.sell_order_price) : (r.sellOrderPrice != null ? parseFloat(r.sellOrderPrice) : (sellOrderPriceFromOrders != null ? sellOrderPriceFromOrders : null)),
             sellOrderTime: r.sell_order_time || r.sellOrderTime || latestSellOrderTime || null,
@@ -3196,8 +3255,8 @@ const useStore = create(
         console.log('[Store] Merge - orders from current:', currentState?.orders?.length, '-> cleaned:', cleanedCurrentOrders.length)
 
         return {
-          ...persistedState,
           ...currentState,
+          ...persistedState,
           // 始终使用从数据库同步的 orders（currentState），而不是本地存储的 orders
           // 这样可以确保删除后，其他浏览器能立即看到更新
           orders: cleanedCurrentOrders

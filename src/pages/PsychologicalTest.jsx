@@ -460,7 +460,7 @@ const PsychologicalTest = () => {
                       <div style={{
                         display: 'flex',
                         alignItems: 'flex-start',
-                        marginBottom: '10px'
+                        marginBottom: '6px'
                       }}>
                         <span style={{
                           width: '28px',
@@ -501,7 +501,7 @@ const PsychologicalTest = () => {
                               key={value}
                               onClick={() => handleScoreChange(indicator.id, value)}
                               disabled={!isTodaySelected()}
-                              className={`px-4 py-1.5 rounded-lg border border-gray-200 hover:border-gray-900 transition-all text-base font-bold min-w-[60px] h-9 ${
+                              className={`px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-900 transition-all text-sm font-bold min-w-[48px] h-8 ${
                                 isTodaySelected() ? 'cursor-pointer' : 'cursor-not-allowed'
                               }`}
                               style={{

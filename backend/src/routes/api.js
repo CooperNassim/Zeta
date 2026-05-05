@@ -236,6 +236,346 @@ router.post('/:table/bulk', async (req, res, next) => {
   }
 });
 
+// ===================== 数据库管理专用路由 =====================
+
+// GET /api/database/info - 获取数据库基础信息
+router.get('/database/info', async (req, res) => {
+  try {
+    const dbInfo = {};
+    
+    const version = await pool.query('SELECT version()');
+    dbInfo.version = version.rows[0].version;
+
+    const size = await pool.query(`
+      SELECT pg_size_pretty(pg_database_size(current_database())) as size
+    `);
+    dbInfo.size = size.rows[0].size;
+
+    const tables = await pool.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      ORDER BY table_name
+    `);
+    dbInfo.tableCount = tables.rows.length;
+
+    const tableDetails = [];
+    for (const t of tables.rows) {
+      const count = await pool.query(`SELECT count(*) FROM "${t.table_name}"`);
+      const deletedCount = await pool.query(
+        `SELECT count(*) FROM "${t.table_name}" WHERE deleted = true`
+      ).catch(() => ({ rows: [{ count: '0' }] }));
+      tableDetails.push({
+        name: t.table_name,
+        totalRows: parseInt(count.rows[0].count),
+        deletedRows: parseInt(deletedCount.rows[0].count)
+      });
+    }
+    dbInfo.tables = tableDetails;
+
+    const connectionCount = await pool.query(`
+      SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()
+    `);
+    dbInfo.activeConnections = parseInt(connectionCount.rows[0].count);
+
+    const uptime = await pool.query(`
+      SELECT date_trunc('second', current_timestamp - pg_postmaster_start_time()) as uptime
+    `);
+    dbInfo.uptime = uptime.rows[0].uptime;
+
+    res.json({ success: true, data: dbInfo });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/database/restart - 重启数据库连接池
+router.post('/database/restart', async (req, res) => {
+  try {
+    await pool.end();
+    await pool.connect();
+    res.json({ success: true, message: '数据库连接池已重启' });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// GET /api/database/backups - 获取备份列表
+router.get('/database/backups', async (req, res) => {
+  try {
+    const backupDir = path.join(__dirname, '..', 'backups');
+    if (!fs.existsSync(backupDir)) {
+      return res.json({ success: true, data: [] });
+    }
+    const files = fs.readdirSync(backupDir)
+      .filter(f => f.endsWith('.sql') || f.endsWith('.gz'))
+      .map(f => {
+        const stats = fs.statSync(path.join(backupDir, f));
+        return {
+          name: f,
+          size: stats.size,
+          created: stats.mtime.toISOString()
+        };
+      })
+      .sort((a, b) => new Date(b.created) - new Date(a.created));
+    res.json({ success: true, data: files });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/database/backup - 创建备份
+router.post('/database/backup', async (req, res) => {
+  try {
+    const backupDir = path.join(__dirname, '..', 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const fileName = `backup_${timestamp}.sql`;
+    const filePath = path.join(backupDir, fileName);
+
+    const tables = await pool.query(`
+      SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
+    `);
+
+    let sql = `-- Zeta Trading System Database Backup\n-- Date: ${timestamp}\n\n`;
+
+    for (const t of tables.rows) {
+      const data = await pool.query(`SELECT * FROM "${t.table_name}"`);
+      if (data.rows.length === 0) continue;
+
+      const columns = Object.keys(data.rows[0]);
+      sql += `-- Table: ${t.table_name}\n`;
+      sql += `DELETE FROM "${t.table_name}";\n`;
+
+      for (const row of data.rows) {
+        const values = columns.map(col => {
+          const val = row[col];
+          if (val === null || val === undefined) return 'NULL';
+          if (typeof val === 'number') return val;
+          if (typeof val === 'object') return `'${JSON.stringify(val).replace(/'/g, "''")}'`;
+          return `'${String(val).replace(/'/g, "''")}'`;
+        });
+        sql += `INSERT INTO "${t.table_name}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')});\n`;
+      }
+      sql += '\n';
+    }
+
+    fs.writeFileSync(filePath, sql, 'utf8');
+
+    res.json({ success: true, message: '备份成功', data: { fileName, size: sql.length } });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// DELETE /api/database/backup/:filename - 删除备份文件
+router.delete('/database/backup/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(__dirname, '..', 'backups', filename);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: '备份文件不存在' });
+    }
+    
+    fs.unlinkSync(filePath);
+    res.json({ success: true, message: '备份文件已删除' });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/database/restore - 从备份恢复
+router.post('/database/restore', async (req, res) => {
+  try {
+    const { filename } = req.body;
+    if (!filename) {
+      return res.status(400).json({ success: false, error: '请指定备份文件名' });
+    }
+
+    const filePath = path.join(__dirname, '..', 'backups', filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: '备份文件不存在' });
+    }
+
+    const sql = fs.readFileSync(filePath, 'utf8');
+    const statements = sql.split(';').filter(s => s.trim() && !s.trim().startsWith('--'));
+
+    for (const stmt of statements) {
+      await pool.query(stmt.trim());
+    }
+
+    res.json({ success: true, message: '数据恢复成功' });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/database/cleanup - 清理数据库
+router.post('/database/cleanup', async (req, res) => {
+  try {
+    const { type } = req.body;
+
+    let results = {};
+
+    switch (type) {
+      case 'soft-deleted': {
+        const tables = await pool.query(`
+          SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
+        `);
+        let totalDeleted = 0;
+        for (const t of tables.rows) {
+          try {
+            const hasDeleted = await pool.query(
+              `SELECT count(*) FROM information_schema.columns WHERE table_name = $1 AND column_name = 'deleted'`,
+              [t.table_name]
+            );
+            if (parseInt(hasDeleted.rows[0].count) > 0) {
+              const result = await pool.query(
+                `DELETE FROM "${t.table_name}" WHERE deleted = true`
+              );
+              const count = parseInt(result.rowCount || 0);
+              if (count > 0) {
+                results[t.table_name] = count;
+                totalDeleted += count;
+              }
+            }
+          } catch (e) { /* 忽略错误 */ }
+        }
+        results.totalDeleted = totalDeleted;
+        break;
+      }
+      case 'all-data': {
+        const tables = await pool.query(`
+          SELECT table_name FROM information_schema.tables 
+          WHERE table_schema = 'public' AND table_name NOT IN ('schema_migrations')
+        `);
+        for (const t of tables.rows) {
+          await pool.query(`DELETE FROM "${t.table_name}"`);
+          results[t.table_name] = 'cleared';
+        }
+        break;
+      }
+      default:
+        return res.status(400).json({ success: false, error: '未知的清理类型' });
+    }
+
+    res.json({ success: true, data: results });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/database/export - 导出数据库
+router.post('/database/export', async (req, res) => {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const fileName = `export_${timestamp}.sql`;
+    const backupDir = path.join(__dirname, '..', 'backups');
+
+    const tables = await pool.query(`
+      SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
+    `);
+
+    let sql = `-- Zeta Trading System Database Export\n-- Date: ${timestamp}\n\n`;
+
+    for (const t of tables.rows) {
+      const data = await pool.query(`SELECT * FROM "${t.table_name}" WHERE deleted = false`);
+      if (data.rows.length === 0) continue;
+
+      const columns = Object.keys(data.rows[0]);
+      sql += `-- Table: ${t.table_name} (${data.rows.length} rows)\n`;
+      sql += `DELETE FROM "${t.table_name}";\n`;
+
+      for (const row of data.rows) {
+        const values = columns.map(col => {
+          const val = row[col];
+          if (val === null || val === undefined) return 'NULL';
+          if (typeof val === 'number') return val;
+          if (typeof val === 'object') return `'${JSON.stringify(val).replace(/'/g, "''")}'`;
+          return `'${String(val).replace(/'/g, "''")}'`;
+        });
+        sql += `INSERT INTO "${t.table_name}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')});\n`;
+      }
+      sql += '\n';
+    }
+
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.writeFileSync(path.join(backupDir, fileName), sql, 'utf8');
+
+    res.json({ success: true, message: '导出成功', data: { fileName, size: sql.length } });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/database/import - 导入数据库
+router.post('/database/import', async (req, res) => {
+  try {
+    const { filename } = req.body;
+    if (!filename) {
+      return res.status(400).json({ success: false, error: '请指定导入文件名' });
+    }
+
+    const filePath = path.join(__dirname, '..', 'backups', filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: '文件不存在' });
+    }
+
+    const sql = fs.readFileSync(filePath, 'utf8');
+    const statements = sql.split(';').filter(s => s.trim() && !s.trim().startsWith('--'));
+
+    let importedCount = 0;
+    for (const stmt of statements) {
+      const trimmed = stmt.trim();
+      if (trimmed.toUpperCase().startsWith('INSERT')) {
+        await pool.query(trimmed);
+        importedCount++;
+      } else {
+        await pool.query(trimmed);
+      }
+    }
+
+    res.json({ success: true, message: `导入成功，共 ${importedCount} 条记录`, data: { importedCount } });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// GET /api/database/status - 获取数据库连接状态
+router.get('/database/status', async (req, res) => {
+  try {
+    const startTime = Date.now();
+    await pool.query('SELECT 1');
+    const latency = Date.now() - startTime;
+
+    const now = await pool.query('SELECT NOW() as server_time');
+    
+    res.json({ 
+      success: true, 
+      data: { 
+        connected: true, 
+        latency,
+        serverTime: now.rows[0].server_time,
+        poolSize: pool.totalCount,
+        idleCount: pool.idleCount,
+        waitingCount: pool.waitingCount
+      } 
+    });
+  } catch (error) {
+    res.json({ 
+      success: true, 
+      data: { 
+        connected: false, 
+        error: error.message 
+      } 
+    });
+  }
+});
+
 // 通用CRUD路由
 
 // GET /api/:table - 获取列表

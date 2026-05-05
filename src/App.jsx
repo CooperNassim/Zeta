@@ -11,6 +11,7 @@ import OrderManagement from './pages/OrderManagement'
 import TransactionHistory from './pages/TransactionHistory'
 import TradeRecords from './pages/TradeRecords'
 import StockPool from './pages/StockPool'
+import DatabaseManagement from './pages/DatabaseManagement'
 import useStore from './store/useStore'
 import { ToastProvider } from './contexts/ToastContext'
 
@@ -232,8 +233,13 @@ function Navigation() {
     { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
   ]
 
+  const settingsMenuItems = [
+    { id: 'database', icon: Database, label: '数据库', path: '/database-management', customIcon: 'database' },
+  ]
+
   const isTradingPage = tradingMenuItems.some(item => item.path === location.pathname)
   const isResearchPage = researchMenuItems.some(item => item.path === location.pathname)
+  const isSettingsPage = settingsMenuItems.some(item => item.path === location.pathname)
 
   return (
     <>
@@ -251,7 +257,7 @@ function Navigation() {
             </div>
 
             {/* 导航菜单 */}
-            <div className="flex items-center flex-1 justify-start" style={{ paddingLeft: 'clamp(10px, 3vw, 32px)', gap: 'clamp(20px, 5vw, 40px)' }}>
+            <div className="flex items-center flex-1 justify-start" style={{ paddingLeft: 'clamp(10px, 3vw, 32px)', gap: 'clamp(10px, 2.5vw, 20px)' }}>
               <div>
                 <NavLink
                   to="/"
@@ -320,6 +326,34 @@ function Navigation() {
                     <>
                       研究院
                       {(isActive || isResearchPage) && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: '-4px',
+                            left: 'clamp(8px, 1vw, 12px)',
+                            right: 'clamp(8px, 1vw, 12px)',
+                            height: '2px',
+                            backgroundColor: '#0F1419',
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                </NavLink>
+              </div>
+
+              <div>
+                <NavLink
+                  to="/database-management"
+                  className={({ isActive }) =>
+                    `flex items-center py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900 relative ${isActive || isSettingsPage ? 'text-gray-900' : ''}`
+                  }
+                  style={{ fontSize: 'clamp(14px, 1.5vw, 16px)', paddingLeft: 'clamp(8px, 1vw, 12px)', paddingRight: 'clamp(8px, 1vw, 12px)' }}
+                >
+                  {({ isActive }) => (
+                    <>
+                      设置
+                      {(isActive || isSettingsPage) && (
                         <div
                           style={{
                             position: 'absolute',
@@ -485,6 +519,52 @@ function Navigation() {
           </div>
         </aside>
       )}
+
+      {/* 左侧边栏 - 仅在设置页面显示 */}
+      {isSettingsPage && (
+        <aside
+          className="fixed left-0 top-[52px] bottom-0 w-[166px] bg-white border-r border-gray-200 overflow-y-auto z-40 pt-0"
+          style={{ width: 'clamp(140px, 15vw, 166px)' }}
+        >
+          <div className="px-3 pt-2.5 space-y-2.5">
+            {settingsMenuItems.map((item) => {
+              const isActive = location.pathname === item.path
+              return (
+                <Link
+                  key={item.id}
+                  to={item.path}
+                  className={`flex items-center h-[42px] px-3 rounded-full text-sm font-medium transition-all duration-200 ${
+                    item.id === 'database' ? 'mt-2.5' : ''
+                  } ${
+                    isActive
+                      ? 'bg-gray-100 text-[#0F1419]'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {item.customIcon === 'database' ? (
+                    <svg
+                      viewBox="0 0 1024 1024"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="w-[22px] h-[22px] mr-2"
+                      fill="#0F1419"
+                      style={{ flexShrink: 0 }}
+                    >
+                      {isActive ? (
+                        <path d="M828.952381 121.904762a73.142857 73.142857 0 0 1 73.142857 73.142857v633.904762a73.142857 73.142857 0 0 1-73.142857 73.142857H195.047619a73.142857 73.142857 0 0 1-73.142857-73.142857V195.047619a73.142857 73.142857 0 0 1 73.142857-73.142857h633.904762zM316.952381 719.238095H195.047619V828.952381h121.904762v-109.714286z m512 0H390.095238V828.952381h438.857143v-109.714286zM316.952381 536.380952H195.047619v109.714286h121.904762V536.380952z m512 0H390.095238v109.714286h438.857143V536.380952z m-512-182.857142H195.047619V463.238095h121.904762v-109.714285z m512 0H390.095238V463.238095h438.857143v-109.714285z"></path>
+                      ) : (
+                        <path d="M828.952381 121.904762a73.142857 73.142857 0 0 1 73.142857 73.142857v633.904762a73.142857 73.142857 0 0 1-73.142857 73.142857H195.047619a73.142857 73.142857 0 0 1-73.142857-73.142857V195.047619a73.142857 73.142857 0 0 1 73.142857-73.142857h633.904762zM316.952381 719.238095H195.047619V828.952381h121.904762v-109.714286z m512 0H390.095238V828.952381h438.857143v-109.714286zM316.952381 536.380952H195.047619v109.714286h121.904762V536.380952z m512 0H390.095238v109.714286h438.857143V536.380952zM195.047619 353.52381V463.238095h121.904762v-109.714285H195.047619zM828.952381 195.047619H195.047619v85.333333h633.904762V195.047619zM390.095238 463.238095h438.857143v-109.714285H390.095238V463.238095z"></path>
+                      )}
+                    </svg>
+                  ) : (
+                    <item.icon className="w-6 h-6 mr-2" style={{ color: isActive ? '#0F1419' : '#9CA3AF' }} />
+                  )}
+                  {item.label}
+                </Link>
+              )
+            })}
+          </div>
+        </aside>
+      )}
     </>
   )
 }
@@ -514,9 +594,13 @@ function AppContent() {
     { path: '/stock-pool' },
     { path: '/technical-indicators' },
   ]
+  const settingsMenuItems = [
+    { path: '/database-management' },
+  ]
 
   const isTradingPage = tradingMenuItems.some(item => item.path === location.pathname)
   const isResearchPage = researchMenuItems.some(item => item.path === location.pathname)
+  const isSettingsPage = settingsMenuItems.some(item => item.path === location.pathname)
 
   return (
     <div className="h-screen bg-gray-50 overflow-hidden" style={{ margin: '0', padding: '0' }}>
@@ -529,7 +613,7 @@ function AppContent() {
               margin: '0',
               height: 'calc(100vh)',
               position: 'relative',
-              marginLeft: (isTradingPage || isResearchPage) ? '10px' : '0'
+              marginLeft: (isTradingPage || isResearchPage || isSettingsPage) ? '10px' : '0'
             }}
           >
             <Routes>
@@ -543,6 +627,7 @@ function AppContent() {
               <Route path="/order-management" element={<OrderManagement />} />
               <Route path="/transaction-history" element={<TransactionHistory />} />
               <Route path="/trade-records" element={<TradeRecords />} />
+              <Route path="/database-management" element={<DatabaseManagement />} />
             </Routes>
           </main>
         </div>

@@ -1389,37 +1389,75 @@ const useStore = create(
           if (isBuy) {
             const tradeRecordData = {
               trade_number: tradeNumber,
-              // 新字段（前端使用）
               buy_order_id: String(dbOrderId),
               symbol: newOrder.symbol,
               name: newOrder.name,
-              buy_price: newOrder.price,
-              buy_quantity: newOrder.quantity,
+              buy_price: parseFloat(newOrder.price),
+              buy_quantity: parseFloat(newOrder.quantity),
               buy_time: new Date().toISOString(),
-              buy_order_price: newOrder.price,
+              buy_order_price: parseFloat(newOrder.price),
               buy_amount: parseFloat(newOrder.price) * parseFloat(newOrder.quantity),
-              // 旧字段（数据库 NOT NULL 约束，需要同时填充）
-              entry_price: newOrder.price,
+              entry_price: parseFloat(newOrder.price),
               entry_date: new Date().toISOString().split('T')[0],
-              quantity: newOrder.quantity,
-              stock_name: newOrder.name,
-              // 卖出相关字段
+              quantity: parseFloat(newOrder.quantity),
               sell_order_ids: null,
               sell_price: null,
               sell_quantity: null,
               sell_time: null,
               sell_order_price: null,
               sell_amount: null,
-              exit_price: null,
-              exit_date: null,
-              deleted: false,
-              deleted_at: null
+              actual_sell_price: null,
+              actual_sell_quantity: null,
+              actual_sell_time: null,
+              trade_commission: null,
+              other_fees: null,
+              sell_trade_commission: null,
+              sell_other_fees: null,
+              trade_summary: null,
+              deleted: false
             }
             try {
               const result = await apiCall('/api/trade_records', 'POST', tradeRecordData)
-              console.log('[Store] 交易记录创建成功:', result)
+              if (result && result.success) {
+                console.log('[Store] 交易记录创建成功:', result)
+                // 立即更新本地状态
+                const newTradeRecord = {
+                  id: result.data?.id || Date.now() + 1,
+                  tradeNumber: tradeNumber,
+                  trade_number: tradeNumber,
+                  buyOrderId: result.data?.buy_order_id || String(dbOrderId),
+                  buy_order_id: result.data?.buy_order_id || String(dbOrderId),
+                  symbol: newOrder.symbol,
+                  name: newOrder.name,
+                  buyPrice: parseFloat(newOrder.price),
+                  buy_price: parseFloat(newOrder.price),
+                  buyQuantity: parseFloat(newOrder.quantity),
+                  buy_quantity: parseFloat(newOrder.quantity),
+                  buyTime: new Date().toISOString(),
+                  buy_time: new Date().toISOString(),
+                  buyOrderPrice: parseFloat(newOrder.price),
+                  buy_order_price: parseFloat(newOrder.price),
+                  buyAmount: parseFloat(newOrder.price) * parseFloat(newOrder.quantity),
+                  buy_amount: parseFloat(newOrder.price) * parseFloat(newOrder.quantity),
+                  entryPrice: parseFloat(newOrder.price),
+                  entry_price: parseFloat(newOrder.price),
+                  entryDate: new Date().toISOString().split('T')[0],
+                  entry_date: new Date().toISOString().split('T')[0],
+                  quantity: parseFloat(newOrder.quantity),
+                  createdAt: new Date().toISOString(),
+                  created_at: new Date().toISOString(),
+                  deleted: false,
+                  deleted_at: null
+                }
+                useStore.setState(state => {
+                  console.log('[Store] 立即更新本地交易记录，当前数量:', state.tradeRecords.length)
+                  return { tradeRecords: [...state.tradeRecords, newTradeRecord] }
+                })
+              } else {
+                console.error('[Store] 交易记录创建失败:', result)
+              }
             } catch (err) {
-              console.error('[Store] 交易记录创建失败:', err)
+              console.error('[Store] 交易记录创建异常:', err)
             }
           } else {
             const existingRecords = useStore.getState().tradeRecords
@@ -2211,7 +2249,7 @@ const useStore = create(
         }
       }),
 
-      // 批量导入交易记录（从数据库同步）- 直接使用数据库数据，不合并本地数据
+      // 批量导入交易记录（从数据库同步）- 合并数据库数据和本地数据
       importTradeRecords: (records, ordersData) => set((state) => {
         if (!records || records === null || records === undefined) {
           console.log('[Store] importTradeRecords 跳过空数据')
@@ -2297,16 +2335,19 @@ const useStore = create(
           const finalSellPrice = r.sell_price != null ? parseFloat(r.sell_price) : (r.sellPrice != null ? parseFloat(r.sellPrice) : null)
           // 实际卖出价：用户录入的券商成交价，优先使用
           const actualSellPriceValue = r.actual_sell_price != null ? parseFloat(r.actual_sell_price) : (r.actualSellPrice != null ? parseFloat(r.actualSellPrice) : null)
-          // 计算卖出金额时使用的价格：优先用实际卖出价，没有时用理想卖出价
-          const effectiveSellPriceForAmount = actualSellPriceValue != null ? actualSellPriceValue : finalSellPrice
           
           // 计算买入数量和卖出数量
           const buyQuantity = buyOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0)
           const sellQuantity = sellOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0)
           
           // 计算买入金额和卖出金额
+          // 如果有实际卖出价，直接使用数据库的 sell_amount（已更新），不要从订单重新计算
+          const dbSellAmount = r.sell_amount != null ? parseFloat(r.sell_amount) : (r.sellAmount != null ? parseFloat(r.sellAmount) : null)
+          const effectiveSellPriceForAmount = actualSellPriceValue != null ? actualSellPriceValue : finalSellPrice
           const actualBuyAmount = finalBuyPrice && buyQuantity ? finalBuyPrice * buyQuantity : buyAmountValue
-          const actualSellAmount = effectiveSellPriceForAmount && sellQuantity ? effectiveSellPriceForAmount * sellQuantity : sellAmountValue
+          const actualSellAmount = dbSellAmount != null && actualSellPriceValue != null
+            ? dbSellAmount // 有实际卖出价时，直接使用数据库的金额（已更新）
+            : (effectiveSellPriceForAmount && sellQuantity ? effectiveSellPriceForAmount * sellQuantity : sellAmountValue)
           const buyAmountValueFinal = actualBuyAmount != null ? parseFloat(actualBuyAmount.toFixed(2)) : null
           const sellAmountValueFinal = actualSellAmount != null ? parseFloat(actualSellAmount.toFixed(2)) : null
           
@@ -2427,7 +2468,29 @@ const useStore = create(
           return acc
         }, {})
         
+        // 合并本地数据：保留本地有但数据库还没有的记录（解决同步竞争条件）
+        const dbTradeNumbers = new Set(filteredRecords.map(r => r.trade_number || r.tradeNumber || r.id))
+        const localOnlyRecords = (state.tradeRecords || []).filter(r => {
+          const localTradeNumber = r.tradeNumber || r.trade_number || r.id
+          // 保留本地有但数据库没有的记录
+          return !dbTradeNumbers.has(localTradeNumber) && !r.deleted
+        })
+        
+        // 将本地独有的记录也加入去重映射
+        localOnlyRecords.forEach(record => {
+          const key = `${record.tradeNumber}_${record.createdAt}`
+          if (!uniqueRecords[key]) {
+            uniqueRecords[key] = record
+          }
+        })
+        
         const finalRecords = Object.values(uniqueRecords)
+        
+        console.log('[Store] importTradeRecords 合并完成:', {
+          数据库记录数: filteredRecords.length,
+          本地独有记录数: localOnlyRecords.length,
+          最终记录数: finalRecords.length
+        })
         
         return { tradeRecords: finalRecords }
       }),

@@ -288,7 +288,6 @@ const Home = () => {
                     <p className="text-sm text-gray-600 mb-1" style={{ fontSize: 'clamp(12px, 1.3vw, 16px)' }}>{stat.label}</p>
                     <p className="font-bold text-gray-900" style={{ fontSize: 'clamp(24px, 3vw, 32px)' }}>
                       {stat.prefix}
-                      {stat.showSign && stat.value > 0 ? '+' : ''}
                       {stat.showSign && stat.value < 0 ? '-' : ''}
                       <Counter end={Math.abs(stat.value)} duration={2} decimals={0} />
                       {stat.suffix}

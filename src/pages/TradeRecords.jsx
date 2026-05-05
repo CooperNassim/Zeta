@@ -385,13 +385,22 @@ const TradeRecords = () => {
 
       const effectiveSellPrice = currentRecord.actualSellPrice != null ? currentRecord.actualSellPrice : calculatedSellPrice
 
+      // 格式化价格字段：整数取整，有小数点取小数点2位四舍五入
+      const formatField = (val) => {
+        if (val === null || val === undefined || val === '') return ''
+        const num = parseFloat(val)
+        if (isNaN(num)) return ''
+        const rounded = Math.round(num * 100) / 100
+        return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
+      }
+
       setSummaryFormData({
-        buyPrice: currentRecord.buyPrice != null ? String(currentRecord.buyPrice) : '',
-        tradeCommission: currentRecord.tradeCommission != null ? String(currentRecord.tradeCommission) : '',
-        otherFees: currentRecord.otherFees != null ? String(currentRecord.otherFees) : '',
-        sellPrice: effectiveSellPrice != null ? String(effectiveSellPrice) : '',
-        sellTradeCommission: currentRecord.sellTradeCommission != null ? String(currentRecord.sellTradeCommission) : '',
-        sellOtherFees: currentRecord.sellOtherFees != null ? String(currentRecord.sellOtherFees) : '',
+        buyPrice: formatField(currentRecord.buyPrice),
+        tradeCommission: formatField(currentRecord.tradeCommission),
+        otherFees: formatField(currentRecord.otherFees),
+        sellPrice: formatField(effectiveSellPrice),
+        sellTradeCommission: formatField(currentRecord.sellTradeCommission),
+        sellOtherFees: formatField(currentRecord.sellOtherFees),
         tradeSummary: currentRecord.tradeSummary || ''
       })
     } else {
@@ -439,14 +448,31 @@ const TradeRecords = () => {
       }
 
       // 更新单条记录，同时包含买入和卖出字段
+      const buyPrice = summaryFormData.buyPrice != null && summaryFormData.buyPrice !== '' ? parsePrice(summaryFormData.buyPrice) : null
+      const sellPrice = summaryFormData.sellPrice != null && summaryFormData.sellPrice !== '' ? parsePrice(summaryFormData.sellPrice) : null
+
+      // 计算数量：从实际订单获取，而不是用可能过时的 sell_quantity 字段
+      const tradeNum = currentRecord.tradeNumber || currentRecord.trade_number
+      const actualBuyOrders = (orders || []).filter(o => (o.tradeNumber === tradeNum || o.trade_number === tradeNum) && (o.type === 'buy' || o.order_type === '买入') && !o.deleted)
+      const actualSellOrders = (orders || []).filter(o => (o.tradeNumber === tradeNum || o.trade_number === tradeNum) && (o.type === 'sell' || o.order_type === '卖出') && !o.deleted)
+      
+      const buyQuantity = actualBuyOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0) || parseFloat(currentRecord.buy_quantity || currentRecord.quantity || 0)
+      const sellQuantity = actualSellOrders.reduce((sum, o) => sum + (parseFloat(o.quantity) || 0), 0) || parseFloat(currentRecord.sell_quantity || 0)
+      
+      const newBuyAmount = (buyPrice !== null && buyQuantity > 0) ? -(buyPrice * buyQuantity) : null
+      const newSellAmount = (sellPrice !== null && sellQuantity > 0) ? (sellPrice * sellQuantity) : null
+
       const updateRequest = {
-        buy_price: summaryFormData.buyPrice != null && summaryFormData.buyPrice !== '' ? parsePrice(summaryFormData.buyPrice) : null,
+        buy_price: buyPrice,
         trade_commission: summaryFormData.tradeCommission != null && summaryFormData.tradeCommission !== '' ? parseFloat(summaryFormData.tradeCommission.trim()) : null,
         other_fees: summaryFormData.otherFees != null && summaryFormData.otherFees !== '' ? parseFloat(summaryFormData.otherFees.trim()) : null,
-        actual_sell_price: summaryFormData.sellPrice != null && summaryFormData.sellPrice !== '' ? parsePrice(summaryFormData.sellPrice) : null,
+        actual_sell_price: sellPrice,
         sell_trade_commission: summaryFormData.sellTradeCommission != null && summaryFormData.sellTradeCommission !== '' ? parseFloat(summaryFormData.sellTradeCommission.trim()) : null,
         sell_other_fees: summaryFormData.sellOtherFees != null && summaryFormData.sellOtherFees !== '' ? parseFloat(summaryFormData.sellOtherFees.trim()) : null,
-        trade_summary: summaryFormData.tradeSummary != null ? summaryFormData.tradeSummary.trim() : null
+        trade_summary: summaryFormData.tradeSummary != null ? summaryFormData.tradeSummary.trim() : null,
+        // 同时更新金额字段
+        buy_amount: newBuyAmount,
+        sell_amount: newSellAmount
       }
 
       const response = await fetch('/api/trade_records/' + currentRecord.id, {
@@ -456,12 +482,94 @@ const TradeRecords = () => {
       }).then(res => res.json())
 
       if (response.success) {
+        // === 更新账单明细：直接使用 trade_records 的 buy_amount 和 sell_amount 作为数据源 ===
+        const tradeNumber = currentRecord.tradeNumber || currentRecord.trade_number
+        const buyAmount = response.data?.buy_amount != null ? parseFloat(response.data.buy_amount) : null
+        const sellAmount = response.data?.sell_amount != null ? parseFloat(response.data.sell_amount) : null
+
+        // 获取所有账单明细
+        const allTransactions = useStore.getState().transactions
+        if (allTransactions && allTransactions.length > 0 && (buyAmount !== null || sellAmount !== null)) {
+          // 找到当前交易编号相关的账单
+          const relatedTransactions = allTransactions.filter(t =>
+            (t.tradeNumber === tradeNumber || t.trade_number === tradeNumber) && !t.deleted
+          )
+
+          console.log('[交易结案] 找到', relatedTransactions.length, '条相关账单')
+
+          // 按交易类型分组
+          const buyTransactions = relatedTransactions.filter(t => (t.type || t.transaction_type || '').includes('买入'))
+          const sellTransactions = relatedTransactions.filter(t => (t.type || t.transaction_type || '').includes('卖出'))
+
+          console.log('[交易结案] 买入账单', buyTransactions.length, '条，卖出账单', sellTransactions.length, '条')
+
+          // 批量更新账单
+          const updatePromises = []
+
+          // 更新买入账单：将 buy_amount 按各买入账单的原始占比分配
+          if (buyAmount !== null && buyTransactions.length > 0) {
+            // 计算原始买入总金额（所有买入账单的 amount 绝对值之和）
+            const originalBuyTotal = buyTransactions.reduce((sum, t) => sum + Math.abs(parseFloat(t.amount) || 0), 0)
+            console.log('[交易结案] 原始买入总金额:', originalBuyTotal, '新买入金额:', buyAmount)
+
+            if (originalBuyTotal > 0) {
+              buyTransactions.forEach(t => {
+                const originalAmount = Math.abs(parseFloat(t.amount) || 0)
+                const ratio = originalAmount / originalBuyTotal
+                const newAmount = -(buyAmount * ratio) // 买入为负
+
+                updatePromises.push(
+                  fetch('/api/transactions/' + t.id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ total_price: newAmount })
+                  }).then(res => res.json())
+                    .then(r => console.log('[交易结案] 更新买入账单', t.id, ':', newAmount))
+                    .catch(err => console.error('[交易结案] 更新失败', t.id, err))
+                )
+              })
+            }
+          }
+
+          // 更新卖出账单：按股数比例分配总卖出金额
+          if (sellAmount !== null && sellTransactions.length > 0) {
+            // 计算总卖出股数
+            const totalSellQuantity = sellTransactions.reduce((sum, t) => sum + (parseFloat(t.quantity) || 0), 0)
+            console.log('[交易结案] 总卖出股数:', totalSellQuantity, '新卖出金额:', sellAmount)
+
+            if (totalSellQuantity > 0) {
+              sellTransactions.forEach(t => {
+                const quantity = parseFloat(t.quantity) || 0
+                const ratio = quantity / totalSellQuantity // 按股数占比分配
+                const newAmount = sellAmount * ratio // 卖出为正
+
+                updatePromises.push(
+                  fetch('/api/transactions/' + t.id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ total_price: newAmount })
+                  }).then(res => res.json())
+                    .then(r => console.log('[交易结案] 更新卖出账单', t.id, ':', newAmount))
+                    .catch(err => console.error('[交易结案] 更新失败', t.id, err))
+                )
+              })
+            }
+          }
+
+          await Promise.all(updatePromises)
+        }
+
         // 从数据库重新同步数据，确保数据一致性
         const syncResponse = await fetch('/api/sync/all')
         const syncData = await syncResponse.json()
-        if (syncData.success && syncData.data && syncData.data.trade_records !== undefined) {
-          const { trade_records, trade_orders } = syncData.data
-          useStore.getState().importTradeRecords(trade_records, trade_orders)
+        if (syncData.success && syncData.data) {
+          if (syncData.data.trade_records !== undefined) {
+            const { trade_records, trade_orders } = syncData.data
+            useStore.getState().importTradeRecords(trade_records, trade_orders)
+          }
+          if (syncData.data.transactions !== undefined) {
+            useStore.getState().importTransactions(syncData.data.transactions)
+          }
         }
         showToast('保存成功', 'success')
         setShowSummaryModal(false)
@@ -917,6 +1025,72 @@ const TradeRecords = () => {
   }
 
   const handleSummaryFormDataChange = (newFormData, clearError = null) => {
+    // 如果实际卖出价改变，格式化为：整数取整，有小数点取小数点2位四舍五入
+    if (newFormData.sellPrice !== undefined) {
+      const rawValue = newFormData.sellPrice
+      if (rawValue !== '' && rawValue !== null && rawValue !== undefined) {
+        const num = parseFloat(rawValue)
+        if (!isNaN(num)) {
+          const rounded = Math.round(num * 100) / 100
+          newFormData.sellPrice = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
+        }
+      }
+    }
+    // 如果实际买入价改变，同样格式化
+    if (newFormData.buyPrice !== undefined) {
+      const rawValue = newFormData.buyPrice
+      if (rawValue !== '' && rawValue !== null && rawValue !== undefined) {
+        const num = parseFloat(rawValue)
+        if (!isNaN(num)) {
+          const rounded = Math.round(num * 100) / 100
+          newFormData.buyPrice = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
+        }
+      }
+    }
+    // 如果卖出佣金改变，格式化
+    if (newFormData.sellTradeCommission !== undefined) {
+      const rawValue = newFormData.sellTradeCommission
+      if (rawValue !== '' && rawValue !== null && rawValue !== undefined) {
+        const num = parseFloat(rawValue)
+        if (!isNaN(num)) {
+          const rounded = Math.round(num * 100) / 100
+          newFormData.sellTradeCommission = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
+        }
+      }
+    }
+    // 如果卖出其他费用改变，格式化
+    if (newFormData.sellOtherFees !== undefined) {
+      const rawValue = newFormData.sellOtherFees
+      if (rawValue !== '' && rawValue !== null && rawValue !== undefined) {
+        const num = parseFloat(rawValue)
+        if (!isNaN(num)) {
+          const rounded = Math.round(num * 100) / 100
+          newFormData.sellOtherFees = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
+        }
+      }
+    }
+    // 如果买入佣金改变，格式化
+    if (newFormData.tradeCommission !== undefined) {
+      const rawValue = newFormData.tradeCommission
+      if (rawValue !== '' && rawValue !== null && rawValue !== undefined) {
+        const num = parseFloat(rawValue)
+        if (!isNaN(num)) {
+          const rounded = Math.round(num * 100) / 100
+          newFormData.tradeCommission = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
+        }
+      }
+    }
+    // 如果买入其他费用改变，格式化
+    if (newFormData.otherFees !== undefined) {
+      const rawValue = newFormData.otherFees
+      if (rawValue !== '' && rawValue !== null && rawValue !== undefined) {
+        const num = parseFloat(rawValue)
+        if (!isNaN(num)) {
+          const rounded = Math.round(num * 100) / 100
+          newFormData.otherFees = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
+        }
+      }
+    }
     console.log('[Debug] handleSummaryFormDataChange:', { newFormData, oldFormData: summaryFormData })
     setSummaryFormData(newFormData)
     if (clearError) {
@@ -1215,8 +1389,18 @@ const TradeRecords = () => {
       case 'buyAmount':
         return item.buyAmount ? formatAmount(item.buyAmount) : '-'
       case 'sellAmount': {
-        // 使用实际卖出价 × 卖出数量计算，与卖出详情弹窗保持一致
-        // 使用订单中的卖出数量，而不是数据库中的sellQuantity
+        // 如果有实际卖出价，直接使用已保存的实际卖出金额（与交易结案弹窗保存的金额一致）
+        if (item.actualSellPrice != null && item.sellAmount != null && item.sellAmount > 0) {
+          return (
+            <button
+              onClick={() => handleShowSellDetail(item)}
+              className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition-colors"
+            >
+              {formatAmount(item.sellAmount)}
+            </button>
+          )
+        }
+        // 没有实际卖出价时，使用理想卖出价计算（从订单获取）
         const sellOrdersForItem = orders.filter(o => o.tradeNumber === item.tradeNumber && o.type === 'sell')
         let sellOrdersTotalQuantity = 0
         sellOrdersForItem.forEach(o => {

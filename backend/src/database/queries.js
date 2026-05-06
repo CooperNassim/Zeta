@@ -6,7 +6,8 @@ const ALLOWED_TABLES = [
   'account', 'account_risk_data', 'daily_work_data', 'orders', 'transactions',
   'trading_strategies', 'strategy_records', 'trade_records', 'trade_orders', 'technical_indicators',
   'stock_pool', 'stock_kline_data', 'scheduled_orders', 'risk_config', 'risk_models',
-  'psychological_indicators', 'psychological_test_results', 'psychological_test_indicators'
+  'psychological_indicators', 'psychological_test_results', 'psychological_test_indicators',
+  'data_sources', 'llm_configs'
 ];
 
 // 允许的排序字段（简单验证）

@@ -576,6 +576,453 @@ router.get('/database/status', async (req, res) => {
   }
 });
 
+// 数据源配置路由
+
+// GET /api/data-sources - 获取数据源列表
+router.get('/data-sources', async (req, res) => {
+  try {
+    const { market, status } = req.query;
+    let query = 'SELECT * FROM data_sources WHERE deleted = false';
+    const params = [];
+    let paramIndex = 1;
+
+    if (market) {
+      query += ` AND market = $${paramIndex}`;
+      params.push(market);
+      paramIndex++;
+    }
+    if (status) {
+      query += ` AND status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    query += ' ORDER BY CASE WHEN is_default = true THEN 0 ELSE 1 END, created_at DESC';
+
+    const result = await pool.query(query, params);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// GET /api/data-sources/:id - 获取单个数据源
+router.get('/data-sources/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM data_sources WHERE id = $1 AND deleted = false',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: '数据源不存在' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/data-sources - 创建数据源
+router.post('/data-sources', async (req, res) => {
+  try {
+    const { name, market, provider, apiUrl, apiKey, apiSecret, rateLimit, maxRetries, timeout, isDefault, status, notes } = req.body;
+
+    // 如果设为默认，先取消同市场的其他默认数据源
+    if (isDefault) {
+      await pool.query(
+        'UPDATE data_sources SET is_default = false WHERE market = $1 AND deleted = false',
+        [market]
+      );
+    }
+
+    const result = await pool.query(
+      `INSERT INTO data_sources (name, market, provider, api_url, api_key, api_secret, rate_limit, max_retries, timeout, is_default, status, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING *`,
+      [name, market, provider, apiUrl, apiKey, apiSecret, rateLimit || 60, maxRetries || 3, timeout || 10, isDefault || false, status || 'enabled', notes]
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// PUT /api/data-sources/:id - 更新数据源
+router.put('/data-sources/:id', async (req, res) => {
+  try {
+    const { name, market, provider, apiUrl, apiKey, apiSecret, rateLimit, maxRetries, timeout, isDefault, status, notes } = req.body;
+
+    // 获取当前数据源信息
+    const currentResult = await pool.query(
+      'SELECT market FROM data_sources WHERE id = $1 AND deleted = false',
+      [req.params.id]
+    );
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: '数据源不存在' });
+    }
+
+    const targetMarket = market || currentResult.rows[0].market;
+
+    // 如果设为默认，先取消同市场的其他默认数据源
+    if (isDefault) {
+      await pool.query(
+        'UPDATE data_sources SET is_default = false WHERE market = $1 AND id != $2 AND deleted = false',
+        [targetMarket, req.params.id]
+      );
+    }
+
+    const result = await pool.query(
+      `UPDATE data_sources SET
+         name = COALESCE($2, name),
+         market = COALESCE($3, market),
+         provider = COALESCE($4, provider),
+         api_url = COALESCE($5, api_url),
+         api_key = COALESCE($6, api_key),
+         api_secret = COALESCE($7, api_secret),
+         rate_limit = COALESCE($8, rate_limit),
+         max_retries = COALESCE($9, max_retries),
+         timeout = COALESCE($10, timeout),
+         is_default = COALESCE($11, is_default),
+         status = COALESCE($12, status),
+         notes = COALESCE($13, notes),
+         updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND deleted = false
+       RETURNING *`,
+      [req.params.id, name, market, provider, apiUrl, apiKey, apiSecret, rateLimit, maxRetries, timeout, isDefault, status, notes]
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// DELETE /api/data-sources/:id - 删除数据源（软删除）
+router.delete('/data-sources/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'UPDATE data_sources SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: '数据源不存在' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/data-sources/:id/test - 测试数据源连接
+router.post('/data-sources/:id/test', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM data_sources WHERE id = $1 AND deleted = false',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: '数据源不存在' });
+    }
+
+    const source = result.rows[0];
+    const startTime = Date.now();
+
+    // 根据提供商类型执行不同的连接测试
+    let testSuccess = false;
+    let latency = 0;
+    let errorMsg = null;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), (source.timeout || 10) * 1000);
+
+      let testUrl = source.api_url;
+      if (!testUrl) {
+        // 如果没有配置 API URL，使用默认测试 URL
+        switch (source.provider) {
+          case 'tushare':
+            testUrl = 'https://api.tushare.pro';
+            break;
+          case 'alphavantage':
+            testUrl = 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=IBM&apikey=demo';
+            break;
+          case 'polygon':
+            testUrl = 'https://api.polygon.io/v2/aggs/ticker/AAPL/range/1/day/2023-01-01/2023-01-02';
+            break;
+          case 'yahoo':
+            testUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/AAPL';
+            break;
+          default:
+            testUrl = source.api_url || 'https://httpbin.org/get';
+        }
+      }
+
+      const response = await fetch(testUrl, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: source.apiKey ? { 'Authorization': `Bearer ${source.apiKey}` } : {}
+      });
+
+      clearTimeout(timeoutId);
+      latency = Date.now() - startTime;
+
+      if (response.ok || response.status === 400 || response.status === 401) {
+        testSuccess = true;
+      } else {
+        errorMsg = `HTTP ${response.status}`;
+      }
+    } catch (e) {
+      latency = Date.now() - startTime;
+      if (e.name === 'AbortError') {
+        errorMsg = '连接超时';
+      } else {
+        errorMsg = e.message;
+      }
+    }
+
+    // 更新测试结果
+    await pool.query(
+      'UPDATE data_sources SET last_tested_at = CURRENT_TIMESTAMP, last_test_status = $1, last_test_latency = $2 WHERE id = $3',
+      [testSuccess ? 'success' : 'error', latency, req.params.id]
+    );
+
+    if (testSuccess) {
+      res.json({ success: true, data: { latency, status: 'success' } });
+    } else {
+      res.json({ success: false, error: errorMsg || '连接失败', data: { latency, status: 'error' } });
+    }
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// 大模型配置路由
+
+// GET /api/llm-configs - 获取大模型列表
+router.get('/llm-configs', async (req, res) => {
+  try {
+    const { category, status } = req.query;
+    let query = 'SELECT * FROM llm_configs WHERE deleted = false';
+    const params = [];
+    let paramIndex = 1;
+
+    if (category) {
+      query += ` AND category = $${paramIndex}`;
+      params.push(category);
+      paramIndex++;
+    }
+    if (status) {
+      query += ` AND status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    query += ' ORDER BY CASE WHEN is_default = true THEN 0 ELSE 1 END, created_at DESC';
+
+    const result = await pool.query(query, params);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// GET /api/llm-configs/:id - 获取单个大模型
+router.get('/llm-configs/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM llm_configs WHERE id = $1 AND deleted = false',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: '大模型配置不存在' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/llm-configs - 创建大模型
+router.post('/llm-configs', async (req, res) => {
+  try {
+    const { name, category, provider, modelId, apiUrl, apiKey, maxTokens, temperature, topP, frequencyPenalty, presencePenalty, isDefault, status, notes } = req.body;
+
+    // 如果设为默认，先取消其他默认大模型
+    if (isDefault) {
+      await pool.query(
+        'UPDATE llm_configs SET is_default = false WHERE deleted = false'
+      );
+    }
+
+    const result = await pool.query(
+      `INSERT INTO llm_configs (name, category, provider, model_id, api_url, api_key, max_tokens, temperature, top_p, frequency_penalty, presence_penalty, is_default, status, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       RETURNING *`,
+      [name, category, provider, modelId, apiUrl, apiKey, maxTokens || 4096, temperature || 0.7, topP || 1.0, frequencyPenalty || 0, presencePenalty || 0, isDefault || false, status || 'enabled', notes]
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// PUT /api/llm-configs/:id - 更新大模型
+router.put('/llm-configs/:id', async (req, res) => {
+  try {
+    const { name, category, provider, modelId, apiUrl, apiKey, maxTokens, temperature, topP, frequencyPenalty, presencePenalty, isDefault, status, notes } = req.body;
+
+    // 获取当前模型信息
+    const currentResult = await pool.query(
+      'SELECT * FROM llm_configs WHERE id = $1 AND deleted = false',
+      [req.params.id]
+    );
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: '大模型配置不存在' });
+    }
+
+    // 如果设为默认，先取消其他默认大模型
+    if (isDefault) {
+      await pool.query(
+        'UPDATE llm_configs SET is_default = false WHERE id != $1 AND deleted = false',
+        [req.params.id]
+      );
+    }
+
+    const result = await pool.query(
+      `UPDATE llm_configs SET
+         name = COALESCE($2, name),
+         category = COALESCE($3, category),
+         provider = COALESCE($4, provider),
+         model_id = COALESCE($5, model_id),
+         api_url = COALESCE($6, api_url),
+         api_key = COALESCE($7, api_key),
+         max_tokens = COALESCE($8, max_tokens),
+         temperature = COALESCE($9, temperature),
+         top_p = COALESCE($10, top_p),
+         frequency_penalty = COALESCE($11, frequency_penalty),
+         presence_penalty = COALESCE($12, presence_penalty),
+         is_default = COALESCE($13, is_default),
+         status = COALESCE($14, status),
+         notes = COALESCE($15, notes),
+         updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND deleted = false
+       RETURNING *`,
+      [req.params.id, name, category, provider, modelId, apiUrl, apiKey, maxTokens, temperature, topP, frequencyPenalty, presencePenalty, isDefault, status, notes]
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// DELETE /api/llm-configs/:id - 删除大模型（软删除）
+router.delete('/llm-configs/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'UPDATE llm_configs SET deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: '大模型配置不存在' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/llm-configs/:id/test - 测试大模型连接
+router.post('/llm-configs/:id/test', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM llm_configs WHERE id = $1 AND deleted = false',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: '大模型配置不存在' });
+    }
+
+    const config = result.rows[0];
+    const startTime = Date.now();
+
+    let testSuccess = false;
+    let latency = 0;
+    let errorMsg = null;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+
+      // 构建测试 URL
+      let testUrl = config.api_url;
+      // 根据不同提供商构建正确的测试 URL
+      if (config.provider && config.provider.includes('gpt') || config.category === 'OpenAI') {
+        testUrl = `${config.api_url}/chat/completions`;
+      } else if (config.category === 'Anthropic') {
+        testUrl = `${config.api_url}/v1/messages`;
+      }
+
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      // 根据提供商设置认证头
+      if (config.category === 'Anthropic') {
+        headers['x-api-key'] = config.api_key;
+        headers['anthropic-version'] = '2023-06-01';
+      } else {
+        headers['Authorization'] = `Bearer ${config.api_key}`;
+      }
+
+      const body = {
+        model: config.model_id,
+        max_tokens: Math.min(config.max_tokens || 4096, 100),
+        messages: [{ role: 'user', content: 'Hello' }]
+      };
+
+      const response = await fetch(testUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      latency = Date.now() - startTime;
+
+      // 200 或 400 都表示连接成功（400 可能是因为参数问题但至少连接上了）
+      if (response.ok || response.status === 400) {
+        testSuccess = true;
+      } else {
+        errorMsg = `HTTP ${response.status}`;
+      }
+    } catch (e) {
+      latency = Date.now() - startTime;
+      if (e.name === 'AbortError') {
+        errorMsg = '连接超时';
+      } else {
+        errorMsg = e.message;
+      }
+    }
+
+    // 更新测试结果
+    await pool.query(
+      'UPDATE llm_configs SET last_tested_at = CURRENT_TIMESTAMP, last_test_status = $1, last_test_latency = $2 WHERE id = $3',
+      [testSuccess ? 'success' : 'error', latency, req.params.id]
+    );
+
+    if (testSuccess) {
+      res.json({ success: true, data: { latency, status: 'success' } });
+    } else {
+      res.json({ success: false, error: errorMsg || '连接失败', data: { latency, status: 'error' } });
+    }
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
 // 通用CRUD路由
 
 // GET /api/:table - 获取列表

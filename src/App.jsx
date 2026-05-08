@@ -12,6 +12,9 @@ import TransactionHistory from './pages/TransactionHistory'
 import TradeRecords from './pages/TradeRecords'
 import StockPool from './pages/StockPool'
 import DatabaseManagement from './pages/DatabaseManagement'
+import DataSourceConfig from './pages/DataSourceConfig'
+import DataSyncPage from './pages/DataSync'
+import LLModelConfig from './pages/LLModelConfig'
 import useStore from './store/useStore'
 import { ToastProvider } from './contexts/ToastContext'
 
@@ -234,6 +237,9 @@ function Navigation() {
   ]
 
   const settingsMenuItems = [
+    { id: 'datasource', icon: Database, label: '数据源配置', path: '/data-source-config', customIcon: 'datasource' },
+    { id: 'datasync', icon: Database, label: '数据同步', path: '/data-sync', customIcon: 'datasource' },
+    { id: 'llm', icon: Database, label: '大模型配置', path: '/llm-config', customIcon: 'llm' },
     { id: 'database', icon: Database, label: '数据库', path: '/database-management', customIcon: 'database' },
   ]
 
@@ -533,15 +539,14 @@ function Navigation() {
                 <Link
                   key={item.id}
                   to={item.path}
-                  className={`flex items-center h-[42px] px-3 rounded-full text-sm font-medium transition-all duration-200 ${
-                    item.id === 'database' ? 'mt-2.5' : ''
+                  className={`flex items-center h-[42px] px-3 rounded-full text-sm font-medium transition-all duration-200 ${(item.customIcon === 'database' || item.customIcon === 'datasource' || item.customIcon === 'llm') ? 'mt-2.5' : ''
                   } ${
                     isActive
                       ? 'bg-gray-100 text-[#0F1419]'
                       : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
-                  {item.customIcon === 'database' ? (
+                  {(item.customIcon === 'database' || item.customIcon === 'datasource' || item.customIcon === 'llm') ? (
                     <svg
                       viewBox="0 0 1024 1024"
                       xmlns="http://www.w3.org/2000/svg"
@@ -595,6 +600,9 @@ function AppContent() {
     { path: '/technical-indicators' },
   ]
   const settingsMenuItems = [
+    { path: '/data-source-config' },
+    { path: '/data-sync' },
+    { path: '/llm-config' },
     { path: '/database-management' },
   ]
 
@@ -628,6 +636,9 @@ function AppContent() {
               <Route path="/transaction-history" element={<TransactionHistory />} />
               <Route path="/trade-records" element={<TradeRecords />} />
               <Route path="/database-management" element={<DatabaseManagement />} />
+              <Route path="/data-source-config" element={<DataSourceConfig />} />
+              <Route path="/data-sync" element={<DataSyncPage />} />
+              <Route path="/llm-config" element={<LLModelConfig />} />
             </Routes>
           </main>
         </div>

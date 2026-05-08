@@ -797,6 +797,292 @@ router.post('/data-sources/:id/test', async (req, res) => {
   }
 });
 
+// 数据同步历史路由
+
+// GET /api/sync-history - 获取同步历史列表
+router.get('/sync-history', async (req, res) => {
+  try {
+    const { market, status, page = 1, pageSize = 20 } = req.query;
+    let query = `SELECT sh.*, ds.name as data_source_name, ds.provider, ds.market as source_market
+                 FROM data_sync_history sh
+                 LEFT JOIN data_sources ds ON sh.data_source_id = ds.id
+                 WHERE 1=1`;
+    const params = [];
+    let paramIndex = 1;
+
+    if (market) {
+      query += ` AND sh.market = $${paramIndex}`;
+      params.push(market);
+      paramIndex++;
+    }
+    if (status) {
+      query += ` AND sh.status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    query += ' ORDER BY sh.started_at DESC';
+
+    // 获取总数
+    const countResult = await pool.query(query, params);
+    const totalCount = countResult.rows.length;
+
+    // 分页查询
+    query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    params.push(parseInt(pageSize), (parseInt(page) - 1) * parseInt(pageSize));
+
+    const result = await pool.query(query, params);
+    res.json({
+      success: true,
+      data: result.rows,
+      pagination: {
+        total: totalCount,
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        totalPages: Math.ceil(totalCount / parseInt(pageSize))
+      }
+    });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// GET /api/sync-history/:id - 获取单条同步历史详情
+router.get('/sync-history/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT sh.*, ds.name as data_source_name, ds.provider, ds.market as source_market
+       FROM data_sync_history sh
+       LEFT JOIN data_sources ds ON sh.data_source_id = ds.id
+       WHERE sh.id = $1`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: '同步历史不存在' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/sync/execute - 执行数据同步
+router.post('/sync/execute', async (req, res) => {
+  try {
+    const { market, data_source_id, sync_type = 'full', stock_codes = [] } = req.body;
+
+    if (!market || !data_source_id) {
+      return res.status(400).json({ success: false, error: '缺少必要参数：market 或 data_source_id' });
+    }
+
+    // 获取数据源信息
+    const sourceResult = await pool.query(
+      'SELECT * FROM data_sources WHERE id = $1 AND deleted = false AND status = \'enabled\'',
+      [data_source_id]
+    );
+    if (sourceResult.rows.length === 0) {
+      return res.status(400).json({ success: false, error: '数据源不存在或已停用' });
+    }
+
+    const source = sourceResult.rows[0];
+
+    // 创建同步历史记录
+    const historyResult = await pool.query(
+      `INSERT INTO data_sync_history (market, data_source_id, sync_type, status)
+       VALUES ($1, $2, $3, 'running')
+       RETURNING *`,
+      [market, data_source_id, sync_type]
+    );
+    const historyId = historyResult.rows[0].id;
+
+    // 异步执行同步操作
+    (async () => {
+      let totalCount = 0;
+      let newCount = 0;
+      let updatedCount = 0;
+      let failedCount = 0;
+      let errorMessage = null;
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), (source.timeout || 30) * 1000);
+
+        // 根据提供商类型调用不同的API
+        const apiUrl = buildSyncApiUrl(source.provider, source, stock_codes);
+
+        if (!apiUrl) {
+          throw new Error(`暂不支持数据提供商：${source.provider}`);
+        }
+
+        const response = await fetch(apiUrl, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: source.apiKey ? { 'Authorization': `Bearer ${source.apiKey}` } : {}
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`API请求失败：HTTP ${response.status}`);
+        }
+
+        const apiData = await response.json();
+        const stocks = parseStockData(source.provider, apiData);
+
+        // 同步股票数据到 stock_pool
+        for (const stock of stocks) {
+          try {
+            const existingResult = await pool.query(
+              'SELECT id FROM stock_pool WHERE symbol = $1 AND deleted = false',
+              [stock.symbol]
+            );
+
+            totalCount++;
+
+            if (existingResult.rows.length > 0) {
+              // 更新已有股票
+              await pool.query(
+                `UPDATE stock_pool SET
+                   current_price = $1,
+                   change_percent = $2,
+                   volume = $3,
+                   updated_at = CURRENT_TIMESTAMP
+                 WHERE symbol = $4 AND deleted = false`,
+                [stock.currentPrice || null, stock.changePercent || null, stock.volume || null, stock.symbol]
+              );
+              updatedCount++;
+            } else {
+              // 新增股票
+              await pool.query(
+                `INSERT INTO stock_pool (symbol, name, market_type, current_price, change_percent, volume, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, '正常')`,
+                [stock.symbol, stock.name || '', market, stock.currentPrice || null, stock.changePercent || null, stock.volume || null]
+              );
+              newCount++;
+            }
+          } catch (err) {
+            failedCount++;
+            console.error(`同步股票 ${stock.symbol} 失败:`, err.message);
+          }
+        }
+
+        // 更新同步历史为成功
+        await pool.query(
+          `UPDATE data_sync_history SET
+             total_count = $1, new_count = $2, updated_count = $3, failed_count = $4,
+             status = 'success', completed_at = CURRENT_TIMESTAMP
+           WHERE id = $5`,
+          [totalCount, newCount, updatedCount, failedCount, historyId]
+        );
+      } catch (err) {
+        errorMessage = err.message;
+        await pool.query(
+          `UPDATE data_sync_history SET
+             total_count = $1, new_count = $2, updated_count = $3, failed_count = $4,
+             status = 'failed', error_message = $5, completed_at = CURRENT_TIMESTAMP
+           WHERE id = $6`,
+          [totalCount, newCount, updatedCount, failedCount, errorMessage, historyId]
+        );
+      }
+    })();
+
+    res.json({
+      success: true,
+      data: {
+        history_id: historyId,
+        message: '同步任务已启动，请等待执行完成'
+      }
+    });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// 构建同步API URL
+function buildSyncApiUrl(provider, source, stockCodes) {
+  switch (provider) {
+    case 'tushare':
+      return 'https://api.tushare.pro';
+    case 'akshare':
+      return null; // AKShare 需要后端专用客户端
+    case 'eastmoney':
+      return null; // 东方财富需要特殊处理
+    case 'alphavantage':
+      return 'https://www.alphavantage.co/query?function=BATCH_STOCK_QUOTES&symbols=AAPL,MSFT,GOOGL&apikey=demo';
+    case 'yahoo':
+      return 'https://query1.finance.yahoo.com/v7/finance/quote?symbols=AAPL,MSFT,GOOGL';
+    case 'polygon':
+      return 'https://api.polygon.io/v2/snapshot/locale/us/markets/stocks';
+    default:
+      if (source.api_url) return source.api_url;
+      return null;
+  }
+}
+
+// 解析股票数据
+function parseStockData(provider, apiData) {
+  const stocks = [];
+
+  switch (provider) {
+    case 'tushare':
+      if (apiData.code === 0 && apiData.data && apiData.data.items) {
+        apiData.data.items.forEach(item => {
+          stocks.push({
+            symbol: item[0],
+            name: item[1],
+            currentPrice: parseFloat(item[3]),
+            changePercent: parseFloat(item[5]),
+            volume: parseFloat(item[9])
+          });
+        });
+      }
+      break;
+    case 'alphavantage':
+      if (apiData['Stock Quotes'] && Array.isArray(apiData['Stock Quotes'])) {
+        apiData['Stock Quotes'].forEach(item => {
+          stocks.push({
+            symbol: item['1. symbol'],
+            currentPrice: parseFloat(item['2. price']),
+            changePercent: 0,
+            volume: parseFloat(item['3. volume']) || 0
+          });
+        });
+      }
+      break;
+    case 'yahoo':
+      if (apiData.quoteResponse && Array.isArray(apiData.quoteResponse.result)) {
+        apiData.quoteResponse.result.forEach(item => {
+          stocks.push({
+            symbol: item.symbol,
+            name: item.shortName || item.longName || '',
+            currentPrice: item.regularMarketPrice || null,
+            changePercent: item.regularMarketChangePercent || 0,
+            volume: item.regularMarketVolume || 0
+          });
+        });
+      }
+      break;
+    case 'polygon':
+      if (apiData.tickers && Array.isArray(apiData.tickers)) {
+        apiData.tickers.forEach(item => {
+          stocks.push({
+            symbol: item.ticker,
+            currentPrice: item.day?.close || null,
+            changePercent: item.day?.changePercent || 0,
+            volume: item.day?.volume || 0
+          });
+        });
+      }
+      break;
+    default:
+      if (Array.isArray(apiData)) {
+        stocks.push(...apiData);
+      }
+  }
+
+  return stocks;
+}
+
 // 大模型配置路由
 
 // GET /api/llm-configs - 获取大模型列表

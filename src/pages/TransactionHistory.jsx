@@ -60,10 +60,14 @@ const TransactionHistory = () => {
       return 0
     }
     
-// 按时间升序排序（从最早到最新）
+// 按时间升序排序（从最早到最新），同时间按 id 确保稳定排序
 const sortedTransactions = currentTransactions
   .filter(t => !t.deleted)
-  .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+  .sort((a, b) => {
+    const timeDiff = new Date(a.createdAt) - new Date(b.createdAt)
+    if (timeDiff !== 0) return timeDiff
+    return String(a.id).localeCompare(String(b.id))
+  })
 
 console.log('🕒 [时间排序验证] 交易记录排序结果:')
 sortedTransactions.forEach((t, idx) => {
@@ -343,10 +347,12 @@ sortedTransactions.forEach((t, idx) => {
     const dateB = parseDate(b.createdAt)
     
     if (!dateA && !dateB) return 0
-    if (!dateA) return 1  // a的时间缺失，排到后面
-    if (!dateB) return -1 // b的时间缺失，排到前面
+    if (!dateA) return 1
+    if (!dateB) return -1
     
-    return dateB.getTime() - dateA.getTime() // 降序：最新的在前
+    const timeDiff = dateB.getTime() - dateA.getTime()
+    if (timeDiff !== 0) return timeDiff
+    return String(b.id).localeCompare(String(a.id))
   })
   
   const paginatedData = sortedTransactions.slice((currentPage - 1) * pageSize, currentPage * pageSize)
@@ -621,7 +627,11 @@ sortedTransactions.forEach((t, idx) => {
                 { value: '手动入账', label: '手动入账' },
                 { value: '手动出账', label: '手动出账' },
                 { value: '买入', label: '买入股票' },
-                { value: '卖出', label: '卖出股票' }
+                { value: '卖出', label: '卖出股票' },
+                { value: '买入佣金', label: '买入佣金' },
+                { value: '卖出佣金', label: '卖出佣金' },
+                { value: '买入其他费用', label: '买入其他费用' },
+                { value: '卖出其他费用', label: '卖出其他费用' }
               ]}
               placeholder="记账类型"
             />
@@ -748,50 +758,27 @@ sortedTransactions.forEach((t, idx) => {
                 return <span>{formattedAmount()}</span>
               }
               if (field.key === 'balance') {
-                // 🔧 **彻底修复：使用累积计算方法替代被污染的数据库balance字段**
-                
-                // 将交易记录按时间正序排列（从最早到最新）
-                const sortedTransactions = [...(currentTransactions || [])]
+                const sortedAll = [...(currentTransactions || [])]
                   .filter(t => !t.deleted)
-                  .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-                
-                // 找到当前记录在排序后的位置
-                const currentIndex = sortedTransactions.findIndex(t => t.id === item.id)
-                
-                // 计算累积到当前记录的余额
+                  .sort((a, b) => {
+                    const timeDiff = new Date(a.createdAt) - new Date(b.createdAt)
+                    if (timeDiff !== 0) return timeDiff
+                    return String(a.id).localeCompare(String(b.id))
+                  })
+
+                const currentIndex = sortedAll.findIndex(t => t.id === item.id)
                 let runningBalance = 0
                 for (let i = 0; i <= currentIndex; i++) {
-                  const amount = parseFloat(sortedTransactions[i].amount) || 0
-                  runningBalance += amount
-                  
-                  // 调试信息：显示每一笔计算的详细信息
-                  console.log(`🧮 [表格余额计算] 交易${i+1}: ${sortedTransactions[i].type}`)
-                  console.log(`   金额: ${sortedTransactions[i].amount}, 累积余额: ${runningBalance}`)
+                  runningBalance += parseFloat(sortedAll[i].amount) || 0
                 }
-                
-                const dbBalance = parseFloat(item.balance) || 0
-                
-                // 验证结果
-                console.log(`✅ [表格余额验证] 最终计算结果:`)
-                console.log(`   交易类型: ${item.type}, 金额: ${item.amount}`)
-                console.log(`   累积计算余额: ${runningBalance}`)
-                console.log(`   数据库balance字段: ${dbBalance}`)
-                
-                if (Math.abs(runningBalance - dbBalance) > 100) {
-                  console.warn(`⚠️ [表格余额修复] 数据库balance字段已污染，使用安全计算值`)
-                }
-                
-                // 使用安全的累积计算值
-                const finalBalance = runningBalance
-                
-                // 格式化显示
-                if (Number.isInteger(finalBalance)) {
-                  return finalBalance.toLocaleString('zh-CN')
+
+                if (Number.isInteger(runningBalance)) {
+                  return runningBalance.toLocaleString('zh-CN')
                 } else {
-                  const roundedBalance = Math.round(finalBalance * 100) / 100
-                  return roundedBalance.toLocaleString('zh-CN', { 
+                  const roundedBalance = Math.round(runningBalance * 100) / 100
+                  return roundedBalance.toLocaleString('zh-CN', {
                     minimumFractionDigits: 2,
-                    maximumFractionDigits: 2 
+                    maximumFractionDigits: 2
                   })
                 }
               }

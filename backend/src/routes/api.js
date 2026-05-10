@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const router = express.Router();
 const { pool } = require('../config/database');
+const { syncTodayStocks } = require('./marketData');
+const { getNextWeekdayTime } = require('../utils/scheduler');
 const {
   findAll,
   findOne,
@@ -18,6 +20,24 @@ const {
   bulkRestore,
   query
 } = require('../database/queries');
+const {
+  MARKET_PROVIDERS,
+  getProvider,
+  fetchTushareStocks,
+  fetchTushareKline,
+  fetchAKShareStocks,
+  fetchAKShareKline,
+  fetchSinaStocks,
+  fetchSinaKline,
+  fetchEastmoneyStocks,
+  fetchEastmoneyKline,
+  fetchYahooStocks,
+  fetchYahooKline,
+  fetchPolygonStocks,
+  fetchPolygonKline,
+  fetchLongportStocks,
+  fetchLongportKline,
+} = require('./marketData');
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
@@ -803,9 +823,8 @@ router.post('/data-sources/:id/test', async (req, res) => {
 router.get('/sync-history', async (req, res) => {
   try {
     const { market, status, page = 1, pageSize = 20 } = req.query;
-    let query = `SELECT sh.*, ds.name as data_source_name, ds.provider, ds.market as source_market
+    let query = `SELECT sh.*
                  FROM data_sync_history sh
-                 LEFT JOIN data_sources ds ON sh.data_source_id = ds.id
                  WHERE 1=1`;
     const params = [];
     let paramIndex = 1;
@@ -851,10 +870,7 @@ router.get('/sync-history', async (req, res) => {
 router.get('/sync-history/:id', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT sh.*, ds.name as data_source_name, ds.provider, ds.market as source_market
-       FROM data_sync_history sh
-       LEFT JOIN data_sources ds ON sh.data_source_id = ds.id
-       WHERE sh.id = $1`,
+      `SELECT * FROM data_sync_history WHERE id = $1`,
       [req.params.id]
     );
     if (result.rows.length === 0) {
@@ -866,36 +882,138 @@ router.get('/sync-history/:id', async (req, res) => {
   }
 });
 
-// POST /api/sync/execute - 执行数据同步
+// ===================== 市场行情数据路由 =====================
+
+// GET /api/market/stocks?provider=tushare - 获取股票行情列表
+router.get('/market/stocks', async (req, res) => {
+  try {
+    const { provider } = req.query;
+    const p = getProvider(provider);
+    if (!p) {
+      return res.status(400).json({ success: false, error: `不支持的数据提供商: ${provider}` });
+    }
+
+    let stocks;
+    switch (provider) {
+      case 'tushare':
+        stocks = await fetchTushareStocks();
+        break;
+      case 'akshare':
+        stocks = await fetchAKShareStocks();
+        break;
+      case 'sina':
+        stocks = await fetchSinaStocks();
+        break;
+      case 'eastmoney':
+        stocks = await fetchEastmoneyStocks();
+        break;
+      case 'yahoo':
+        stocks = await fetchYahooStocks();
+        break;
+      case 'polygon':
+        stocks = await fetchPolygonStocks(req.query.apiKey || '');
+        break;
+      case 'longport':
+        stocks = await fetchLongportStocks();
+        break;
+      default:
+        return res.status(400).json({ success: false, error: '不支持的提供商' });
+    }
+
+    res.json({ success: true, data: stocks, count: stocks.length });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// GET /api/market/kline?provider=tushare&symbol=000001&period=D&limit=120 - 获取K线数据
+router.get('/market/kline', async (req, res) => {
+  try {
+    const { provider, symbol, period = 'D', limit = 120 } = req.query;
+    if (!symbol) {
+      return res.status(400).json({ success: false, error: '缺少 symbol 参数' });
+    }
+
+    const p = getProvider(provider);
+    if (!p) {
+      return res.status(400).json({ success: false, error: `不支持的数据提供商: ${provider}` });
+    }
+
+    let klines;
+    switch (provider) {
+      case 'tushare':
+        klines = await fetchTushareKline(symbol, period, limit);
+        break;
+      case 'akshare':
+        klines = await fetchAKShareKline(symbol, period, limit);
+        break;
+      case 'sina':
+        klines = await fetchSinaKline(symbol, period, limit);
+        break;
+      case 'eastmoney':
+        klines = await fetchEastmoneyKline(symbol, period, limit);
+        break;
+      case 'yahoo':
+        klines = await fetchYahooKline(symbol, period, limit);
+        break;
+      case 'polygon':
+        klines = await fetchPolygonKline(symbol, req.query.apiKey || '', period, limit);
+        break;
+      case 'longport':
+        klines = await fetchLongportKline(symbol);
+        break;
+      default:
+        return res.status(400).json({ success: false, error: '不支持的提供商' });
+    }
+
+    res.json({ success: true, data: klines, count: klines.length });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// GET /api/market/providers - 获取支持的提供商列表
+router.get('/market/providers', async (req, res) => {
+  const providers = Object.entries(MARKET_PROVIDERS).map(([key, val]) => ({
+    value: key,
+    label: val.label,
+    market: val.market,
+    needApiKey: val.needApiKey,
+  }));
+  res.json({ success: true, data: providers });
+});
+
+// POST /api/sync/execute - 执行数据同步（使用内置提供商）
 router.post('/sync/execute', async (req, res) => {
   try {
-    const { market, data_source_id, sync_type = 'full', stock_codes = [] } = req.body;
+    const { market, provider, sync_type = 'full', stock_codes = [], start_date, end_date } = req.body;
 
-    if (!market || !data_source_id) {
-      return res.status(400).json({ success: false, error: '缺少必要参数：market 或 data_source_id' });
+    if (!market || !provider) {
+      return res.status(400).json({ success: false, error: '缺少必要参数：market 或 provider' });
     }
 
-    // 获取数据源信息
-    const sourceResult = await pool.query(
-      'SELECT * FROM data_sources WHERE id = $1 AND deleted = false AND status = \'enabled\'',
-      [data_source_id]
-    );
-    if (sourceResult.rows.length === 0) {
-      return res.status(400).json({ success: false, error: '数据源不存在或已停用' });
+    const p = getProvider(provider);
+    if (!p) {
+      return res.status(400).json({ success: false, error: `不支持的数据提供商: ${provider}` });
     }
 
-    const source = sourceResult.rows[0];
+    // 映射市场名称到市场代码（stock_pool 表使用 cn/hk/us）
+    const marketCodeMap = {
+      'A股': 'cn',
+      '美股': 'us',
+      '港股': 'hk',
+    };
+    const marketCode = marketCodeMap[market] || market;
 
-    // 创建同步历史记录
     const historyResult = await pool.query(
-      `INSERT INTO data_sync_history (market, data_source_id, sync_type, status)
-       VALUES ($1, $2, $3, 'running')
+      `INSERT INTO data_sync_history (market, sync_type, status, provider)
+       VALUES ($1, $2, 'running', $3)
        RETURNING *`,
-      [market, data_source_id, sync_type]
+      [market, sync_type, provider]
     );
     const historyId = historyResult.rows[0].id;
 
-    // 异步执行同步操作
+    // 异步执行同步
     (async () => {
       let totalCount = 0;
       let newCount = 0;
@@ -904,32 +1022,48 @@ router.post('/sync/execute', async (req, res) => {
       let errorMessage = null;
 
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), (source.timeout || 30) * 1000);
-
-        // 根据提供商类型调用不同的API
-        const apiUrl = buildSyncApiUrl(source.provider, source, stock_codes);
-
-        if (!apiUrl) {
-          throw new Error(`暂不支持数据提供商：${source.provider}`);
+        // 如果有日期区间参数，按日期区间同步（Tushare专用）
+        if (provider === 'tushare' && start_date && end_date) {
+          console.log(`[同步] 日期区间同步: ${start_date} ~ ${end_date}`);
+          const { syncTushareDateRange } = require('./marketData');
+          const result = await syncTushareDateRange(start_date, end_date, pool, marketCode);
+          newCount = result.newCount;
+          updatedCount = result.updatedCount;
+          totalCount = result.totalCount;
+        } else {
+          // 原有逻辑：同步当天数据
+          let stocks;
+          switch (provider) {
+            case 'tushare':
+              stocks = await fetchTushareStocks();
+              break;
+            case 'akshare':
+              stocks = await fetchAKShareStocks();
+              break;
+            case 'sina':
+              stocks = await fetchSinaStocks();
+              break;
+            case 'eastmoney':
+              stocks = await fetchEastmoneyStocks();
+              break;
+            case 'yahoo':
+              stocks = await fetchYahooStocks();
+              break;
+            case 'polygon':
+              stocks = await fetchPolygonStocks('');
+              break;
+            case 'longport':
+              stocks = await fetchLongportStocks();
+              break;
+            default:
+              throw new Error(`不支持的提供商: ${provider}`);
+          }
         }
 
-        const response = await fetch(apiUrl, {
-          method: 'GET',
-          signal: controller.signal,
-          headers: source.apiKey ? { 'Authorization': `Bearer ${source.apiKey}` } : {}
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          throw new Error(`API请求失败：HTTP ${response.status}`);
+        if (stock_codes.length > 0) {
+          stocks = stocks.filter(s => stock_codes.includes(s.symbol));
         }
 
-        const apiData = await response.json();
-        const stocks = parseStockData(source.provider, apiData);
-
-        // 同步股票数据到 stock_pool
         for (const stock of stocks) {
           try {
             const existingResult = await pool.query(
@@ -939,49 +1073,143 @@ router.post('/sync/execute', async (req, res) => {
 
             totalCount++;
 
+            // 确保 volume 是整数（Tushare 返回的可能有小数）
+            const volumeInt = stock.volume ? Math.round(parseFloat(stock.volume)) : null;
+
+            // 获取交易日期（优先使用stock.tradeDate，否则用当天）
+            const tradeDate = stock.tradeDate || new Date().toISOString().slice(0, 10).replace(/-/g, '');
+
             if (existingResult.rows.length > 0) {
-              // 更新已有股票
               await pool.query(
                 `UPDATE stock_pool SET
                    current_price = $1,
                    change_percent = $2,
                    volume = $3,
+                   name = COALESCE($4, name),
+                   open_price = $5,
+                   high_price = $6,
+                   low_price = $7,
                    updated_at = CURRENT_TIMESTAMP
-                 WHERE symbol = $4 AND deleted = false`,
-                [stock.currentPrice || null, stock.changePercent || null, stock.volume || null, stock.symbol]
+                 WHERE symbol = $8 AND deleted = false`,
+                [stock.currentPrice || null, stock.changePercent || null, volumeInt, stock.name || null, stock.openPrice || null, stock.highPrice || null, stock.lowPrice || null, stock.symbol]
               );
               updatedCount++;
             } else {
-              // 新增股票
               await pool.query(
-                `INSERT INTO stock_pool (symbol, name, market_type, current_price, change_percent, volume, status)
-                 VALUES ($1, $2, $3, $4, $5, $6, '正常')`,
-                [stock.symbol, stock.name || '', market, stock.currentPrice || null, stock.changePercent || null, stock.volume || null]
+                `INSERT INTO stock_pool (symbol, name, market, current_price, change_percent, volume, open_price, high_price, low_price, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '正常')`,
+                [stock.symbol, stock.name || '', marketCode, stock.currentPrice || null, stock.changePercent || null, volumeInt, stock.openPrice || null, stock.highPrice || null, stock.lowPrice || null]
               );
               newCount++;
             }
+
+            // 写入日线历史表
+            if (stock.currentPrice !== null || stock.openPrice !== null) {
+              await pool.query(
+                `INSERT INTO stock_daily (symbol, trade_date, open_price, high_price, low_price, close_price, pre_close, change_amount, change_percent, volume, amount)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                 ON CONFLICT (symbol, trade_date) DO UPDATE SET
+                   open_price = EXCLUDED.open_price,
+                   high_price = EXCLUDED.high_price,
+                   low_price = EXCLUDED.low_price,
+                   close_price = EXCLUDED.close_price,
+                   pre_close = EXCLUDED.pre_close,
+                   change_amount = EXCLUDED.change_amount,
+                   change_percent = EXCLUDED.change_percent,
+                   volume = EXCLUDED.volume,
+                   amount = EXCLUDED.amount,
+                   updated_at = NOW()`,
+                [
+                  stock.symbol,
+                  tradeDate,
+                  stock.openPrice || null,
+                  stock.highPrice || null,
+                  stock.lowPrice || null,
+                  stock.currentPrice || null,
+                  stock.preClose || null,
+                  stock.changeAmount || null,
+                  stock.changePercent || null,
+                  volumeInt,
+                  stock.amount || null,
+                ]
+              );
+            }
           } catch (err) {
             failedCount++;
-            console.error(`同步股票 ${stock.symbol} 失败:`, err.message);
+            console.error(`[Sync] 同步股票 ${stock.symbol} 失败:`, err.message);
           }
         }
 
-        // 更新同步历史为成功
         await pool.query(
           `UPDATE data_sync_history SET
              total_count = $1, new_count = $2, updated_count = $3, failed_count = $4,
-             status = 'success', completed_at = CURRENT_TIMESTAMP
-           WHERE id = $5`,
-          [totalCount, newCount, updatedCount, failedCount, historyId]
+             status = 'success', completed_at = CURRENT_TIMESTAMP, provider = $5
+           WHERE id = $6`,
+          [totalCount, newCount, updatedCount, failedCount, provider, historyId]
         );
+
+        // 同步完成后自动聚合周线和月线数据
+        try {
+          console.log('[同步] 开始聚合周线数据...');
+          await pool.query(`
+            INSERT INTO stock_weekly (symbol, week_date, open_price, high_price, low_price, close_price, volume, amount)
+            SELECT 
+              symbol,
+              TO_CHAR(DATE_TRUNC('week', trade_date::date), 'YYYY-MM-DD') as week_date,
+              (ARRAY_AGG(open_price ORDER BY trade_date ASC))[1] as open_price,
+              MAX(high_price) as high_price,
+              MIN(low_price) as low_price,
+              (ARRAY_AGG(close_price ORDER BY trade_date DESC))[1] as close_price,
+              SUM(volume) as volume,
+              SUM(amount) as amount
+            FROM stock_daily
+            GROUP BY symbol, DATE_TRUNC('week', trade_date::date)
+            ON CONFLICT (symbol, week_date) DO UPDATE SET
+              open_price = EXCLUDED.open_price,
+              high_price = EXCLUDED.high_price,
+              low_price = EXCLUDED.low_price,
+              close_price = EXCLUDED.close_price,
+              volume = EXCLUDED.volume,
+              amount = EXCLUDED.amount,
+              updated_at = NOW()
+          `);
+          console.log('[同步] 周线聚合完成');
+
+          console.log('[同步] 开始聚合月线数据...');
+          await pool.query(`
+            INSERT INTO stock_monthly (symbol, month_date, open_price, high_price, low_price, close_price, volume, amount)
+            SELECT 
+              symbol,
+              LEFT(trade_date, 7) as month_date,
+              (ARRAY_AGG(open_price ORDER BY trade_date ASC))[1] as open_price,
+              MAX(high_price) as high_price,
+              MIN(low_price) as low_price,
+              (ARRAY_AGG(close_price ORDER BY trade_date DESC))[1] as close_price,
+              SUM(volume) as volume,
+              SUM(amount) as amount
+            FROM stock_daily
+            GROUP BY symbol, LEFT(trade_date, 7)
+            ON CONFLICT (symbol, month_date) DO UPDATE SET
+              open_price = EXCLUDED.open_price,
+              high_price = EXCLUDED.high_price,
+              low_price = EXCLUDED.low_price,
+              close_price = EXCLUDED.close_price,
+              volume = EXCLUDED.volume,
+              amount = EXCLUDED.amount,
+              updated_at = NOW()
+          `);
+          console.log('[同步] 月线聚合完成');
+        } catch (aggError) {
+          console.warn('[同步] 聚合周线/月线数据失败:', aggError.message);
+        }
       } catch (err) {
         errorMessage = err.message;
         await pool.query(
           `UPDATE data_sync_history SET
              total_count = $1, new_count = $2, updated_count = $3, failed_count = $4,
-             status = 'failed', error_message = $5, completed_at = CURRENT_TIMESTAMP
-           WHERE id = $6`,
-          [totalCount, newCount, updatedCount, failedCount, errorMessage, historyId]
+             status = 'failed', error_message = $5, completed_at = CURRENT_TIMESTAMP, provider = $6
+           WHERE id = $7`,
+          [totalCount, newCount, updatedCount, failedCount, errorMessage, provider, historyId]
         );
       }
     })();
@@ -994,94 +1222,167 @@ router.post('/sync/execute', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json(safeError(error));
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// 构建同步API URL
-function buildSyncApiUrl(provider, source, stockCodes) {
-  switch (provider) {
-    case 'tushare':
-      return 'https://api.tushare.pro';
-    case 'akshare':
-      return null; // AKShare 需要后端专用客户端
-    case 'eastmoney':
-      return null; // 东方财富需要特殊处理
-    case 'alphavantage':
-      return 'https://www.alphavantage.co/query?function=BATCH_STOCK_QUOTES&symbols=AAPL,MSFT,GOOGL&apikey=demo';
-    case 'yahoo':
-      return 'https://query1.finance.yahoo.com/v7/finance/quote?symbols=AAPL,MSFT,GOOGL';
-    case 'polygon':
-      return 'https://api.polygon.io/v2/snapshot/locale/us/markets/stocks';
-    default:
-      if (source.api_url) return source.api_url;
-      return null;
+// ===================== 历史行情数据路由 =====================
+
+// POST /api/market/history/aggregate - 从日线聚合周线/月线数据
+router.post('/market/history/aggregate', async (req, res) => {
+  try {
+    const { period = 'weekly', symbol } = req.body;
+    if (!['weekly', 'monthly'].includes(period)) {
+      return res.status(400).json({ success: false, error: 'period 只能是 weekly 或 monthly' });
+    }
+
+    const targetTable = period === 'weekly' ? 'stock_weekly' : 'stock_monthly';
+    const dateField = period === 'weekly' ? 'week_date' : 'month_date';
+
+    let whereClause = '';
+    const params = [];
+    if (symbol) {
+      whereClause = 'WHERE symbol = $1';
+      params.push(symbol);
+    }
+
+    // 周线聚合：按周分组
+    const weeklySql = `
+      INSERT INTO stock_weekly (symbol, week_date, open_price, high_price, low_price, close_price, volume, amount)
+      SELECT 
+        symbol,
+        TO_CHAR(DATE_TRUNC('week', TO_DATE(trade_date, 'YYYYMMDD')), 'YYYY-MM-DD') as week_date,
+        FIRST_VALUE(open_price) OVER w as open_price,
+        MAX(high_price) as high_price,
+        MIN(low_price) as low_price,
+        LAST_VALUE(close_price) OVER w as close_price,
+        SUM(volume) as volume,
+        SUM(amount) as amount
+      FROM stock_daily
+      ${whereClause}
+      GROUP BY symbol, week_date
+      HAVING MAX(trade_date) IS NOT NULL
+      WINDOW w AS (PARTITION BY symbol, DATE_TRUNC('week', TO_DATE(trade_date, 'YYYYMMDD')) ORDER BY trade_date 
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+      ON CONFLICT (symbol, week_date) DO UPDATE SET
+        open_price = EXCLUDED.open_price,
+        high_price = EXCLUDED.high_price,
+        low_price = EXCLUDED.low_price,
+        close_price = EXCLUDED.close_price,
+        volume = EXCLUDED.volume,
+        amount = EXCLUDED.amount,
+        updated_at = NOW()
+    `;
+
+    // 简化版：使用子查询
+    const aggregateSql = period === 'weekly' ? `
+      INSERT INTO stock_weekly (symbol, week_date, open_price, high_price, low_price, close_price, volume, amount)
+      SELECT 
+        symbol,
+        TO_CHAR(DATE_TRUNC('week', trade_date::date), 'YYYY-MM-DD') as week_date,
+        (ARRAY_AGG(open_price ORDER BY trade_date ASC))[1] as open_price,
+        MAX(high_price) as high_price,
+        MIN(low_price) as low_price,
+        (ARRAY_AGG(close_price ORDER BY trade_date DESC))[1] as close_price,
+        SUM(volume) as volume,
+        SUM(amount) as amount
+      FROM stock_daily
+      ${whereClause}
+      GROUP BY symbol, DATE_TRUNC('week', trade_date::date)
+      ON CONFLICT (symbol, week_date) DO UPDATE SET
+        open_price = EXCLUDED.open_price,
+        high_price = EXCLUDED.high_price,
+        low_price = EXCLUDED.low_price,
+        close_price = EXCLUDED.close_price,
+        volume = EXCLUDED.volume,
+        amount = EXCLUDED.amount,
+        updated_at = NOW()
+    ` : `
+      INSERT INTO stock_monthly (symbol, month_date, open_price, high_price, low_price, close_price, volume, amount)
+      SELECT 
+        symbol,
+        LEFT(trade_date, 7) as month_date,
+        (ARRAY_AGG(open_price ORDER BY trade_date ASC))[1] as open_price,
+        MAX(high_price) as high_price,
+        MIN(low_price) as low_price,
+        (ARRAY_AGG(close_price ORDER BY trade_date DESC))[1] as close_price,
+        SUM(volume) as volume,
+        SUM(amount) as amount
+      FROM stock_daily
+      ${whereClause}
+      GROUP BY symbol, LEFT(trade_date, 7)
+      ON CONFLICT (symbol, month_date) DO UPDATE SET
+        open_price = EXCLUDED.open_price,
+        high_price = EXCLUDED.high_price,
+        low_price = EXCLUDED.low_price,
+        close_price = EXCLUDED.close_price,
+        volume = EXCLUDED.volume,
+        amount = EXCLUDED.amount,
+        updated_at = NOW()
+    `;
+
+    const result = await pool.query(aggregateSql, params);
+    res.json({ success: true, data: { message: `${period} 聚合完成`, rows: result.rowCount } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
-}
+});
 
-// 解析股票数据
-function parseStockData(provider, apiData) {
-  const stocks = [];
+// GET /api/market/history/:symbol - 获取股票历史行情
+router.get('/market/history/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { period = 'daily', start_date, end_date, limit = 120 } = req.query;
 
-  switch (provider) {
-    case 'tushare':
-      if (apiData.code === 0 && apiData.data && apiData.data.items) {
-        apiData.data.items.forEach(item => {
-          stocks.push({
-            symbol: item[0],
-            name: item[1],
-            currentPrice: parseFloat(item[3]),
-            changePercent: parseFloat(item[5]),
-            volume: parseFloat(item[9])
-          });
-        });
-      }
-      break;
-    case 'alphavantage':
-      if (apiData['Stock Quotes'] && Array.isArray(apiData['Stock Quotes'])) {
-        apiData['Stock Quotes'].forEach(item => {
-          stocks.push({
-            symbol: item['1. symbol'],
-            currentPrice: parseFloat(item['2. price']),
-            changePercent: 0,
-            volume: parseFloat(item['3. volume']) || 0
-          });
-        });
-      }
-      break;
-    case 'yahoo':
-      if (apiData.quoteResponse && Array.isArray(apiData.quoteResponse.result)) {
-        apiData.quoteResponse.result.forEach(item => {
-          stocks.push({
-            symbol: item.symbol,
-            name: item.shortName || item.longName || '',
-            currentPrice: item.regularMarketPrice || null,
-            changePercent: item.regularMarketChangePercent || 0,
-            volume: item.regularMarketVolume || 0
-          });
-        });
-      }
-      break;
-    case 'polygon':
-      if (apiData.tickers && Array.isArray(apiData.tickers)) {
-        apiData.tickers.forEach(item => {
-          stocks.push({
-            symbol: item.ticker,
-            currentPrice: item.day?.close || null,
-            changePercent: item.day?.changePercent || 0,
-            volume: item.day?.volume || 0
-          });
-        });
-      }
-      break;
-    default:
-      if (Array.isArray(apiData)) {
-        stocks.push(...apiData);
-      }
+    let table = 'stock_daily';
+    let dateField = 'trade_date';
+    if (period === 'weekly') { table = 'stock_weekly'; dateField = 'week_date'; }
+    else if (period === 'monthly') { table = 'stock_monthly'; dateField = 'month_date'; }
+
+    let query = `SELECT * FROM ${table} WHERE symbol = $1`;
+    const params = [symbol];
+    let paramIndex = 2;
+
+    if (start_date) {
+      query += ` AND ${dateField} >= $${paramIndex}`;
+      params.push(start_date);
+      paramIndex++;
+    }
+    if (end_date) {
+      query += ` AND ${dateField} <= $${paramIndex}`;
+      params.push(end_date);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY ${dateField} DESC LIMIT $${paramIndex}`;
+    params.push(parseInt(limit));
+
+    const result = await pool.query(query, params);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
+});
 
-  return stocks;
-}
+// GET /api/market/history/dates - 获取历史数据中包含的交易日
+router.get('/market/history/dates', async (req, res) => {
+  try {
+    const { symbol } = req.query;
+    let query = 'SELECT DISTINCT trade_date FROM stock_daily WHERE trade_date IS NOT NULL';
+    const params = [];
+
+    if (symbol) {
+      query += ' AND symbol = $1';
+      params.push(symbol);
+    }
+
+    query += ' ORDER BY trade_date DESC LIMIT 1000';
+    const result = await pool.query(query, params);
+    res.json({ success: true, data: result.rows.map(r => r.trade_date) });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // 大模型配置路由
 
@@ -1304,6 +1605,138 @@ router.post('/llm-configs/:id/test', async (req, res) => {
     } else {
       res.json({ success: false, error: errorMsg || '连接失败', data: { latency, status: 'error' } });
     }
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// ========================================
+// 定时任务管理 API（必须在通用CRUD路由之前）
+// ========================================
+
+// GET /api/scheduled-tasks - 获取所有定时任务
+router.get('/scheduled-tasks', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM scheduled_tasks ORDER BY created_at DESC`
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// PUT /api/scheduled-tasks/:taskId/pause - 暂停任务
+router.put('/scheduled-tasks/:taskId/pause', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    await pool.query(
+      `UPDATE scheduled_tasks SET status = 'paused', updated_at = NOW() WHERE task_id = $1`,
+      [taskId]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// PUT /api/scheduled-tasks/:taskId/resume - 恢复任务
+router.put('/scheduled-tasks/:taskId/resume', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    await pool.query(
+      `UPDATE scheduled_tasks SET status = 'running', updated_at = NOW() WHERE task_id = $1`,
+      [taskId]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/scheduled-tasks/:taskId/trigger - 手动触发任务
+router.post('/scheduled-tasks/:taskId/trigger', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const startTime = Date.now();
+    console.log(`[API] 手动触发任务: ${taskId}`);
+
+    if (taskId === 'stock_daily_sync') {
+      const result = await syncTodayStocks(pool);
+      const duration = Date.now() - startTime;
+
+      const nextRun = getNextWeekdayTime(15, 31);
+
+      await pool.query(
+        `UPDATE scheduled_tasks
+         SET last_run_at = NOW(), last_run_status = 'success',
+             last_run_duration = $1, next_run_at = $2, updated_at = NOW()
+         WHERE task_id = $3`,
+        [duration, nextRun.toISOString(), taskId]
+      );
+
+      await pool.query(
+        `INSERT INTO scheduled_task_logs (task_id, status, started_at, finished_at, duration, output)
+         VALUES ($1, 'success', NOW() - INTERVAL '1 second' * ($2::bigint / 1000), NOW(), $2, $3)`,
+        [taskId, duration, JSON.stringify(result)]
+      );
+
+      res.json({ success: true, data: result, duration });
+    } else {
+      res.status(400).json({ success: false, error: '未知任务ID' });
+    }
+  } catch (error) {
+    const { taskId } = req.params;
+    const duration = Date.now() - startTime;
+
+    await pool.query(
+      `UPDATE scheduled_tasks
+       SET last_run_at = NOW(), last_run_status = 'failed',
+           last_run_duration = $1, last_error = $2, updated_at = NOW()
+       WHERE task_id = $3`,
+      [duration, error.message, taskId]
+    );
+
+    await pool.query(
+      `INSERT INTO scheduled_task_logs (task_id, status, started_at, finished_at, duration, error_message)
+       VALUES ($1, 'failed', NOW() - INTERVAL '1 second' * ($2::bigint / 1000), NOW(), $2, $3)`,
+      [taskId, duration, error.message]
+    );
+
+    res.status(500).json(safeError(error));
+  }
+});
+
+// GET /api/scheduled-tasks/:taskId/logs - 获取任务执行历史
+router.get('/scheduled-tasks/:taskId/logs', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { limit = 50, status } = req.query;
+
+    let query = `SELECT * FROM scheduled_task_logs WHERE task_id = $1`;
+    const params = [taskId];
+
+    if (status && status !== 'all') {
+      query += ` AND status = $${params.length + 1}`;
+      params.push(status);
+    }
+
+    query += ` ORDER BY started_at DESC LIMIT $${params.length + 1}`;
+    params.push(parseInt(limit));
+
+    const result = await pool.query(query, params);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// DELETE /api/scheduled-tasks/logs/:logId - 删除执行历史
+router.delete('/scheduled-tasks/logs/:logId', async (req, res) => {
+  try {
+    const { logId } = req.params;
+    await pool.query(`DELETE FROM scheduled_task_logs WHERE id = $1`, [logId]);
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json(safeError(error));
   }

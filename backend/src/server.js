@@ -114,6 +114,15 @@ app.listen(PORT, async () => {
   const connected = await testConnection();
   if (connected) {
     console.log('✅ Backend is ready to accept requests!');
+
+    // 初始化定时任务调度器
+    try {
+      const { initScheduler } = require('./utils/scheduler')
+      await initScheduler()
+      console.log('✅ Scheduler initialized successfully');
+    } catch (err) {
+      console.error('⚠️  Scheduler initialization failed:', err.message);
+    }
   } else {
     console.log('⚠️  Warning: Database connection failed. Check your .env configuration.');
   }

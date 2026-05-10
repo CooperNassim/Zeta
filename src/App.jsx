@@ -12,9 +12,10 @@ import TransactionHistory from './pages/TransactionHistory'
 import TradeRecords from './pages/TradeRecords'
 import StockPool from './pages/StockPool'
 import DatabaseManagement from './pages/DatabaseManagement'
-import DataSourceConfig from './pages/DataSourceConfig'
 import DataSyncPage from './pages/DataSync'
 import LLModelConfig from './pages/LLModelConfig'
+import ScheduledTask from './pages/ScheduledTask'
+import StockChart from './pages/StockChart'
 import useStore from './store/useStore'
 import { ToastProvider } from './contexts/ToastContext'
 
@@ -237,8 +238,8 @@ function Navigation() {
   ]
 
   const settingsMenuItems = [
-    { id: 'datasource', icon: Database, label: '数据源配置', path: '/data-source-config', customIcon: 'datasource' },
     { id: 'datasync', icon: Database, label: '数据同步', path: '/data-sync', customIcon: 'datasource' },
+    { id: 'scheduled-task', icon: Clock, label: '定时任务', path: '/scheduled-task', customIcon: 'clock' },
     { id: 'llm', icon: Database, label: '大模型配置', path: '/llm-config', customIcon: 'llm' },
     { id: 'database', icon: Database, label: '数据库', path: '/database-management', customIcon: 'database' },
   ]
@@ -539,7 +540,7 @@ function Navigation() {
                 <Link
                   key={item.id}
                   to={item.path}
-                  className={`flex items-center h-[42px] px-3 rounded-full text-sm font-medium transition-all duration-200 ${(item.customIcon === 'database' || item.customIcon === 'datasource' || item.customIcon === 'llm') ? 'mt-2.5' : ''
+                  className={`flex items-center h-[42px] px-3 rounded-full text-sm font-medium transition-all duration-200 ${(item.customIcon === 'database' || item.customIcon === 'datasource' || item.customIcon === 'llm' || item.customIcon === 'clock') ? 'mt-2.5' : ''
                   } ${
                     isActive
                       ? 'bg-gray-100 text-[#0F1419]'
@@ -558,6 +559,14 @@ function Navigation() {
                         <path d="M828.952381 121.904762a73.142857 73.142857 0 0 1 73.142857 73.142857v633.904762a73.142857 73.142857 0 0 1-73.142857 73.142857H195.047619a73.142857 73.142857 0 0 1-73.142857-73.142857V195.047619a73.142857 73.142857 0 0 1 73.142857-73.142857h633.904762zM316.952381 719.238095H195.047619V828.952381h121.904762v-109.714286z m512 0H390.095238V828.952381h438.857143v-109.714286zM316.952381 536.380952H195.047619v109.714286h121.904762V536.380952z m512 0H390.095238v109.714286h438.857143V536.380952z m-512-182.857142H195.047619V463.238095h121.904762v-109.714285z m512 0H390.095238V463.238095h438.857143v-109.714285z"></path>
                       ) : (
                         <path d="M828.952381 121.904762a73.142857 73.142857 0 0 1 73.142857 73.142857v633.904762a73.142857 73.142857 0 0 1-73.142857 73.142857H195.047619a73.142857 73.142857 0 0 1-73.142857-73.142857V195.047619a73.142857 73.142857 0 0 1 73.142857-73.142857h633.904762zM316.952381 719.238095H195.047619V828.952381h121.904762v-109.714286z m512 0H390.095238V828.952381h438.857143v-109.714286zM316.952381 536.380952H195.047619v109.714286h121.904762V536.380952z m512 0H390.095238v109.714286h438.857143V536.380952zM195.047619 353.52381V463.238095h121.904762v-109.714285H195.047619zM828.952381 195.047619H195.047619v85.333333h633.904762V195.047619zM390.095238 463.238095h438.857143v-109.714285H390.095238V463.238095z"></path>
+                      )}
+                    </svg>
+                  ) : item.customIcon === 'clock' ? (
+                    <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 mr-2" fill="#0F1419">
+                      {isActive ? (
+                        <path d="M512 97.52381a414.47619 414.47619 0 1 1 0 828.952381 414.47619 414.47619 0 0 1 0-828.952381z m0 73.142857a341.333333 341.333333 0 1 0 0 682.666666 341.333333 341.333333 0 0 0 0-682.666666z m48.761905 170.666666v219.428572h146.285714v73.142857H512a48.761905 48.761905 0 0 1-48.761905-48.761905V341.333333h97.52381z"></path>
+                      ) : (
+                        <path d="M512 170.666667a341.333333 341.333333 0 1 0 0 682.666666 341.333333 341.333333 0 0 0 0-682.666666zM97.52381 512a414.47619 414.47619 0 1 1 828.95238 0 414.47619 414.47619 0 0 1-828.95238 0z m365.714285-170.666667v219.428572h243.809524v-73.142857H536.380952V341.333333h-73.142857z"></path>
                       )}
                     </svg>
                   ) : (
@@ -600,8 +609,8 @@ function AppContent() {
     { path: '/technical-indicators' },
   ]
   const settingsMenuItems = [
-    { path: '/data-source-config' },
     { path: '/data-sync' },
+    { path: '/scheduled-task' },
     { path: '/llm-config' },
     { path: '/database-management' },
   ]
@@ -632,12 +641,13 @@ function AppContent() {
               <Route path="/technical-indicators" element={<TechnicalIndicators />} />
               <Route path="/risk-model" element={<RiskModel />} />
               <Route path="/stock-pool" element={<StockPool />} />
+              <Route path="/stock-chart" element={<StockChart />} />
               <Route path="/order-management" element={<OrderManagement />} />
               <Route path="/transaction-history" element={<TransactionHistory />} />
               <Route path="/trade-records" element={<TradeRecords />} />
               <Route path="/database-management" element={<DatabaseManagement />} />
-              <Route path="/data-source-config" element={<DataSourceConfig />} />
               <Route path="/data-sync" element={<DataSyncPage />} />
+              <Route path="/scheduled-task" element={<ScheduledTask />} />
               <Route path="/llm-config" element={<LLModelConfig />} />
             </Routes>
           </main>

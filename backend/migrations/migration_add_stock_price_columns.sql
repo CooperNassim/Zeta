@@ -1,0 +1,13 @@
+ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS current_price NUMERIC(18, 4);
+ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS change_percent NUMERIC(10, 4);
+ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS volume BIGINT;
+ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS open_price NUMERIC(18, 4);
+ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS high_price NUMERIC(18, 4);
+ALTER TABLE stock_pool ADD COLUMN IF NOT EXISTS low_price NUMERIC(18, 4);
+;
+COMMENT ON COLUMN stock_pool.current_price IS '最新价格';
+COMMENT ON COLUMN stock_pool.change_percent IS '涨跌幅百分比';
+COMMENT ON COLUMN stock_pool.volume IS '成交量';
+COMMENT ON COLUMN stock_pool.open_price IS '开盘价';
+COMMENT ON COLUMN stock_pool.high_price IS '最高价';
+COMMENT ON COLUMN stock_pool.low_price IS '最低价';

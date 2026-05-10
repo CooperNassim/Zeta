@@ -58,7 +58,7 @@ const DataTable = ({
         ) : (
           data.map((item, index) => (
             <motion.tr
-              key={item.id || index}
+              key={item.id || item.symbol || `${item.symbol}-${index}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.2, delay: index * 0.02 }}

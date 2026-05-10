@@ -1,0 +1,1047 @@
+const { pool } = require('../config/database');
+
+const TUSHARE_API_TOKEN = process.env.TUSHARE_TOKEN || '1e36902ffc499ce3e3bd2a2690764a21d2c2068cee90b00b2893342d';
+
+const MARKET_PROVIDERS = {
+  tushare: {
+    label: 'Tushare',
+    market: 'A股',
+    fetchStocks: fetchTushareStocks,
+    fetchKline: fetchTushareKline,
+    needApiKey: true,
+  },
+  akshare: {
+    label: 'AKShare',
+    market: 'A股',
+    fetchStocks: fetchAKShareStocks,
+    fetchKline: fetchAKShareKline,
+    needApiKey: false,
+  },
+  sina: {
+    label: '新浪财经',
+    market: 'A股',
+    fetchStocks: fetchSinaStocks,
+    fetchKline: fetchSinaKline,
+    needApiKey: false,
+  },
+  eastmoney: {
+    label: '东方财富',
+    market: 'A股',
+    fetchStocks: fetchEastmoneyStocks,
+    fetchKline: fetchEastmoneyKline,
+    needApiKey: false,
+  },
+  yahoo: {
+    label: 'Yahoo Finance',
+    market: '美股',
+    fetchStocks: fetchYahooStocks,
+    fetchKline: fetchYahooKline,
+    needApiKey: false,
+  },
+  polygon: {
+    label: 'Polygon.io',
+    market: '美股',
+    fetchStocks: fetchPolygonStocks,
+    fetchKline: fetchPolygonKline,
+    needApiKey: true,
+  },
+  longport: {
+    label: 'Longport',
+    market: '港股',
+    fetchStocks: fetchLongportStocks,
+    fetchKline: fetchLongportKline,
+    needApiKey: true,
+  },
+};
+
+function getProvider(provider) {
+  return MARKET_PROVIDERS[provider?.toLowerCase()];
+}
+
+async function fetchTushareStocks() {
+  try {
+    const basicRequestBody = {
+      api_name: 'stock_basic',
+      token: TUSHARE_API_TOKEN,
+      params: { exchange: '', list_status: 'L' },
+      fields: 'ts_code,symbol,name,area,industry,market,list_date',
+    };
+
+    const basicResponse = await fetch('https://api.tushare.pro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(basicRequestBody),
+    });
+
+    const basicData = await basicResponse.json();
+
+    if (basicData.code !== 0) {
+      throw new Error(basicData.msg || 'Tushare stock_basic 请求失败');
+    }
+
+    const basicFields = basicData.data.fields;
+    const basicItems = basicData.data.items || [];
+    console.log(`[Tushare] 获取到 ${basicItems.length} 只股票基本信息`);
+
+    let latestTradeDate = null;
+    const now = new Date();
+    for (let d = 0; d < 14; d++) {
+      const checkDate = new Date(now);
+      checkDate.setDate(checkDate.getDate() - d);
+      const dateStr = checkDate.toISOString().slice(0, 10).replace(/-/g, '');
+
+      const dayOfWeek = checkDate.getDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
+      const dailyTestRequest = {
+        api_name: 'daily',
+        token: TUSHARE_API_TOKEN,
+        params: { trade_date: dateStr },
+        fields: 'ts_code',
+      };
+
+      const dailyTestResponse = await fetch('https://api.tushare.pro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dailyTestRequest),
+      });
+
+      const dailyTestData = await dailyTestResponse.json();
+      if (dailyTestData.code === 0 && dailyTestData.data?.items?.length > 100) {
+        latestTradeDate = dateStr;
+        break;
+      }
+    }
+
+    if (!latestTradeDate) {
+      latestTradeDate = now.toISOString().slice(0, 10).replace(/-/g, '');
+      console.warn(`[Tushare] 未找到交易日，使用当天日期: ${latestTradeDate}`);
+    } else {
+      console.log(`[Tushare] 最近交易日: ${latestTradeDate}`);
+    }
+
+    const dailyRequestBody = {
+      api_name: 'daily',
+      token: TUSHARE_API_TOKEN,
+      params: { trade_date: latestTradeDate },
+      fields: 'ts_code,trade_date,open,high,low,close,pre_close,change,pct_chg,vol,amount',
+    };
+
+    const dailyResponse = await fetch('https://api.tushare.pro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dailyRequestBody),
+    });
+
+    const dailyData = await dailyResponse.json();
+
+    if (dailyData.code !== 0 || !dailyData.data) {
+      console.warn(`[Tushare] daily 请求失败: ${dailyData.msg || '未知错误'}`);
+    }
+
+    const allDailyItems = dailyData.data?.items || [];
+    const dailyFields = dailyData.data?.fields || [];
+    console.log(`[Tushare] 获取到 ${allDailyItems.length} 条行情数据`);
+
+    const dailyMap = new Map();
+    for (const item of allDailyItems) {
+      const row = {};
+      dailyFields.forEach((f, i) => { row[f] = item[i]; });
+      dailyMap.set(row.ts_code, row);
+    }
+
+    return basicItems.map(item => {
+      const row = {};
+      basicFields.forEach((f, i) => { row[f] = item[i]; });
+
+      const tsCode = row.ts_code;
+      const symbol = row.symbol || tsCode.split('.')[0];
+      const name = row.name || '';
+      const daily = dailyMap.get(tsCode);
+
+      return {
+        symbol,
+        name,
+        currentPrice: daily ? parseFloat(daily.close) || null : null,
+        changePercent: daily ? parseFloat(daily.pct_chg) || 0 : 0,
+        volume: daily ? parseFloat(daily.vol) || 0 : 0,
+        openPrice: daily ? parseFloat(daily.open) || null : null,
+        highPrice: daily ? parseFloat(daily.high) || null : null,
+        lowPrice: daily ? parseFloat(daily.low) || null : null,
+        tradeDate: daily ? daily.trade_date : latestTradeDate,
+        exchange: tsCode.split('.')[1] === 'SH' ? 'SH' : 'SZ',
+        rawCode: tsCode,
+      };
+    });
+  } catch (e) {
+    console.error('[Tushare] fetchStocks error:', e.message);
+    throw e;
+  }
+}
+
+async function fetchTushareKline(symbol, period = 'D', limit = 120) {
+  try {
+    const requestBody = {
+      api_name: 'daily',
+      token: TUSHARE_API_TOKEN,
+      params: { ts_code: symbol, limit: limit },
+      fields: 'trade_date,open,high,low,close,vol,amount',
+    };
+
+    const response = await fetch('https://api.tushare.pro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    const data = await response.json();
+
+    if (data.code !== 0) {
+      throw new Error(data.msg || 'Tushare K线请求失败');
+    }
+
+    const fields = data.data.fields;
+    const items = data.data.items || [];
+
+    return items.map(item => {
+      const row = {};
+      fields.forEach((f, i) => { row[f] = item[i]; });
+      return {
+        date: row.trade_date,
+        open: parseFloat(row.open),
+        high: parseFloat(row.high),
+        low: parseFloat(row.low),
+        close: parseFloat(row.close),
+        volume: parseFloat(row.vol),
+        amount: parseFloat(row.amount),
+      };
+    }).reverse();
+  } catch (e) {
+    console.error('[Tushare] fetchKline error:', e.message);
+    throw e;
+  }
+}
+
+async function fetchAKShareStocks() {
+  try {
+    const allStocks = [];
+    const pageSize = 1000;
+    let page = 1;
+    let totalPages = 1;
+
+    while (page <= totalPages) {
+      const url = `https://stock.xueqiu.com/v5/stock/screener/quote/list.json?page=${page}&size=${pageSize}&order=desc&orderby=percent&order_by=percent&market=cn&type=sh_sz`;
+
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://stock.xueqiu.com/',
+          'Accept': 'application/json',
+        },
+      });
+
+      const text = await response.text();
+      const data = JSON.parse(text);
+
+      if (data.data && data.data.list) {
+        if (page === 1) {
+          const totalCount = data.data.count || 0;
+          totalPages = Math.ceil(totalCount / pageSize);
+          console.log(`[AKShare] 总共 ${totalCount} 条数据，分 ${totalPages} 页`);
+        }
+
+        allStocks.push(...data.data.list.map(item => {
+          const rawSymbol = item.symbol || '';
+          const symbol = rawSymbol.replace(/^(SH|SZ)/, '');
+          return {
+            symbol,
+            name: item.name || '',
+            currentPrice: parseFloat(item.current) || null,
+            changePercent: parseFloat(item.percent) || 0,
+            volume: parseFloat(item.volume) || 0,
+            openPrice: parseFloat(item.open) || null,
+            highPrice: parseFloat(item.high) || null,
+            lowPrice: parseFloat(item.low) || null,
+            exchange: rawSymbol.startsWith('SH') ? 'SH' : 'SZ',
+          };
+        }));
+      }
+
+      if (data.data.list.length < pageSize) break;
+      page++;
+
+      if (page <= totalPages) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+
+    console.log(`[AKShare] 获取到 ${allStocks.length} 条股票数据`);
+    return allStocks;
+  } catch (e) {
+    console.error('[AKShare] fetchStocks error:', e.message);
+    throw e;
+  }
+}
+
+async function fetchAKShareKline(symbol, period = 'day', limit = 120) {
+  const freqMap = { D: '101', W: '102', M: '103' };
+  const freq = freqMap[period] || '101';
+
+  const response = await fetch(
+    `https://stock.xueqiu.com/v5/stock/chart/kline.json?symbol=${symbol}&begin=0&count=${limit}&period=day&type=before&indicator=kline`
+  );
+
+  const data = await response.json();
+
+  if (data.data && data.data.item && data.data.item.length > 0) {
+    const columns = data.data.column || [];
+    return data.data.item.map(row => {
+      const obj = {};
+      columns.forEach((col, i) => { obj[col] = row[i]; });
+      return {
+        date: obj.timestamp ? new Date(obj.timestamp).toISOString().slice(0, 10) : '',
+        open: parseFloat(obj.open) || 0,
+        close: parseFloat(obj.close) || 0,
+        high: parseFloat(obj.high) || 0,
+        low: parseFloat(obj.low) || 0,
+        volume: parseFloat(obj.volume) || 0,
+      };
+    });
+  }
+
+  return [];
+}
+
+async function fetchSinaStocks() {
+  try {
+    const allStocks = [];
+    let page = 1;
+    const maxPages = 60;
+
+    while (page <= maxPages) {
+      const url = `https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page=${page}&num=100&sort=symbol&asc=0&node=hs_a&symbol=&_s_r_a=init`;
+
+      const response = await fetch(url, {
+        headers: {
+          'Referer': 'https://finance.sina.com.cn/',
+        },
+      });
+
+      const text = await response.text();
+      const data = JSON.parse(text);
+
+      if (Array.isArray(data)) {
+        const stocks = data.map(item => ({
+          symbol: item.symbol,
+          name: item.name || '',
+          currentPrice: parseFloat(item.trade) || null,
+          changePercent: parseFloat(item.changepercent) || 0,
+          volume: parseFloat(item.volume) || 0,
+          openPrice: parseFloat(item.open) || null,
+          highPrice: parseFloat(item.high) || null,
+          lowPrice: parseFloat(item.low) || null,
+          exchange: item.symbol.startsWith('sh') ? 'SH' : 'SZ',
+        }));
+
+        allStocks.push(...stocks);
+
+        if (page === 1) {
+          console.log(`[Sina] 第1页获取 ${data.length} 条`);
+        }
+
+        if (data.length < 100) {
+          break;
+        }
+      } else {
+        break;
+      }
+
+      page++;
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+
+    console.log(`[Sina] 获取到 ${allStocks.length} 条股票数据`);
+    return allStocks;
+  } catch (e) {
+    console.error('[Sina] fetchStocks error:', e.message);
+    throw e;
+  }
+}
+
+async function fetchSinaKline(symbol, period = 'day', limit = 120) {
+  try {
+    const prefix = symbol.startsWith('6') ? 'sh' : 'sz';
+    const url = `https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol=${prefix}${symbol}&scale=240&ma=no&datalen=${limit}`;
+
+    const response = await fetch(url, {
+      headers: {
+        'Referer': 'https://finance.sina.com.cn/',
+      },
+    });
+
+    const text = await response.text();
+    const data = JSON.parse(text);
+
+    if (Array.isArray(data)) {
+      return data.map(item => ({
+        date: item[0],
+        open: parseFloat(item[1]),
+        high: parseFloat(item[2]),
+        low: parseFloat(item[3]),
+        close: parseFloat(item[4]),
+        volume: parseFloat(item[5]) || 0,
+      }));
+    }
+
+    return [];
+  } catch (e) {
+    console.error('[Sina] fetchKline error:', e.message);
+    throw e;
+  }
+}
+
+async function fetchEastmoneyStocks() {
+  try {
+    const allStocks = [];
+    const pageSize = 100;
+    let page = 1;
+    let totalCount = 0;
+
+    while (true) {
+      const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f14,f2,f3,f5,f17,f15,f16`;
+
+      const response = await fetch(url, {
+        headers: {
+          'Referer': 'https://quote.eastmoney.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      });
+
+      const text = await response.text();
+      const data = JSON.parse(text);
+
+      if (data.data && data.data.diff && data.data.diff.length > 0) {
+        if (page === 1) {
+          totalCount = data.data.total || 0;
+          console.log(`[Eastmoney] 总共 ${totalCount} 条数据`);
+        }
+
+        const stocks = data.data.diff.map(item => ({
+          symbol: item.f12,
+          name: item.f14,
+          currentPrice: parseFloat(item.f2) || null,
+          changePercent: parseFloat(item.f3) || 0,
+          volume: parseFloat(item.f5) || 0,
+          openPrice: parseFloat(item.f17) || null,
+          highPrice: parseFloat(item.f15) || null,
+          lowPrice: parseFloat(item.f16) || null,
+          exchange: item.f12.startsWith('6') ? 'SH' : 'SZ',
+        }));
+
+        allStocks.push(...stocks);
+        console.log(`[Eastmoney] 第 ${page} 页获取 ${stocks.length} 条，累计 ${allStocks.length} 条`);
+
+        if (data.data.diff.length < pageSize || allStocks.length >= totalCount) {
+          break;
+        }
+
+        page++;
+      } else {
+        break;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    console.log(`[Eastmoney] 获取到 ${allStocks.length} 条股票数据`);
+    return allStocks;
+  } catch (e) {
+    console.error('[Eastmoney] fetchStocks error:', e.message);
+    throw e;
+  }
+}
+
+async function fetchEastmoneyKline(symbol, period = 'day', limit = 120) {
+  const freqMap = { D: '101', W: '102', M: '103' };
+  const freq = freqMap[period] || '101';
+
+  const response = await fetch(
+    `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${symbol}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=${freq}&fqt=1&end=20500101&lmt=${limit}`
+  );
+
+  const data = await response.json();
+
+  if (data.data && data.data.klines) {
+    return data.data.klines.map(line => {
+      const parts = line.split(',');
+      return {
+        date: parts[0],
+        open: parseFloat(parts[1]),
+        close: parseFloat(parts[2]),
+        high: parseFloat(parts[3]),
+        low: parseFloat(parts[4]),
+        volume: parseFloat(parts[5]),
+        amount: parseFloat(parts[6]),
+      };
+    });
+  }
+
+  return [];
+}
+
+async function fetchYahooStocks(symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'AMD', 'NFLX', 'CRM']) {
+  try {
+    const symStr = symbols.join('%2C');
+    const response = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${symStr}?range=1d&interval=1d`,
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+        },
+      }
+    );
+
+    const text = await response.text();
+    
+    if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+      throw new Error('Yahoo Finance returned HTML instead of JSON (may require cookie authentication)');
+    }
+
+    const data = JSON.parse(text);
+
+    if (data.chart && data.chart.result && data.chart.result[0]) {
+      return data.chart.result.map(item => {
+        const meta = item.meta || {};
+        const regularMarketPrice = meta.regularMarketPrice || null;
+        const chartPreviousClose = meta.chartPreviousClose || null;
+        const changePercent = chartPreviousClose ? ((regularMarketPrice - chartPreviousClose) / chartPreviousClose * 100) : 0;
+        return {
+          symbol: meta.symbol || '',
+          name: meta.shortName || meta.longName || meta.exchangeName || '',
+          currentPrice: regularMarketPrice,
+          changePercent: parseFloat(changePercent.toFixed(2)),
+          volume: meta.regularMarketVolume || 0,
+          openPrice: meta.regularMarketOpen || null,
+          highPrice: meta.regularMarketDayHigh || null,
+          lowPrice: meta.regularMarketDayLow || null,
+          exchange: meta.fullExchangeName || meta.exchangeName || '',
+        };
+      });
+    }
+
+    return [];
+  } catch (e) {
+    console.error('[Yahoo] fetchStocks error:', e.message);
+    throw e;
+  }
+}
+
+async function fetchYahooKline(symbol, period = '1d', range = '3mo') {
+  const intervalMap = { D: '1d', W: '1wk', M: '1mo' };
+  const interval = intervalMap[period] || '1d';
+
+  const response = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}`,
+    {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      },
+    }
+  );
+
+  const data = await response.json();
+
+  if (data.chart && data.chart.result && data.chart.result[0]) {
+    const result = data.chart.result[0];
+    const timestamps = result.timestamp || [];
+    const quote = result.indicators.quote[0] || {};
+
+    return timestamps.map((ts, i) => ({
+      date: new Date(ts * 1000).toISOString().slice(0, 10),
+      open: parseFloat(quote.open?.[i]) || null,
+      high: parseFloat(quote.high?.[i]) || null,
+      low: parseFloat(quote.low?.[i]) || null,
+      close: parseFloat(quote.close?.[i]) || null,
+      volume: parseFloat(quote.volume?.[i]) || 0,
+    }));
+  }
+
+  return [];
+}
+
+async function fetchPolygonStocks(apiKey) {
+  try {
+    const url = `https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?apiKey=${apiKey}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.tickers) {
+      return data.tickers.map(item => ({
+        symbol: item.ticker,
+        name: '',
+        currentPrice: item.day?.close || null,
+        changePercent: parseFloat(item.day?.changePercent) || 0,
+        volume: item.day?.volume || 0,
+        openPrice: item.day?.open || null,
+        highPrice: item.day?.high || null,
+        lowPrice: item.day?.low || null,
+      }));
+    }
+
+    return [];
+  } catch (e) {
+    console.error('[Polygon] fetchStocks error:', e.message);
+    throw e;
+  }
+}
+
+async function fetchPolygonKline(symbol, apiKey, period = 'day', limit = 120) {
+  const multiplierMap = { D: 1, W: 7, M: 30 };
+  const timespanMap = { D: 'day', W: 'week', M: 'month' };
+  const multiplier = multiplierMap[period] || 1;
+  const timespan = timespanMap[period] || 'day';
+
+  const response = await fetch(
+    `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/2020-01-01/2099-12-31?apiKey=${apiKey}`
+  );
+
+  const data = await response.json();
+
+  if (data.results) {
+    return data.results.map(item => ({
+      date: new Date(item.t).toISOString().slice(0, 10),
+      open: parseFloat(item.o),
+      high: parseFloat(item.h),
+      low: parseFloat(item.l),
+      close: parseFloat(item.c),
+      volume: parseFloat(item.v),
+    }));
+  }
+
+  return [];
+}
+
+async function fetchLongportStocks() {
+  try {
+    const response = await fetch(
+      'https://openapi.longportapp.com/openapi/quote/v1/security/static_info?symbol=00700,09988,01810,09618,00388',
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (data.data && Array.isArray(data.data)) {
+      return data.data.map(item => ({
+        symbol: item.code || item.symbol,
+        name: item.name || '',
+        currentPrice: parseFloat(item.last_price || item.price) || null,
+        changePercent: parseFloat(item.change_rate || item.change_percent) || 0,
+        volume: parseFloat(item.volume) || 0,
+      }));
+    }
+
+    return [];
+  } catch (e) {
+    console.error('[Longport] fetchStocks error:', e.message);
+    throw e;
+  }
+}
+
+async function fetchLongportKline(symbol) {
+  try {
+    const response = await fetch(
+      `https://openapi.longportapp.com/openapi/quote/v1/security/candlestick?symbol=${symbol}&period=DAY&count=120`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (data.data && data.data.candlesticks) {
+      return data.data.candlesticks.map(item => ({
+        date: item.timestamp,
+        open: parseFloat(item.open),
+        high: parseFloat(item.high),
+        low: parseFloat(item.low),
+        close: parseFloat(item.close),
+        volume: parseFloat(item.volume),
+      }));
+    }
+
+    return [];
+  } catch (e) {
+    console.error('[Longport] fetchKline error:', e.message);
+    throw e;
+  }
+}
+
+async function syncTushareDateRange(startDate, endDate, pool, marketCode) {
+  try {
+    console.log(`[Tushare] 日期区间同步: ${startDate} ~ ${endDate}`);
+
+    // 生成日期列表
+    const dates = [];
+    const current = new Date(startDate.slice(0, 4) + '-' + startDate.slice(4, 6) + '-' + startDate.slice(6, 8));
+    const end = new Date(endDate.slice(0, 4) + '-' + endDate.slice(4, 6) + '-' + endDate.slice(6, 8));
+
+    while (current <= end) {
+      const dateStr = current.toISOString().slice(0, 10).replace(/-/g, '');
+      dates.push(dateStr);
+      current.setDate(current.getDate() + 1);
+    }
+
+    console.log(`[Tushare] 共 ${dates.length} 天需要处理`);
+
+    let totalCount = 0;
+    let newCount = 0;
+    let updatedCount = 0;
+
+    // 逐日同步
+    for (const tradeDate of dates) {
+      try {
+        console.log(`[Tushare] 处理日期: ${tradeDate}`);
+
+        // 获取该日行情数据
+        const dailyRequestBody = {
+          api_name: 'daily',
+          token: TUSHARE_API_TOKEN,
+          params: { trade_date: tradeDate },
+          fields: 'ts_code,trade_date,open,high,low,close,pre_close,change,pct_chg,vol,amount',
+        };
+
+        const dailyResponse = await fetch('https://api.tushare.pro', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dailyRequestBody),
+        });
+
+        const dailyData = await dailyResponse.json();
+
+        if (dailyData.code !== 0 || !dailyData.data || !dailyData.data.items) {
+          console.log(`[Tushare] 日期 ${tradeDate} 无数据或请求失败`);
+          continue;
+        }
+
+        const dailyFields = dailyData.data.fields;
+        const dailyItems = dailyData.data.items || [];
+
+        if (dailyItems.length === 0) {
+          console.log(`[Tushare] 日期 ${tradeDate} 无交易数据`);
+          continue;
+        }
+
+        console.log(`[Tushare] 日期 ${tradeDate}: ${dailyItems.length} 条记录`);
+
+        // 逐条写入数据库
+        for (const item of dailyItems) {
+          const row = {};
+          dailyFields.forEach((f, i) => { row[f] = item[i]; });
+
+          const tsCode = row.ts_code;
+          const symbol = row.symbol || tsCode.split('.')[0];
+          const name = ''; // 日线数据不包含名称
+          const volumeInt = row.vol ? Math.round(parseFloat(row.vol)) : null;
+
+          // 检查股票是否存在
+          const existingResult = await pool.query(
+            'SELECT id FROM stock_pool WHERE symbol = $1 AND deleted = false',
+            [symbol]
+          );
+
+          if (existingResult.rows.length > 0) {
+            // 更新股票池最新行情
+            await pool.query(
+              `UPDATE stock_pool SET
+                 current_price = $1,
+                 change_percent = $2,
+                 volume = $3,
+                 open_price = $4,
+                 high_price = $5,
+                 low_price = $6,
+                 updated_at = CURRENT_TIMESTAMP
+               WHERE symbol = $7 AND deleted = false`,
+              [
+                parseFloat(row.close) || null,
+                parseFloat(row.pct_chg) || null,
+                volumeInt,
+                parseFloat(row.open) || null,
+                parseFloat(row.high) || null,
+                parseFloat(row.low) || null,
+                symbol
+              ]
+            );
+            updatedCount++;
+          } else {
+            // 新增股票
+            await pool.query(
+              `INSERT INTO stock_pool (symbol, name, market, current_price, change_percent, volume, open_price, high_price, low_price, status)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '正常')`,
+              [
+                symbol,
+                name,
+                marketCode,
+                parseFloat(row.close) || null,
+                parseFloat(row.pct_chg) || null,
+                volumeInt,
+                parseFloat(row.open) || null,
+                parseFloat(row.high) || null,
+                parseFloat(row.low) || null
+              ]
+            );
+            newCount++;
+          }
+
+          // 写入日线历史表
+          await pool.query(
+            `INSERT INTO stock_daily (symbol, trade_date, open_price, high_price, low_price, close_price, pre_close, change_amount, change_percent, volume, amount)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (symbol, trade_date) DO UPDATE SET
+               open_price = EXCLUDED.open_price,
+               high_price = EXCLUDED.high_price,
+               low_price = EXCLUDED.low_price,
+               close_price = EXCLUDED.close_price,
+               pre_close = EXCLUDED.pre_close,
+               change_amount = EXCLUDED.change_amount,
+               change_percent = EXCLUDED.change_percent,
+               volume = EXCLUDED.volume,
+               amount = EXCLUDED.amount,
+               updated_at = NOW()`,
+            [
+              symbol,
+              tradeDate,
+              parseFloat(row.open) || null,
+              parseFloat(row.high) || null,
+              parseFloat(row.low) || null,
+              parseFloat(row.close) || null,
+              parseFloat(row.pre_close) || null,
+              parseFloat(row.change) || null,
+              parseFloat(row.pct_chg) || null,
+              volumeInt,
+              parseFloat(row.amount) || null,
+            ]
+          );
+
+          totalCount++;
+        }
+
+        // 每次请求后延迟，避免频率限制
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (err) {
+        console.error(`[Tushare] 处理日期 ${tradeDate} 失败:`, err.message);
+      }
+    }
+
+    // 同步完成后聚合周线和月线
+    console.log('[Tushare] 开始聚合周线数据...');
+    await pool.query(`
+      INSERT INTO stock_weekly (symbol, week_date, open_price, high_price, low_price, close_price, volume, amount)
+      SELECT 
+        symbol,
+        TO_CHAR(DATE_TRUNC('week', trade_date::date), 'YYYY-MM-DD') as week_date,
+        (ARRAY_AGG(open_price ORDER BY trade_date ASC))[1] as open_price,
+        MAX(high_price) as high_price,
+        MIN(low_price) as low_price,
+        (ARRAY_AGG(close_price ORDER BY trade_date DESC))[1] as close_price,
+        SUM(volume) as volume,
+        SUM(amount) as amount
+      FROM stock_daily
+      GROUP BY symbol, DATE_TRUNC('week', trade_date::date)
+      ON CONFLICT (symbol, week_date) DO UPDATE SET
+        open_price = EXCLUDED.open_price,
+        high_price = EXCLUDED.high_price,
+        low_price = EXCLUDED.low_price,
+        close_price = EXCLUDED.close_price,
+        volume = EXCLUDED.volume,
+        amount = EXCLUDED.amount,
+        updated_at = NOW()
+    `);
+    console.log('[Tushare] 周线聚合完成');
+
+    console.log('[Tushare] 开始聚合月线数据...');
+    await pool.query(`
+      INSERT INTO stock_monthly (symbol, month_date, open_price, high_price, low_price, close_price, volume, amount)
+      SELECT 
+        symbol,
+        LEFT(trade_date, 7) as month_date,
+        (ARRAY_AGG(open_price ORDER BY trade_date ASC))[1] as open_price,
+        MAX(high_price) as high_price,
+        MIN(low_price) as low_price,
+        (ARRAY_AGG(close_price ORDER BY trade_date DESC))[1] as close_price,
+        SUM(volume) as volume,
+        SUM(amount) as amount
+      FROM stock_daily
+      GROUP BY symbol, LEFT(trade_date, 7)
+      ON CONFLICT (symbol, month_date) DO UPDATE SET
+        open_price = EXCLUDED.open_price,
+        high_price = EXCLUDED.high_price,
+        low_price = EXCLUDED.low_price,
+        close_price = EXCLUDED.close_price,
+        volume = EXCLUDED.volume,
+        amount = EXCLUDED.amount,
+        updated_at = NOW()
+    `);
+    console.log('[Tushare] 月线聚合完成');
+
+    return { totalCount, newCount, updatedCount };
+  } catch (e) {
+    console.error('[Tushare] syncTushareDateRange error:', e.message);
+    throw e;
+  }
+}
+
+// 定时任务：工作日自动同步当日行情数据
+async function syncTodayStocks(pool) {
+  try {
+    console.log('[Scheduler] syncTodayStocks 开始执行');
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const marketCode = 'cn';
+
+    // 依次尝试各数据源，成功一个即返回
+    const providers = [
+      { name: 'tushare', fetch: fetchTushareStocks },
+      { name: 'akshare', fetch: fetchAKShareStocks },
+      { name: 'sina', fetch: fetchSinaStocks },
+      { name: 'eastmoney', fetch: fetchEastmoneyStocks },
+    ];
+
+    let stocks = null;
+    let usedProvider = null;
+
+    for (const p of providers) {
+      try {
+        console.log(`[Scheduler] 尝试从 ${p.name} 获取数据...`);
+        stocks = await p.fetch();
+        usedProvider = p.name;
+        console.log(`[Scheduler] ${p.name} 成功获取 ${stocks.length} 条数据`);
+        break;
+      } catch (err) {
+        console.error(`[Scheduler] ${p.name} 失败:`, err.message);
+      }
+    }
+
+    if (!stocks || stocks.length === 0) {
+      throw new Error('所有数据源均获取失败');
+    }
+
+    let newCount = 0;
+    let updatedCount = 0;
+    let failedCount = 0;
+
+    for (const stock of stocks) {
+      try {
+        const existingResult = await pool.query(
+          'SELECT id FROM stock_pool WHERE symbol = $1 AND deleted = false',
+          [stock.symbol]
+        );
+
+        const volumeInt = stock.volume ? Math.round(parseFloat(stock.volume)) : null;
+
+        if (existingResult.rows.length > 0) {
+          await pool.query(
+            `UPDATE stock_pool SET
+               current_price = $1, change_percent = $2, volume = $3,
+               name = COALESCE($4, name),
+               open_price = $5, high_price = $6, low_price = $7,
+               updated_at = CURRENT_TIMESTAMP
+             WHERE symbol = $8 AND deleted = false`,
+            [stock.currentPrice || null, stock.changePercent || null, volumeInt,
+             stock.name || null, stock.openPrice || null, stock.highPrice || null,
+             stock.lowPrice || null, stock.symbol]
+          );
+          updatedCount++;
+        } else {
+          await pool.query(
+            `INSERT INTO stock_pool (symbol, name, market, current_price, change_percent, volume, open_price, high_price, low_price, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '正常')`,
+            [stock.symbol, stock.name || '', marketCode, stock.currentPrice || null,
+             stock.changePercent || null, volumeInt, stock.openPrice || null,
+             stock.highPrice || null, stock.lowPrice || null]
+          );
+          newCount++;
+        }
+
+        if (stock.currentPrice !== null || stock.openPrice !== null) {
+          await pool.query(
+            `INSERT INTO stock_daily (symbol, trade_date, open_price, high_price, low_price, close_price, pre_close, change_amount, change_percent, volume, amount)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (symbol, trade_date) DO UPDATE SET
+               open_price = EXCLUDED.open_price, high_price = EXCLUDED.high_price,
+               low_price = EXCLUDED.low_price, close_price = EXCLUDED.close_price,
+               pre_close = EXCLUDED.pre_close, change_amount = EXCLUDED.change_amount,
+               change_percent = EXCLUDED.change_percent, volume = EXCLUDED.volume,
+               amount = EXCLUDED.amount, updated_at = NOW()`,
+            [stock.symbol, today, stock.openPrice || null, stock.highPrice || null,
+             stock.lowPrice || null, stock.currentPrice || null, stock.preClose || null,
+             stock.changeAmount || null, stock.changePercent || null, volumeInt, stock.amount || null]
+          );
+        }
+      } catch (err) {
+        failedCount++;
+        console.error(`[Scheduler] 同步 ${stock.symbol} 失败:`, err.message);
+      }
+    }
+
+    // 聚合周线和月线
+    try {
+      await pool.query(`
+        INSERT INTO stock_weekly (symbol, week_date, open_price, high_price, low_price, close_price, volume, amount)
+        SELECT symbol, TO_CHAR(DATE_TRUNC('week', trade_date::date), 'YYYY-MM-DD'),
+          (ARRAY_AGG(open_price ORDER BY trade_date ASC))[1], MAX(high_price), MIN(low_price),
+          (ARRAY_AGG(close_price ORDER BY trade_date DESC))[1], SUM(volume), SUM(amount)
+        FROM stock_daily
+        GROUP BY symbol, DATE_TRUNC('week', trade_date::date)
+        ON CONFLICT (symbol, week_date) DO UPDATE SET
+          open_price=EXCLUDED.open_price, high_price=EXCLUDED.high_price,
+          low_price=EXCLUDED.low_price, close_price=EXCLUDED.close_price,
+          volume=EXCLUDED.volume, amount=EXCLUDED.amount, updated_at=NOW()`);
+
+      await pool.query(`
+        INSERT INTO stock_monthly (symbol, month_date, open_price, high_price, low_price, close_price, volume, amount)
+        SELECT symbol, TO_CHAR(trade_date::date, 'YYYY-MM'),
+          (ARRAY_AGG(open_price ORDER BY trade_date ASC))[1], MAX(high_price), MIN(low_price),
+          (ARRAY_AGG(close_price ORDER BY trade_date DESC))[1], SUM(volume), SUM(amount)
+        FROM stock_daily
+        GROUP BY symbol, TO_CHAR(trade_date::date, 'YYYY-MM')
+        ON CONFLICT (symbol, month_date) DO UPDATE SET
+          open_price=EXCLUDED.open_price, high_price=EXCLUDED.high_price,
+          low_price=EXCLUDED.low_price, close_price=EXCLUDED.close_price,
+          volume=EXCLUDED.volume, amount=EXCLUDED.amount, updated_at=NOW()`);
+    } catch (err) {
+      console.error('[Scheduler] 聚合周月线失败:', err.message);
+    }
+
+    return { newCount, updatedCount, failedCount, usedProvider };
+  } catch (err) {
+    console.error('[Scheduler] syncTodayStocks error:', err.message);
+    throw err;
+  }
+}
+
+module.exports = {
+  MARKET_PROVIDERS,
+  getProvider,
+  fetchTushareStocks,
+  fetchTushareKline,
+  fetchAKShareStocks,
+  fetchAKShareKline,
+  fetchSinaStocks,
+  fetchSinaKline,
+  fetchEastmoneyStocks,
+  fetchEastmoneyKline,
+  fetchYahooStocks,
+  fetchYahooKline,
+  fetchPolygonStocks,
+  fetchPolygonKline,
+  fetchLongportStocks,
+  fetchLongportKline,
+  syncTushareDateRange,
+  syncTodayStocks,
+};

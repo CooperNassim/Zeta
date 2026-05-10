@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Edit, Trash2, RefreshCw, TrendingUp, TrendingDown, Search, Loader2 } from 'lucide-react'
 import DataTable from '../components/DataTable'
@@ -12,6 +13,7 @@ import { getMultipleStocksRealtime, searchStock } from '../utils/stockApi'
 import { calculateKlineBollingerBands } from '../utils/technicalIndicators'
 
 const StockPool = () => {
+  const navigate = useNavigate()
   const [showModal, setShowModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showToast, setShowToast] = useState(false)
@@ -160,6 +162,10 @@ const StockPool = () => {
     setShowModal(true)
   }
 
+  const handleViewChart = (stock) => {
+    navigate(`/stock-chart?symbol=${stock.symbol}&name=${encodeURIComponent(stock.name || '')}`)
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
 
@@ -268,16 +274,17 @@ const StockPool = () => {
           {paginatedData.length > 0 ? (
             <DataTable
               fields={[
-                { key: 'symbol', label: '股票代码', width: '120px' },
-                { key: 'name', label: '股票名称', width: '150px' },
-                { key: 'market', label: '市场', width: '80px' },
-                { key: 'exchange', label: '交易所', width: '120px' },
-                { key: 'sector', label: '行业', width: '120px' },
-                { key: 'currentPrice', label: '当前价格', width: '100px' },
-                { key: 'changePercent', label: '涨跌幅', width: '100px' },
-                { key: 'volume', label: '成交量', width: '120px' },
-                { key: 'updatedAt', label: '更新时间', width: '180px' },
-                { key: 'actions', label: '操作', width: '150px' }
+                { key: 'symbol', label: '股票代码', width: '100px' },
+                { key: 'name', label: '股票名称', width: '120px' },
+                { key: 'market', label: '市场', width: '70px' },
+                { key: 'currentPrice', label: '最新价', width: '90px' },
+                { key: 'changePercent', label: '涨跌幅%', width: '90px' },
+                { key: 'openPrice', label: '今开', width: '90px' },
+                { key: 'highPrice', label: '最高', width: '90px' },
+                { key: 'lowPrice', label: '最低', width: '90px' },
+                { key: 'volume', label: '成交量(手)', width: '110px' },
+                { key: 'updatedAt', label: '更新时间', width: '160px' },
+                { key: 'actions', label: '操作', width: '120px' }
               ]}
               data={paginatedData}
               selectedIds={selectedIds}
@@ -290,28 +297,52 @@ const StockPool = () => {
                 }
               }}
               renderCell={(field, item) => {
+                if (field.key === 'name') {
+                  return (
+                    <span
+                      className="text-blue-600 font-medium cursor-pointer hover:text-blue-800 hover:underline"
+                      onClick={() => handleViewChart(item)}
+                    >
+                      {item.name || '-'}
+                    </span>
+                  )
+                }
                 if (field.key === 'market') {
                   const marketMap = {
                     'us': '美股',
                     'hk': '港股',
                     'cn': 'A股'
                   }
-                  return marketMap[item.market] || item.market
+                  return marketMap[item.market] || item.market || '-'
                 }
-                if (field.key === 'currentPrice') {
-                  return item.currentPrice ? `$${item.currentPrice.toFixed(2)}` : '-'
+                if (field.key === 'currentPrice' || field.key === 'openPrice' || field.key === 'highPrice' || field.key === 'lowPrice') {
+                  const val = item[field.key];
+                  if (val === undefined || val === null || val === '-') return '-'
+                  return typeof val === 'number' ? val.toFixed(2) : val
                 }
                 if (field.key === 'changePercent') {
-                  if (item.changePercent === undefined || item.changePercent === null) return '-'
-                  const isPositive = item.changePercent >= 0
+                  if (item.changePercent === undefined || item.changePercent === null || item.changePercent === '-') return '-'
+                  const val = parseFloat(item.changePercent);
+                  if (isNaN(val)) return '-'
+                  const isPositive = val >= 0
                   return (
                     <span style={{ color: isPositive ? '#16a34a' : '#dc2626' }}>
-                      {isPositive ? '+' : ''}{item.changePercent.toFixed(2)}%
+                      {isPositive ? '+' : ''}{val.toFixed(2)}%
                     </span>
                   )
                 }
                 if (field.key === 'volume') {
-                  return item.volume ? (item.volume / 10000).toFixed(2) + '万' : '-'
+                  const val = item.volume;
+                  if (val === undefined || val === null || val === '-') return '-'
+                  const numVal = parseFloat(val);
+                  if (isNaN(numVal)) return '-'
+                  if (numVal >= 100000000) {
+                    return (numVal / 100000000).toFixed(2) + '亿'
+                  }
+                  if (numVal >= 10000) {
+                    return (numVal / 10000).toFixed(2) + '万'
+                  }
+                  return numVal.toFixed(0)
                 }
                 if (field.key === 'updatedAt') {
                   return item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN') : '-'
@@ -345,7 +376,7 @@ const StockPool = () => {
                     </div>
                   )
                 }
-                return null
+                return item[field.key] || '-'
               }}
             />
           ) : (

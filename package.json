@@ -16,6 +16,7 @@
     "date-fns": "^2.30.0",
     "exceljs": "^4.4.0",
     "framer-motion": "^10.16.16",
+    "klinecharts": "^10.0.0-beta1",
     "lodash": "^4.17.21",
     "lucide-react": "^0.294.0",
     "pg": "^8.20.0",

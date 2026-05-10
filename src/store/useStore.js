@@ -2205,26 +2205,34 @@ const useStore = create(
         }
         
         const newTransactions = transactions
-          .filter(t => !t.deleted) // 过滤掉已删除的记录
-          .map(t => ({
-          id: t.id,
-          type: t.transaction_type || t.type || null,
-          symbol: t.symbol || null,
-          name: t.symbol || null,
-          description: `${(t.transaction_type || t.type || '').replace('股票', '')}${t.quantity || 0}股`,
-          // DB没有amount字段，使用total_price作为amount
-          amount: t.total_price != null ? parseFloat(t.total_price) : null,
-          // DB没有balance字段
-          balance: null,
-          // DB有quantity字段
-          quantity: t.quantity != null ? parseFloat(t.quantity) : null,
-          createdAt: formatDateTime(t.created_at) || formatDateTime(t.createdAt) || new Date().toISOString(),
-          deleted: t.deleted || false,
-          deletedAt: t.deleted_at || t.deletedAt || null,
-          // 关键修复：添加交易编号字段映射
-          tradeNumber: t.trade_number || t.tradeNumber || null,
-          status: t.交易状态 || t.trade_status || t.tradeStatus || t.status || null
-        }))
+          .filter(t => !t.deleted)
+          .map(t => {
+            const txType = t.transaction_type || t.type || null
+            const qty = t.quantity || 0
+            let description
+            if (txType === '买入' || txType === '股票买入' || txType === '买入佣金' || txType === '买入其他费用') {
+              description = `买入${qty}股`
+            } else if (txType === '卖出' || txType === '股票卖出' || txType === '卖出佣金' || txType === '卖出其他费用') {
+              description = `卖出${qty}股`
+            } else {
+              description = `${txType}${qty}股`
+            }
+            return {
+              id: t.id,
+              type: txType,
+              symbol: t.symbol || null,
+              name: t.symbol || null,
+              description: description,
+              amount: t.total_price != null ? parseFloat(t.total_price) : null,
+              balance: null,
+              quantity: t.quantity != null ? parseFloat(t.quantity) : null,
+              createdAt: formatDateTime(t.created_at) || formatDateTime(t.createdAt) || new Date().toISOString(),
+              deleted: t.deleted || false,
+              deletedAt: t.deleted_at || t.deletedAt || null,
+              tradeNumber: t.trade_number || t.tradeNumber || null,
+              status: t.交易状态 || t.trade_status || t.tradeStatus || t.status || null
+            }
+          })
         
         // 关键修复：导入数据时需要更新最新的账户余额
         // 找到最新时间的交易记录，使用它的余额作为当前账户余额
@@ -2351,20 +2359,8 @@ const useStore = create(
           const buyAmountValueFinal = actualBuyAmount != null ? parseFloat(actualBuyAmount.toFixed(2)) : null
           const sellAmountValueFinal = actualSellAmount != null ? parseFloat(actualSellAmount.toFixed(2)) : null
           
-          // 计算盈亏金额（使用实际买入价和实际卖出价）
-          // 对于部分卖出的情况，按卖出比例计算盈亏
-          let calculatedProfit = 0
-          if (buyQuantity > 0 && sellQuantity > 0) {
-            // 计算卖出比例
-            const sellRatio = sellQuantity / buyQuantity
-            // 按比例计算买入金额
-            const proportionalBuyAmount = buyAmountValueFinal * sellRatio
-            // 计算盈亏
-            calculatedProfit = sellAmountValueFinal - proportionalBuyAmount
-          } else {
-            // 全部卖出或未卖出的情况
-            calculatedProfit = sellAmountValueFinal - buyAmountValueFinal
-          }
+          // 直接使用数据库的 profit 字段（已在数据库层面修正）
+          const dbProfit = r.profit != null ? parseFloat(r.profit) : null
           
           // 从买入订单中提取止盈价和止损价
           let takeProfitPrice = null
@@ -2445,10 +2441,26 @@ const useStore = create(
             // 策略ID字段映射（用于跨表查询策略名称）
             buyStrategyId: buyStrategyId,
             strategyId: strategyId,
-            // 盈亏金额字段映射（用于当月亏损组件筛选和显示）
-            // 盈亏金额 = 卖出金额 - 买入金额（使用实际买入价和实际卖出价）
-            profit: calculatedProfit,
+            // 盈亏金额字段映射（直接使用数据库已计算的 profit）
+            profit: dbProfit != null ? dbProfit : 0,
             profitPercent: r.profit_percent != null ? parseFloat(r.profit_percent) : (r.profitPercent || 0),
+            // 净盈亏额字段映射（直接使用数据库）
+            netProfit: r.net_profit != null ? parseFloat(r.net_profit) : null,
+            netProfitPercent: r.net_profit_percent != null ? parseFloat(r.net_profit_percent) : null,
+            slippage: r.slippage != null ? parseFloat(r.slippage) : null,
+            slippageNetProfitRatio: r.slippage_net_profit_ratio != null ? parseFloat(r.slippage_net_profit_ratio) : null,
+            // 通道字段映射（用于评级计算，未来行情数据接入后自动填充）
+            upperBand: r.upper_band != null ? parseFloat(r.upper_band) : (r.upperBand != null ? parseFloat(r.upperBand) : null),
+            lowerBand: r.lower_band != null ? parseFloat(r.lower_band) : (r.lowerBand != null ? parseFloat(r.lowerBand) : null),
+            // 行情字段映射（买入/卖出当天的最高价和最低价，未来行情数据接入后自动填充）
+            buyHighPrice: r.buy_high_price != null ? parseFloat(r.buy_high_price) : (r.buyHighPrice != null ? parseFloat(r.buyHighPrice) : null),
+            buyLowPrice: r.buy_low_price != null ? parseFloat(r.buy_low_price) : (r.buyLowPrice != null ? parseFloat(r.buyLowPrice) : null),
+            sellHighPrice: r.sell_high_price != null ? parseFloat(r.sell_high_price) : (r.sellHighPrice != null ? parseFloat(r.sellHighPrice) : null),
+            sellLowPrice: r.sell_low_price != null ? parseFloat(r.sell_low_price) : (r.sellLowPrice != null ? parseFloat(r.sellLowPrice) : null),
+            // 评级字段映射（未来行情数据接入后自动计算填充）
+            buyGrade: r.buy_grade || r.buyGrade || null,
+            sellGrade: r.sell_grade || r.sellGrade || null,
+            overallScore: r.overall_score != null ? parseFloat(r.overall_score) : (r.overallScore != null ? parseFloat(r.overallScore) : null),
             // 交易状态字段映射（用于持仓/结束状态筛选）
             // 数据库可能有trade_status字段（中文"结束"/"持仓中"），如果没有则动态计算
             tradeStatus: r.trade_status || r.tradeStatus || (sellQuantity >= buyQuantity && sellQuantity > 0 ? '结束' : '持仓中'),
@@ -2502,21 +2514,36 @@ const useStore = create(
           return state
         }
         const newStocks = stocks.map(s => ({
-          ...s,
+          id: s.id,
+          symbol: s.symbol,
+          name: s.name || '',
+          market: s.market || 'cn',
+          status: s.status || '正常',
+          currentPrice: s.current_price !== null && s.current_price !== undefined ? parseFloat(s.current_price) : null,
+          changePercent: s.change_percent !== null && s.change_percent !== undefined ? parseFloat(s.change_percent) : null,
+          openPrice: s.open_price !== null && s.open_price !== undefined ? parseFloat(s.open_price) : null,
+          highPrice: s.high_price !== null && s.high_price !== undefined ? parseFloat(s.high_price) : null,
+          lowPrice: s.low_price !== null && s.low_price !== undefined ? parseFloat(s.low_price) : null,
+          volume: s.volume !== null && s.volume !== undefined ? parseInt(s.volume) : null,
+          tradeDate: s.trade_date || s.tradeDate || null,
+          exchange: s.exchange || null,
+          rawCode: s.raw_code || s.rawCode || null,
           createdAt: s.created_at || s.createdAt || new Date().toISOString(),
           updatedAt: s.updated_at || s.updatedAt || null,
           deleted: s.deleted || false,
           deletedAt: s.deleted_at || s.deletedAt || null
         }))
-        // 按 symbol 去重
-        const existingSymbols = new Set(state.stockPool.map(s => s.symbol))
-        const mergedStocks = [...state.stockPool]
+        // 按 symbol 去重，已存在的用新数据覆盖更新
+        const symbolMap = new Map(state.stockPool.map(s => [s.symbol, s]))
         newStocks.forEach(s => {
-          if (!existingSymbols.has(s.symbol)) {
-            mergedStocks.push(s)
+          if (symbolMap.has(s.symbol)) {
+            // 已存在，用数据库数据覆盖更新
+            symbolMap.set(s.symbol, s)
+          } else {
+            symbolMap.set(s.symbol, s)
           }
         })
-        return { stockPool: mergedStocks }
+        return { stockPool: Array.from(symbolMap.values()) }
       }),
 
       // 更新股票信息

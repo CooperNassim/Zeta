@@ -25,8 +25,10 @@ backend/
 │   ├── scripts/
 │   │   ├── initDatabase.js   # 初始化数据库
 │   │   ├── backup.js         # 备份数据
-│   │   └── restore.js        # 恢复数据
+│   │   ├── restore.js        # 恢复数据
+│   │   └── run_migration.js  # 数据库迁移脚本（自动识别未执行的迁移）
 │   └── server.js             # 服务器入口
+├── migrations/               # 数据库迁移SQL文件
 ├── backups/                  # 备份文件目录（不要提交到git）
 ├── .env                      # 环境变量（不要提交到git）
 ├── .env.example              # 环境变量示例
@@ -128,6 +130,43 @@ npm run init-db
 ```
 
 这会创建所有表并插入默认数据。
+
+### 5.5 数据库迁移（推荐）
+
+本系统支持自动数据库迁移，会按顺序执行所有未运行过的迁移脚本。
+
+**查看所有迁移状态：**
+```bash
+npm run migrate:status
+```
+
+**执行所有未运行的迁移：**
+```bash
+npm run migrate
+```
+
+**跳过备份直接迁移（更快）：**
+```bash
+npm run migrate:skip-backup
+```
+
+**执行单个迁移文件：**
+```bash
+npm run migrate:file -- migration_2026-05-09_orders_add_remark.sql
+```
+
+**迁移系统工作原理：**
+1. 自动扫描 `migrations/` 目录下所有 `.sql` 文件
+2. 按文件名字母顺序排序
+3. 对比 `schema_migrations` 表，找出未执行过的脚本
+4. 按顺序逐个执行，失败时自动停止
+5. 每个脚本在事务中执行，失败自动回滚
+6. 执行成功后记录到 `schema_migrations` 表
+
+**新增迁移脚本规范：**
+- 文件名格式：`migration_YYYY-MM-DD_表名_描述.sql`
+- 使用 `IF NOT EXISTS` 确保幂等性
+- 不要修改已提交的迁移文件
 
 ### 6. 启动服务器
 

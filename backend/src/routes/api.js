@@ -1058,14 +1058,18 @@ router.post('/sync/execute', async (req, res) => {
             default:
               throw new Error(`不支持的提供商: ${provider}`);
           }
-        }
 
-        if (stock_codes.length > 0) {
-          stocks = stocks.filter(s => stock_codes.includes(s.symbol));
-        }
+          if (stock_codes.length > 0) {
+            stocks = stocks.filter(s => stock_codes.includes(s.symbol));
+          }
 
-        for (const stock of stocks) {
+          for (const stock of stocks) {
           try {
+            // 跳过无行情数据的股票（不入库、不更新）
+            if (stock.currentPrice === null || stock.currentPrice === undefined) {
+              continue;
+            }
+
             const existingResult = await pool.query(
               'SELECT id FROM stock_pool WHERE symbol = $1 AND deleted = false',
               [stock.symbol]
@@ -1083,7 +1087,7 @@ router.post('/sync/execute', async (req, res) => {
               await pool.query(
                 `UPDATE stock_pool SET
                    current_price = $1,
-                   change_percent = $2,
+                   change_percent = COALESCE($2, change_percent),
                    volume = $3,
                    name = COALESCE($4, name),
                    open_price = $5,
@@ -1091,7 +1095,7 @@ router.post('/sync/execute', async (req, res) => {
                    low_price = $7,
                    updated_at = CURRENT_TIMESTAMP
                  WHERE symbol = $8 AND deleted = false`,
-                [stock.currentPrice || null, stock.changePercent || null, volumeInt, stock.name || null, stock.openPrice || null, stock.highPrice || null, stock.lowPrice || null, stock.symbol]
+                [stock.currentPrice || null, stock.changePercent, volumeInt, stock.name || null, stock.openPrice || null, stock.highPrice || null, stock.lowPrice || null, stock.symbol]
               );
               updatedCount++;
             } else {
@@ -1202,7 +1206,8 @@ router.post('/sync/execute', async (req, res) => {
         } catch (aggError) {
           console.warn('[同步] 聚合周线/月线数据失败:', aggError.message);
         }
-      } catch (err) {
+      } // closes else block
+    } catch (err) {
         errorMessage = err.message;
         await pool.query(
           `UPDATE data_sync_history SET

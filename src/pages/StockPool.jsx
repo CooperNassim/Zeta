@@ -321,13 +321,25 @@ const StockPool = () => {
                   return typeof val === 'number' ? val.toFixed(2) : val
                 }
                 if (field.key === 'changePercent') {
-                  if (item.changePercent === undefined || item.changePercent === null || item.changePercent === '-') return '-'
                   const val = parseFloat(item.changePercent);
+                  // 当 changePercent 为 null/undefined 但有有效价格时，显示 +0.00%
+                  if (item.changePercent === undefined || item.changePercent === null || item.changePercent === '-') {
+                    if (item.currentPrice !== null && item.currentPrice !== undefined && item.currentPrice !== '-') {
+                      return (
+                        <span style={{ color: '#6b7280' }}>
+                          +0.00%
+                        </span>
+                      )
+                    }
+                    return '-'
+                  }
                   if (isNaN(val)) return '-'
-                  const isPositive = val >= 0
+                  const isPositive = val > 0
+                  const isNegative = val < 0
+                  const color = isPositive ? '#16a34a' : isNegative ? '#dc2626' : '#6b7280'
                   return (
-                    <span style={{ color: isPositive ? '#16a34a' : '#dc2626' }}>
-                      {isPositive ? '+' : ''}{val.toFixed(2)}%
+                    <span style={{ color }}>
+                      {val >= 0 ? '+' : ''}{val.toFixed(2)}%
                     </span>
                   )
                 }

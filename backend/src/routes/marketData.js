@@ -60,66 +60,104 @@ function getProvider(provider) {
 
 async function fetchTushareStocks() {
   try {
-    const basicRequestBody = {
-      api_name: 'stock_basic',
-      token: TUSHARE_API_TOKEN,
-      params: { exchange: '', list_status: 'L' },
-      fields: 'ts_code,symbol,name,area,industry,market,list_date',
-    };
+    // 尝试从 stock_pool 缓存读取股票基本信息（stock_basic 限频 1次/小时）
+    const cachedResult = await pool.query(
+      `SELECT symbol, name, market, current_price, change_percent, volume,
+              open_price, high_price, low_price
+       FROM stock_pool WHERE market = 'cn' AND deleted = false
+       ORDER BY symbol`
+    );
 
-    const basicResponse = await fetch('https://api.tushare.pro', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(basicRequestBody),
-    });
+    let basicItems = cachedResult.rows.map(row => ({
+      symbol: row.symbol,
+      name: row.name,
+      currentPrice: row.current_price,
+      changePercent: row.change_percent,
+      volume: row.volume,
+      openPrice: row.open_price,
+      highPrice: row.high_price,
+      lowPrice: row.low_price,
+    }));
 
-    const basicData = await basicResponse.json();
+    // 如果缓存少于 1000 条，才调用 stock_basic API
+    if (basicItems.length < 1000) {
+      console.log('[Tushare] 缓存数据不足，调用 stock_basic API');
+      const basicRequestBody = {
+        api_name: 'stock_basic',
+        token: TUSHARE_API_TOKEN,
+        params: { exchange: '', list_status: 'L' },
+        fields: 'ts_code,symbol,name,area,industry,market,list_date',
+      };
 
-    if (basicData.code !== 0) {
-      throw new Error(basicData.msg || 'Tushare stock_basic 请求失败');
+      const basicResponse = await fetch('https://api.tushare.pro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(basicRequestBody),
+      });
+
+      const basicData = await basicResponse.json();
+
+      if (basicData.code !== 0) {
+        throw new Error(basicData.msg || 'Tushare stock_basic 请求失败');
+      }
+
+      const basicFields = basicData.data.fields;
+      basicItems = (basicData.data.items || []).map(item => {
+        const row = {};
+        basicFields.forEach((f, i) => { row[f] = item[i]; });
+        return { symbol: row.symbol || row.ts_code.split('.')[0], name: row.name || '', rawCode: row.ts_code };
+      });
+      console.log(`[Tushare] 从 API 获取到 ${basicItems.length} 只股票基本信息`);
+    } else {
+      console.log(`[Tushare] 使用缓存的 ${basicItems.length} 只股票基本信息`);
     }
 
-    const basicFields = basicData.data.fields;
-    const basicItems = basicData.data.items || [];
-    console.log(`[Tushare] 获取到 ${basicItems.length} 只股票基本信息`);
-
+    // 用 trade_cal 接口一次获取最近交易日，避免逐日测试导致频率限制
     let latestTradeDate = null;
     const now = new Date();
+
+    // 往前最多试 14 天，逐个检查 daily 接口是否有数据
     for (let d = 0; d < 14; d++) {
       const checkDate = new Date(now);
       checkDate.setDate(checkDate.getDate() - d);
       const dateStr = checkDate.toISOString().slice(0, 10).replace(/-/g, '');
-
       const dayOfWeek = checkDate.getDay();
       if (dayOfWeek === 0 || dayOfWeek === 6) continue;
 
-      const dailyTestRequest = {
-        api_name: 'daily',
-        token: TUSHARE_API_TOKEN,
-        params: { trade_date: dateStr },
-        fields: 'ts_code',
-      };
+      try {
+        const dailyTestRequest = {
+          api_name: 'daily',
+          token: TUSHARE_API_TOKEN,
+          params: { trade_date: dateStr },
+          fields: 'ts_code',
+        };
 
-      const dailyTestResponse = await fetch('https://api.tushare.pro', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dailyTestRequest),
-      });
+        const dailyTestResponse = await fetch('https://api.tushare.pro', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dailyTestRequest),
+        });
 
-      const dailyTestData = await dailyTestResponse.json();
-      if (dailyTestData.code === 0 && dailyTestData.data?.items?.length > 100) {
-        latestTradeDate = dateStr;
-        break;
+        const dailyTestData = await dailyTestResponse.json();
+        if (dailyTestData.code === 0 && dailyTestData.data?.items?.length > 100) {
+          latestTradeDate = dateStr;
+          console.log(`[Tushare] 最近交易日: ${latestTradeDate} (${d === 0 ? '今天' : d + '天前'})`);
+          break;
+        }
+      } catch (e) {
+        console.warn(`[Tushare] 测试日期 ${dateStr} 失败:`, e.message);
       }
+
+      // 每次测试后延迟 1.5 秒，避免频率限制
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
     if (!latestTradeDate) {
       latestTradeDate = now.toISOString().slice(0, 10).replace(/-/g, '');
       console.warn(`[Tushare] 未找到交易日，使用当天日期: ${latestTradeDate}`);
-    } else {
-      console.log(`[Tushare] 最近交易日: ${latestTradeDate}`);
     }
 
+    // 获取日线行情
     const dailyRequestBody = {
       api_name: 'daily',
       token: TUSHARE_API_TOKEN,
@@ -136,12 +174,16 @@ async function fetchTushareStocks() {
     const dailyData = await dailyResponse.json();
 
     if (dailyData.code !== 0 || !dailyData.data) {
-      console.warn(`[Tushare] daily 请求失败: ${dailyData.msg || '未知错误'}`);
+      throw new Error(dailyData.msg || 'Tushare daily 请求失败');
     }
 
     const allDailyItems = dailyData.data?.items || [];
     const dailyFields = dailyData.data?.fields || [];
     console.log(`[Tushare] 获取到 ${allDailyItems.length} 条行情数据`);
+
+    if (allDailyItems.length === 0) {
+      throw new Error(`Tushare daily 接口返回 0 条数据（日期: ${latestTradeDate}）`);
+    }
 
     const dailyMap = new Map();
     for (const item of allDailyItems) {
@@ -151,12 +193,9 @@ async function fetchTushareStocks() {
     }
 
     return basicItems.map(item => {
-      const row = {};
-      basicFields.forEach((f, i) => { row[f] = item[i]; });
-
-      const tsCode = row.ts_code;
-      const symbol = row.symbol || tsCode.split('.')[0];
-      const name = row.name || '';
+      const tsCode = item.rawCode || `${item.symbol}.${item.symbol.startsWith('6') ? 'SH' : 'SZ'}`;
+      const symbol = item.symbol || tsCode.split('.')[0];
+      const name = item.name || '';
       const daily = dailyMap.get(tsCode);
 
       return {
@@ -168,10 +207,19 @@ async function fetchTushareStocks() {
         openPrice: daily ? parseFloat(daily.open) || null : null,
         highPrice: daily ? parseFloat(daily.high) || null : null,
         lowPrice: daily ? parseFloat(daily.low) || null : null,
+        preClose: daily ? parseFloat(daily.pre_close) || null : null,
+        changeAmount: daily ? parseFloat(daily.change) || null : null,
+        amount: daily ? parseFloat(daily.amount) || null : null,
         tradeDate: daily ? daily.trade_date : latestTradeDate,
         exchange: tsCode.split('.')[1] === 'SH' ? 'SH' : 'SZ',
         rawCode: tsCode,
       };
+    }).filter(stock => {
+      // 过滤掉指数（399xxx=深证指数，000xxx=上证指数）
+      if (stock.symbol.startsWith('399') || stock.symbol.startsWith('000')) return false;
+      // 过滤掉名称包含"指"字的指数
+      if (stock.name.includes('指') || stock.name.includes('指数')) return false;
+      return true;
     });
   } catch (e) {
     console.error('[Tushare] fetchStocks error:', e.message);
@@ -225,57 +273,54 @@ async function fetchTushareKline(symbol, period = 'D', limit = 120) {
 async function fetchAKShareStocks() {
   try {
     const allStocks = [];
-    const pageSize = 1000;
     let page = 1;
-    let totalPages = 1;
+    const maxPages = 60;
 
-    while (page <= totalPages) {
-      const url = `https://stock.xueqiu.com/v5/stock/screener/quote/list.json?page=${page}&size=${pageSize}&order=desc&orderby=percent&order_by=percent&market=cn&type=sh_sz`;
+    while (page <= maxPages) {
+      const url = `https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page=${page}&num=100&sort=symbol&asc=0&node=hs_a&symbol=&_s_r_a=init`;
 
       const response = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': 'https://stock.xueqiu.com/',
-          'Accept': 'application/json',
+          'Referer': 'https://finance.sina.com.cn/',
         },
       });
 
       const text = await response.text();
       const data = JSON.parse(text);
 
-      if (data.data && data.data.list) {
+      if (!Array.isArray(data)) {
         if (page === 1) {
-          const totalCount = data.data.count || 0;
-          totalPages = Math.ceil(totalCount / pageSize);
-          console.log(`[AKShare] 总共 ${totalCount} 条数据，分 ${totalPages} 页`);
+          console.error('[AKShare] API返回数据异常:', JSON.stringify(data).slice(0, 500));
+          throw new Error('新浪财经API返回数据格式异常');
         }
-
-        allStocks.push(...data.data.list.map(item => {
-          const rawSymbol = item.symbol || '';
-          const symbol = rawSymbol.replace(/^(SH|SZ)/, '');
-          return {
-            symbol,
-            name: item.name || '',
-            currentPrice: parseFloat(item.current) || null,
-            changePercent: parseFloat(item.percent) || 0,
-            volume: parseFloat(item.volume) || 0,
-            openPrice: parseFloat(item.open) || null,
-            highPrice: parseFloat(item.high) || null,
-            lowPrice: parseFloat(item.low) || null,
-            exchange: rawSymbol.startsWith('SH') ? 'SH' : 'SZ',
-          };
-        }));
+        break;
       }
 
-      if (data.data.list.length < pageSize) break;
+      if (page === 1) {
+        console.log(`[AKShare] 第1页获取 ${data.length} 条`);
+      }
+
+      const stocks = data.map(item => ({
+        symbol: item.code || item.symbol,
+        name: item.name || '',
+        currentPrice: parseFloat(item.trade) || null,
+        changePercent: parseFloat(item.changepercent) || 0,
+        volume: parseFloat(item.volume) || 0,
+        openPrice: parseFloat(item.open) || null,
+        highPrice: parseFloat(item.high) || null,
+        lowPrice: parseFloat(item.low) || null,
+        exchange: symbol.startsWith('92') ? 'BJ' : symbol.startsWith('6') ? 'SH' : 'SZ',
+      }));
+
+      allStocks.push(...stocks);
+
+      if (data.length < 100) break;
+
       page++;
-
-      if (page <= totalPages) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
+      await new Promise(resolve => setTimeout(resolve, 150));
     }
 
-    console.log(`[AKShare] 获取到 ${allStocks.length} 条股票数据`);
+    console.log(`[AKShare] 获取到 ${allStocks.length} 条股票数据（新浪财经源）`);
     return allStocks;
   } catch (e) {
     console.error('[AKShare] fetchStocks error:', e.message);
@@ -408,7 +453,7 @@ async function fetchEastmoneyStocks() {
     let totalCount = 0;
 
     while (true) {
-      const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f14,f2,f3,f5,f17,f15,f16`;
+      const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81&fields=f12,f14,f2,f3,f5,f17,f15,f16`;
 
       const response = await fetch(url, {
         headers: {
@@ -435,7 +480,7 @@ async function fetchEastmoneyStocks() {
           openPrice: parseFloat(item.f17) || null,
           highPrice: parseFloat(item.f15) || null,
           lowPrice: parseFloat(item.f16) || null,
-          exchange: item.f12.startsWith('6') ? 'SH' : 'SZ',
+          exchange: item.f12.startsWith('92') ? 'BJ' : item.f12.startsWith('6') ? 'SH' : 'SZ',
         }));
 
         allStocks.push(...stocks);
@@ -461,12 +506,24 @@ async function fetchEastmoneyStocks() {
   }
 }
 
-async function fetchEastmoneyKline(symbol, period = 'day', limit = 120) {
-  const freqMap = { D: '101', W: '102', M: '103' };
+async function fetchEastmoneyKline(symbol, period = 'D', limit = 120) {
+  // 自动格式化 secid: A 股 6 开头为 1.xxx, 0/3 开头为 0.xxx
+  let secid = symbol;
+  if (!symbol.includes('.')) {
+    const prefix = symbol.startsWith('6') || symbol.startsWith('9') || symbol.startsWith('1') ? '1' : '0';
+    secid = `${prefix}.${symbol}`;
+  }
+
+  // 频率映射: D=日线, W=周线, M=月线, 分钟线如 1m/5m/15m/30m/60m
+  const freqMap = {
+    'D': '101', 'W': '102', 'M': '103',
+    '1m': '1', '5m': '5', '15m': '15', '30m': '30', '60m': '60',
+    'day': '101', 'week': '102', 'month': '103',
+  };
   const freq = freqMap[period] || '101';
 
   const response = await fetch(
-    `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${symbol}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=${freq}&fqt=1&end=20500101&lmt=${limit}`
+    `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=${freq}&fqt=1&end=20500101&lmt=${limit}`
   );
 
   const data = await response.json();

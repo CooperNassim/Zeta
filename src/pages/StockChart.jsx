@@ -46,27 +46,72 @@ function StockChart() {
     const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
     try {
-      const response = await fetch(
-        `${backendUrl}/api/market/kline?provider=eastmoney&symbol=${currentSymbol}&period=${targetPeriod}&limit=200`
-      )
-      const result = await response.json()
+      // 获取K线数据（必须成功）
+      const klineRes = await fetch(`${backendUrl}/api/market/kline?provider=eastmoney&symbol=${currentSymbol}&period=${targetPeriod}&limit=200`)
+      const klineResult = await klineRes.json()
 
-      if (result.success && result.data && result.data.length > 0) {
-        return result.data.map(item => ({
-          timestamp: new Date(item.date).getTime(),
-          open: parseFloat(item.open),
-          high: parseFloat(item.high),
-          low: parseFloat(item.low),
-          close: parseFloat(item.close),
-          volume: parseFloat(item.volume || 0),
-          turnover: parseFloat(item.amount || 0),
-        }))
+      if (!klineResult.success || !klineResult.data || klineResult.data.length === 0) {
+        return []
       }
+
+      const klineData = klineResult.data.map(item => ({
+        timestamp: new Date(item.date).getTime(),
+        open: parseFloat(item.open),
+        high: parseFloat(item.high),
+        low: parseFloat(item.low),
+        close: parseFloat(item.close),
+        volume: parseFloat(item.volume || 0),
+        turnover: parseFloat(item.amount || 0),
+      }))
+
+      // 尝试获取预计算指标（失败不影响K线显示）
+      try {
+        const indicatorRes = await fetch(`${backendUrl}/api/market/indicators?symbol=${currentSymbol}&period=${targetPeriod}`)
+        const indicatorResult = await indicatorRes.json()
+
+        if (indicatorResult.success && indicatorResult.data && indicatorResult.data.length > 0) {
+          console.log('[StockChart] 使用预计算指标，数量:', indicatorResult.data.length)
+          
+          // 建立日期->指标的映射
+          const indicatorMap = new Map()
+          indicatorResult.data.forEach(ind => {
+            indicatorMap.set(ind.trade_date, ind)
+          })
+
+          // 合并指标到K线数据
+          klineData.forEach(kline => {
+            const dateStr = new Date(kline.timestamp).toISOString().slice(0, 10).replace(/-/g, '')
+            const ind = indicatorMap.get(dateStr)
+            if (ind) {
+              kline.ma5 = ind.ma5 ? parseFloat(ind.ma5) : undefined
+              kline.ma10 = ind.ma10 ? parseFloat(ind.ma10) : undefined
+              kline.ma20 = ind.ma20 ? parseFloat(ind.ma20) : undefined
+              kline.ma30 = ind.ma30 ? parseFloat(ind.ma30) : undefined
+              kline.ma60 = ind.ma60 ? parseFloat(ind.ma60) : undefined
+              kline.bollMid = ind.boll_mid ? parseFloat(ind.boll_mid) : undefined
+              kline.bollUpper = ind.boll_upper ? parseFloat(ind.boll_upper) : undefined
+              kline.bollLower = ind.boll_lower ? parseFloat(ind.boll_lower) : undefined
+              kline.macdDif = ind.macd_dif ? parseFloat(ind.macd_dif) : undefined
+              kline.macdDea = ind.macd_dea ? parseFloat(ind.macd_dea) : undefined
+              kline.macdHist = ind.macd_hist ? parseFloat(ind.macd_hist) : undefined
+              kline.rsi6 = ind.rsi6 ? parseFloat(ind.rsi6) : undefined
+              kline.rsi12 = ind.rsi12 ? parseFloat(ind.rsi12) : undefined
+              kline.rsi24 = ind.rsi24 ? parseFloat(ind.rsi24) : undefined
+              kline.kdjK = ind.kdj_k ? parseFloat(ind.kdj_k) : undefined
+              kline.kdjD = ind.kdj_d ? parseFloat(ind.kdj_d) : undefined
+              kline.kdjJ = ind.kdj_j ? parseFloat(ind.kdj_j) : undefined
+            }
+          })
+        }
+      } catch (indicatorError) {
+        console.warn('[StockChart] 获取预计算指标失败，将仅显示K线:', indicatorError)
+      }
+
+      return klineData
     } catch (error) {
       console.error('[StockChart] 获取数据失败:', error)
+      return []
     }
-
-    return []
   }, [])
 
   // Update latest price from data
@@ -375,8 +420,8 @@ function StockChart() {
         {/* Chart */}
         <div
           ref={chartRef}
-          className="flex-1 rounded-lg border border-gray-200 overflow-hidden"
-          style={{ minHeight: 0, background: '#ffffff' }}
+          className="rounded-lg border border-gray-200 overflow-hidden"
+          style={{ height: '500px', minHeight: '500px', background: '#ffffff' }}
         />
 
         {/* OHLC info */}

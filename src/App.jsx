@@ -16,6 +16,8 @@ import DataSyncPage from './pages/DataSync'
 import LLModelConfig from './pages/LLModelConfig'
 import ScheduledTask from './pages/ScheduledTask'
 import StockChart from './pages/StockChart'
+import BacktestSystem from './pages/BacktestSystem'
+import TradeAnalysis from './pages/TradeAnalysis'
 import useStore from './store/useStore'
 import { ToastProvider } from './contexts/ToastContext'
 
@@ -137,7 +139,7 @@ function DataSync() {
         console.log('[DataSync] 原始响应:', result)
 
         if (result.success && result.data) {
-          const { trade_orders, transactions, trade_records, stock_pool, daily_work_data, psychological_test_results, psychological_indicators, trading_strategies, risk_config } = result.data
+          const { trade_orders, transactions, trade_records, stock_pool, daily_work_data, psychological_test_results, psychological_indicators, trading_strategies, risk_config, backtest_configs, backtest_results } = result.data
 
           console.log('[DataSync] 数据库返回数据:', {
             trade_orders: trade_orders?.length || 0,
@@ -148,7 +150,9 @@ function DataSync() {
             psychological_test_results: psychological_test_results?.length || 0,
             psychological_indicators: psychological_indicators?.length || 0,
             trading_strategies: trading_strategies?.length || 0,
-            risk_config: risk_config?.length || 0
+            risk_config: risk_config?.length || 0,
+            backtest_configs: backtest_configs?.length || 0,
+            backtest_results: backtest_results?.length || 0
           })
 
           // 总是导入数据，即使数据为空也会清空本地旧数据
@@ -161,6 +165,8 @@ function DataSync() {
           try { if (psychological_indicators !== null && psychological_indicators !== undefined) store.importPsychologicalIndicators(psychological_indicators); } catch(e) { console.error('[DataSync] importPsychologicalIndicators 失败:', e) }
           try { if (trading_strategies !== null && trading_strategies !== undefined) store.importTradingStrategies(trading_strategies); } catch(e) { console.error('[DataSync] importTradingStrategies 失败:', e) }
           try { if (risk_config !== null && risk_config !== undefined) store.importRiskConfig(risk_config); } catch(e) { console.error('[DataSync] importRiskConfig 失败:', e) }
+          try { if (backtest_configs !== null && backtest_configs !== undefined) store.importBacktestConfigs(backtest_configs); } catch(e) { console.error('[DataSync] importBacktestConfigs 失败:', e) }
+          try { if (backtest_results !== null && backtest_results !== undefined) store.importBacktestResults(backtest_results); } catch(e) { console.error('[DataSync] importBacktestResults 失败:', e) }
 
           // 初始化交易编号计数器
           await store.initializeTradeNumberCounter()
@@ -235,6 +241,8 @@ function Navigation() {
   const researchMenuItems = [
     { id: 'stockpool', icon: Database, label: '股票行情', path: '/stock-pool', customIcon: 'stockpool' },
     { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
+    { id: 'backtest', icon: TrendingUp, label: '股票回测', path: '/research/backtest', customIcon: 'backtest' },
+    { id: 'analysis', icon: Brain, label: '交易分析', path: '/research/analysis', customIcon: 'analysis' },
   ]
 
   const settingsMenuItems = [
@@ -246,6 +254,7 @@ function Navigation() {
 
   const isTradingPage = tradingMenuItems.some(item => item.path === location.pathname)
   const isResearchPage = researchMenuItems.some(item => item.path === location.pathname)
+  const isBacktestPage = location.pathname === '/research/backtest'
   const isSettingsPage = settingsMenuItems.some(item => item.path === location.pathname)
 
   return (
@@ -458,6 +467,32 @@ function Navigation() {
                         <path d="M853.333333 170.666667a73.142857 73.142857 0 0 1 73.142857 73.142857v268.190476h-73.142857v-146.285714H170.666667v414.47619h438.857143v73.142857H170.666667c-40.399238 0-73.142857-31.378286-73.142857-70.095238V243.809524a73.142857 73.142857 0 0 1 73.142857-73.142857h682.666666z m-155.379809 288.670476l51.736381 51.712L699.952762 560.761905 780.190476 560.761905a146.285714 146.285714 0 1 1 0 292.571428h-121.904762v-73.142857h121.904762a73.142857 73.142857 0 0 0 4.291048-146.163809L780.190476 633.904762l-80.067047-0.024381 49.566476 49.566476-51.736381 51.736381-137.898667-137.923048 137.898667-137.923047zM414.47619 414.47619v73.142858H219.428571v-73.142858h195.047619z m438.857143-170.666666H170.666667v48.761905h682.666666v-48.761905z"></path>
                       )}
                     </svg>
+                  ) : item.customIcon === 'backtest' ? (
+                    <svg
+                      viewBox="0 0 1024 1024"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="w-6 h-6 mr-2"
+                      fill="#0F1419"
+                    >
+                      {isActive ? (
+                        <path d="M853.333333 170.666667H560.761905L463.238095 73.142857H170.666667a73.142857 73.142857 0 0 0-73.142857 73.142857v633.904762a73.142857 73.142857 0 0 0 73.142857 73.142857h682.666666a73.142857 73.142857 0 0 0 73.142857-73.142857V243.809524a73.142857 73.142857 0 0 0-73.142857-73.142857z m-243.809524 292.571428H341.333333v-73.142857h268.190476v73.142857z m121.904762-121.904762H341.333333v-73.142857h390.095238v73.142857z m0 243.809524H341.333333v-73.142857h390.095238v73.142857z"></path>
+                      ) : (
+                        <path d="M853.333333 146.285714a73.142857 73.142857 0 0 1 73.142857 73.142857v585.142857a73.142857 73.142857 0 0 1-73.142857 73.142857H170.666667a73.142857 73.142857 0 0 1-73.142857-73.142857V219.428571a73.142857 73.142857 0 0 1 73.142857-73.142857h301.775238l97.52381 97.52381h283.467619zM170.666667 146.285714v731.428572h682.666666V243.809524H536.380952l-97.523809-97.52381H170.666667z m170.666666 365.714286v73.142857h341.333334v-73.142857H341.333334z m0-121.904762v73.142857h390.095238v-73.142857H341.333333z m0 243.809524v73.142857h390.095238v-73.142857H341.333333z"></path>
+                      )}
+                    </svg>
+                  ) : item.customIcon === 'analysis' ? (
+                    <svg
+                      viewBox="0 0 1024 1024"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="w-6 h-6 mr-2"
+                      fill="#0F1419"
+                    >
+                      {isActive ? (
+                        <path d="M853.333333 97.52381H170.666667a73.142857 73.142857 0 0 0-73.142857 73.142857v585.142857a73.142857 73.142857 0 0 0 73.142857 73.142857h682.666666a73.142857 73.142857 0 0 0 73.142857-73.142857V170.666667a73.142857 73.142857 0 0 0-73.142857-73.142857z m-487.619047 585.142857H243.809524v-73.142857h121.904762v73.142857z m243.809524-146.285714H487.619048v-73.142858h121.904762v73.142858z m243.809523-146.285715H731.428571v-73.142857h121.904762v73.142857z"></path>
+                      ) : (
+                        <path d="M853.333333 121.904762H170.666667a73.142857 73.142857 0 0 0-73.142857 73.142857v585.142857a73.142857 73.142857 0 0 0 73.142857 73.142857h682.666666a73.142857 73.142857 0 0 0 73.142857-73.142857V195.047619a73.142857 73.142857 0 0 0-73.142857-73.142857zM243.809524 658.285714h-121.904762v-73.142857h121.904762v73.142857z m121.904762-146.285714h-121.904762v-73.142857h121.904762v73.142857z m243.809524-146.285714h-121.904762v-73.142858h121.904762v73.142858z m243.809523-146.285715H731.428571v-73.142857h121.904762v73.142857z"></path>
+                      )}
+                    </svg>
                   ) : (
                     <item.icon className="w-6 h-6 mr-2" style={{ color: isActive ? '#0F1419' : '#9CA3AF' }} />
                   )}
@@ -607,6 +642,8 @@ function AppContent() {
   const researchMenuItems = [
     { path: '/stock-pool' },
     { path: '/technical-indicators' },
+    { path: '/research/backtest' },
+    { path: '/research/analysis' },
   ]
   const settingsMenuItems = [
     { path: '/data-sync' },
@@ -617,6 +654,8 @@ function AppContent() {
 
   const isTradingPage = tradingMenuItems.some(item => item.path === location.pathname)
   const isResearchPage = researchMenuItems.some(item => item.path === location.pathname)
+  const isBacktestPage = location.pathname === '/research/backtest'
+  const isAnalysisPage = location.pathname === '/research/analysis'
   const isSettingsPage = settingsMenuItems.some(item => item.path === location.pathname)
 
   return (
@@ -630,7 +669,7 @@ function AppContent() {
               margin: '0',
               height: 'calc(100vh)',
               position: 'relative',
-              marginLeft: (isTradingPage || isResearchPage || isSettingsPage) ? '10px' : '0'
+              marginLeft: isBacktestPage || isAnalysisPage ? '180px' : (isTradingPage || isResearchPage || isSettingsPage) ? '10px' : '0'
             }}
           >
             <Routes>
@@ -649,6 +688,8 @@ function AppContent() {
               <Route path="/data-sync" element={<DataSyncPage />} />
               <Route path="/scheduled-task" element={<ScheduledTask />} />
               <Route path="/llm-config" element={<LLModelConfig />} />
+              <Route path="/research/backtest" element={<BacktestSystem />} />
+              <Route path="/research/analysis" element={<TradeAnalysis />} />
             </Routes>
           </main>
         </div>

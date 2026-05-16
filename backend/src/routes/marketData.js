@@ -1,4 +1,6 @@
 const { pool } = require('../config/database');
+const { createTask, getTask, updateTask, completeTask, failTask, isStopRequested } = require('../utils/taskManager');
+const { calculateAllIndicators } = require('../utils/technicalIndicators');
 
 const TUSHARE_API_TOKEN = process.env.TUSHARE_TOKEN || '1e36902ffc499ce3e3bd2a2690764a21d2c2068cee90b00b2893342d';
 
@@ -1082,6 +1084,450 @@ async function syncTodayStocks(pool) {
   }
 }
 
+/**
+ * 异步计算所有股票的技术指标（支持进度跟踪和停止）
+ */
+async function calculateAllStocksIndicatorsAsync(dbPool, options = {}) {
+  const { symbols = null, period = 'D', incremental = true } = options;
+  const taskId = `indicator_calc_${Date.now()}`;
+  
+  // 创建任务
+  createTask(taskId, { period, incremental });
+  
+  // 异步执行计算，不阻塞请求
+  executeIndicatorCalculation(taskId, dbPool, { symbols, period, incremental }).catch(err => {
+    console.error('[Indicators] 任务执行异常:', err);
+    failTask(taskId, err.message);
+  });
+  
+  return { taskId };
+}
+
+/**
+ * 执行指标计算的实际逻辑（增量模式）
+ */
+async function executeIndicatorCalculation(taskId, dbPool, options = {}) {
+  const { symbols = null, period = 'D', incremental = true } = options;
+  
+  try {
+    // 从stock_pool获取所有股票（不限制数据量，因为会从API补充）
+    let stocks;
+    if (symbols && symbols.length > 0) {
+      const placeholders = symbols.map((_, i) => `$${i + 1}`).join(',');
+      const result = await dbPool.query(
+        `SELECT symbol FROM stock_pool WHERE symbol IN (${placeholders}) AND deleted = false ORDER BY symbol`,
+        symbols
+      );
+      stocks = result.rows;
+    } else {
+      const result = await dbPool.query(
+        `SELECT symbol FROM stock_pool WHERE deleted = false ORDER BY symbol`
+      );
+      stocks = result.rows;
+    }
+    
+    if (stocks.length === 0) {
+      completeTask(taskId, { error: '没有可计算的股票' });
+      return;
+    }
+    
+    updateTask(taskId, { total: stocks.length });
+    console.log(`[Indicators] [${taskId}] 开始计算 ${stocks.length} 只股票 (周期: ${period}, 增量: ${incremental})`);
+    
+    let successCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+    let processed = 0;
+    
+    // 批量处理：每次处理100只股票
+    const batchSize = 100;
+    
+    // 计算增量更新的日期范围
+    let calcFromDate = null;
+    if (incremental && period === 'D') {
+      const today = new Date();
+      // 从今天往前推30天（需要历史数据来计算指标）
+      calcFromDate = new Date(today);
+      calcFromDate.setDate(calcFromDate.getDate() - 30);
+    } else if (incremental && period === 'W') {
+      // 周线：只计算本周
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+      calcFromDate = new Date(today);
+      calcFromDate.setDate(today.getDate() - dayOfWeek);
+    } else if (incremental && period === 'M') {
+      // 月线：只计算本月
+      const today = new Date();
+      calcFromDate = new Date(today.getFullYear(), today.getMonth(), 1);
+    }
+    
+    for (let i = 0; i < stocks.length; i += batchSize) {
+      // 检查是否请求停止
+      if (isStopRequested(taskId)) {
+        console.log(`[Indicators] [${taskId}] 收到停止请求，终止计算`);
+        completeTask(taskId, {
+          stopped: true,
+          successCount,
+          failedCount,
+          skippedCount,
+          processed,
+        });
+        return;
+      }
+      
+      const batch = stocks.slice(i, i + batchSize);
+      
+      // 并行处理当前批次
+      const promises = batch.map(async (stock) => {
+        try {
+          const result = await calculateAndStoreIndicators(
+            stock.symbol,
+            period,
+            200,
+            dbPool,
+            incremental,
+            calcFromDate
+          );
+          return result;
+        } catch (err) {
+          return { symbol: stock.symbol, status: 'failed', error: err.message };
+        }
+      });
+      
+      const results = await Promise.all(promises);
+      
+      // 统计结果
+      for (const result of results) {
+        if (result.status === 'success') successCount++;
+        else if (result.status === 'failed') failedCount++;
+        else skippedCount++;
+      }
+      
+      processed += batch.length;
+      updateTask(taskId, { processed, successCount, failedCount, skippedCount });
+      
+      // 每批次输出日志
+      console.log(`[Indicators] [${taskId}] 进度: ${processed}/${stocks.length} (${Math.round(processed/stocks.length*100)}%)`);
+    }
+    
+    completeTask(taskId, {
+      success: true,
+      total: stocks.length,
+      successCount,
+      failedCount,
+      skippedCount,
+    });
+    
+    console.log(`[Indicators] [${taskId}] 计算完成: 成功 ${successCount}, 失败 ${failedCount}, 跳过 ${skippedCount}`);
+  } catch (err) {
+    console.error(`[Indicators] [${taskId}] 批量计算失败:`, err.message);
+    failTask(taskId, err.message);
+  }
+}
+
+/**
+ * 为指定股票计算并存储技术指标（支持增量计算）
+ */
+async function calculateAndStoreIndicators(
+  symbol,
+  period = 'D',
+  limit = 200,
+  dbPool = null,
+  incremental = false,
+  fromDate = null
+) {
+  try {
+    let klineData = null;
+
+    // 优先从本地数据库获取数据
+    if (period === 'D' && dbPool) {
+      let dateFilter = '';
+      const params = [symbol, limit];
+      
+      if (incremental && fromDate) {
+        // 增量模式：只获取最近30天的数据
+        const fromStr = fromDate.toISOString().slice(0, 10).replace(/-/g, '');
+        dateFilter = `AND trade_date >= '${fromStr}'`;
+      }
+      
+      const result = await dbPool.query(
+        `SELECT trade_date as date, open_price as open, high_price as high, low_price as low, close_price as close, volume, amount
+         FROM stock_daily
+         WHERE symbol = $1
+         ${dateFilter}
+         ORDER BY trade_date ASC
+         LIMIT $2`,
+        params
+      );
+      
+      // 对于增量计算，需要获取足够的历史数据来计算指标
+      if (result.rows.length > 0) {
+        // 获取完整的历史数据（用于计算指标）
+        const fullResult = await dbPool.query(
+          `SELECT trade_date as date, open_price as open, high_price as high, low_price as low, close_price as close, volume, amount
+           FROM stock_daily
+           WHERE symbol = $1
+           ORDER BY trade_date ASC
+           LIMIT 200`,
+          [symbol]
+        );
+        
+        if (fullResult.rows.length >= 30) {
+          klineData = fullResult.rows.map(row => ({
+            date: row.date,
+            open: parseFloat(row.open),
+            high: parseFloat(row.high),
+            low: parseFloat(row.low),
+            close: parseFloat(row.close),
+            volume: parseFloat(row.volume || 0),
+          }));
+        }
+      }
+    }
+
+    // 如果数据库没有数据，则从东方财富获取
+    if (!klineData || klineData.length < 30) {
+      klineData = await fetchEastmoneyKline(symbol, period, limit);
+    }
+    
+    if (!klineData || klineData.length < 30) {
+      return { symbol, status: 'skipped', reason: '数据不足' };
+    }
+    
+    // 计算技术指标
+    const indicators = calculateAllIndicators(klineData);
+    
+    if (indicators.length === 0) {
+      return { symbol, status: 'skipped', reason: '计算失败' };
+    }
+    
+    // 增量模式：只保存最近的数据
+    let indicatorsToSave = indicators;
+    if (incremental && fromDate) {
+      const fromStr = fromDate.toISOString().slice(0, 10);
+      indicatorsToSave = indicators.filter(ind => ind.date >= fromStr);
+    }
+    
+    if (indicatorsToSave.length === 0) {
+      return { symbol, status: 'skipped', reason: '无新增数据' };
+    }
+    
+    // 批量插入数据库
+    const values = [];
+    const placeholders = [];
+    
+    indicatorsToSave.forEach((ind, idx) => {
+      const dateStr = ind.date.replace(/-/g, '');
+      values.push(
+        symbol, dateStr, period,
+        ind.ma5, ind.ma10, ind.ma20, ind.ma30, ind.ma60,
+        ind.bollMid, ind.bollUpper, ind.bollLower,
+        ind.macdDif, ind.macdDea, ind.macdHist,
+        ind.rsi6, ind.rsi12, ind.rsi24,
+        ind.kdjK, ind.kdjD, ind.kdjJ
+      );
+      placeholders.push(`($${idx * 21 + 1}, $${idx * 21 + 2}, $${idx * 21 + 3}, $${idx * 21 + 4}, $${idx * 21 + 5}, $${idx * 21 + 6}, $${idx * 21 + 7}, $${idx * 21 + 8}, $${idx * 21 + 9}, $${idx * 21 + 10}, $${idx * 21 + 11}, $${idx * 21 + 12}, $${idx * 21 + 13}, $${idx * 21 + 14}, $${idx * 21 + 15}, $${idx * 21 + 16}, $${idx * 21 + 17}, $${idx * 21 + 18}, $${idx * 21 + 19}, $${idx * 21 + 20}, $${idx * 21 + 21})`);
+    });
+    
+    const sql = `
+      INSERT INTO stock_indicators 
+        (symbol, trade_date, period, ma5, ma10, ma20, ma30, ma60, boll_mid, boll_upper, boll_lower, macd_dif, macd_dea, macd_hist, rsi6, rsi12, rsi24, kdj_k, kdj_d, kdj_j)
+      VALUES ${placeholders.join(', ')}
+      ON CONFLICT (symbol, trade_date, period) DO UPDATE SET
+        ma5=EXCLUDED.ma5, ma10=EXCLUDED.ma10, ma20=EXCLUDED.ma20, ma30=EXCLUDED.ma30, ma60=EXCLUDED.ma60,
+        boll_mid=EXCLUDED.boll_mid, boll_upper=EXCLUDED.boll_upper, boll_lower=EXCLUDED.boll_lower,
+        macd_dif=EXCLUDED.macd_dif, macd_dea=EXCLUDED.macd_dea, macd_hist=EXCLUDED.macd_hist,
+        rsi6=EXCLUDED.rsi6, rsi12=EXCLUDED.rsi12, rsi24=EXCLUDED.rsi24,
+        kdj_k=EXCLUDED.kdj_k, kdj_d=EXCLUDED.kdj_d, kdj_j=EXCLUDED.kdj_j,
+        updated_at=NOW()
+    `;
+    
+    await pool.query(sql, values);
+    
+    return { symbol, status: 'success', count: indicatorsToSave.length };
+  } catch (err) {
+    return { symbol, status: 'failed', error: err.message };
+  }
+}
+
+/**
+ * 异步初始化10年历史K线数据（支持进度跟踪和停止）
+ */
+async function initHistoricalDataAsync(dbPool, options = {}) {
+  const { symbols = null, years = 10, period = 'D' } = options;
+  const taskId = `historical_init_${Date.now()}`;
+  
+  createTask(taskId, { years, period, type: 'historical_init' });
+  
+  executeHistoricalInit(taskId, dbPool, { symbols, years, period }).catch(err => {
+    console.error('[HistoricalData] 任务执行异常:', err);
+    failTask(taskId, err.message);
+  });
+  
+  return { taskId };
+}
+
+/**
+ * 执行历史数据初始化的实际逻辑
+ */
+async function executeHistoricalInit(taskId, dbPool, options = {}) {
+  const { symbols = null, years = 10, period = 'D' } = options;
+  
+  try {
+    // 从stock_pool获取所有股票
+    let stocks;
+    if (symbols && symbols.length > 0) {
+      const placeholders = symbols.map((_, i) => `$${i + 1}`).join(',');
+      const result = await dbPool.query(
+        `SELECT symbol FROM stock_pool WHERE symbol IN (${placeholders}) AND deleted = false ORDER BY symbol`,
+        symbols
+      );
+      stocks = result.rows;
+    } else {
+      const result = await dbPool.query(
+        `SELECT symbol FROM stock_pool WHERE deleted = false ORDER BY symbol`
+      );
+      stocks = result.rows;
+    }
+    
+    if (stocks.length === 0) {
+      completeTask(taskId, { error: '没有可处理的股票' });
+      return;
+    }
+    
+    updateTask(taskId, { total: stocks.length });
+    console.log(`[HistoricalData] [${taskId}] 开始初始化 ${stocks.length} 只股票的 ${years} 年历史数据 (周期: ${period})`);
+    
+    let successCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+    let processed = 0;
+    
+    // 10年约2440个交易日
+    const limit = years * 244;
+    const batchSize = 50; // 每批50只，避免API过载
+    
+    for (let i = 0; i < stocks.length; i += batchSize) {
+      // 检查是否请求停止
+      if (isStopRequested(taskId)) {
+        console.log(`[HistoricalData] [${taskId}] 收到停止请求，终止初始化`);
+        completeTask(taskId, {
+          stopped: true,
+          successCount,
+          failedCount,
+          skippedCount,
+          processed,
+        });
+        return;
+      }
+      
+      const batch = stocks.slice(i, i + batchSize);
+      
+      const promises = batch.map(async (stock) => {
+        try {
+          const result = await fetchAndStoreKlineData(
+            stock.symbol,
+            period,
+            limit,
+            dbPool
+          );
+          return result;
+        } catch (err) {
+          return { symbol: stock.symbol, status: 'failed', error: err.message };
+        }
+      });
+      
+      const results = await Promise.all(promises);
+      
+      for (const result of results) {
+        if (result.status === 'success') successCount++;
+        else if (result.status === 'failed') failedCount++;
+        else skippedCount++;
+      }
+      
+      processed += batch.length;
+      updateTask(taskId, { processed, successCount, failedCount, skippedCount });
+      console.log(`[HistoricalData] [${taskId}] 进度: ${processed}/${stocks.length} (${Math.round(processed/stocks.length*100)}%)`);
+      
+      // 每批次后暂停500ms，避免API限流
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    completeTask(taskId, {
+      success: true,
+      total: stocks.length,
+      successCount,
+      failedCount,
+      skippedCount,
+    });
+    
+    console.log(`[HistoricalData] [${taskId}] 初始化完成: 成功 ${successCount}, 失败 ${failedCount}, 跳过 ${skippedCount}`);
+  } catch (err) {
+    console.error(`[HistoricalData] [${taskId}] 批量初始化失败:`, err.message);
+    failTask(taskId, err.message);
+  }
+}
+
+/**
+ * 获取并存储K线历史数据
+ */
+async function fetchAndStoreKlineData(symbol, period = 'D', limit = 2440, dbPool = null) {
+  try {
+    // 从东方财富API获取历史数据
+    const klineData = await fetchEastmoneyKline(symbol, period, limit);
+    
+    if (!klineData || klineData.length === 0) {
+      return { symbol, status: 'skipped', reason: '无数据' };
+    }
+    
+    // 检查是否已有数据
+    const existingResult = await dbPool.query(
+      `SELECT COUNT(*) as count FROM stock_daily WHERE symbol = $1`,
+      [symbol]
+    );
+    const existingCount = parseInt(existingResult.rows[0].count);
+    
+    // 如果已有数据且数量接近，跳过
+    if (existingCount >= klineData.length * 0.9) {
+      return { symbol, status: 'skipped', reason: '数据已存在' };
+    }
+    
+    // 批量插入/更新数据
+    const values = [];
+    const placeholders = [];
+    
+    klineData.forEach((item, idx) => {
+      const dateStr = item.date.replace(/-/g, '');
+      values.push(
+        symbol, dateStr,
+        item.open, item.high, item.low, item.close,
+        item.volume, item.amount
+      );
+      placeholders.push(`($${idx * 7 + 1}, $${idx * 7 + 2}, $${idx * 7 + 3}, $${idx * 7 + 4}, $${idx * 7 + 5}, $${idx * 7 + 6}, $${idx * 7 + 7})`);
+    });
+    
+    const sql = `
+      INSERT INTO stock_daily 
+        (symbol, trade_date, open_price, high_price, low_price, close_price, volume, amount)
+      VALUES ${placeholders.join(', ')}
+      ON CONFLICT (symbol, trade_date) DO UPDATE SET
+        open_price=EXCLUDED.open_price,
+        high_price=EXCLUDED.high_price,
+        low_price=EXCLUDED.low_price,
+        close_price=EXCLUDED.close_price,
+        volume=EXCLUDED.volume,
+        amount=EXCLUDED.amount,
+        updated_at=NOW()
+    `;
+    
+    await dbPool.query(sql, values);
+    
+    return { symbol, status: 'success', count: klineData.length };
+  } catch (err) {
+    return { symbol, status: 'failed', error: err.message };
+  }
+}
+
 module.exports = {
   MARKET_PROVIDERS,
   getProvider,
@@ -1101,4 +1547,8 @@ module.exports = {
   fetchLongportKline,
   syncTushareDateRange,
   syncTodayStocks,
+  calculateAndStoreIndicators,
+  calculateAllStocksIndicatorsAsync,
+  executeIndicatorCalculation,
+  initHistoricalDataAsync,
 };

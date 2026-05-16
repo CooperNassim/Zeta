@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Database, RefreshCw, CheckCircle, AlertTriangle, X, Clock,
-  Play, Zap, Activity
+  Play, Zap, Activity, TrendingUp, BarChart3
 } from 'lucide-react'
 
 const Toast = ({ message, type = 'success', onClose }) => {
@@ -96,10 +96,189 @@ export default function DataSync() {
   const [expandedHistoryId, setExpandedHistoryId] = useState(null)
   const pollingTimerRef = useRef(null)
   const activeSyncIdRef = useRef(null)
+  const indicatorPollingRef = useRef(null)
+  const historicalPollingRef = useRef(null)
+  
+  // 技术指标计算状态
+  const [indicatorTaskId, setIndicatorTaskId] = useState(null)
+  const [indicatorTask, setIndicatorTask] = useState(null)
+  
+  // 历史数据初始化状态
+  const [historicalTaskId, setHistoricalTaskId] = useState(null)
+  const [historicalTask, setHistoricalTask] = useState(null)
+
+  // 清理定时器
+  useEffect(() => {
+    return () => {
+      if (pollingTimerRef.current) {
+        clearInterval(pollingTimerRef.current)
+      }
+      if (indicatorPollingRef.current) {
+        clearInterval(indicatorPollingRef.current)
+      }
+      if (historicalPollingRef.current) {
+        clearInterval(historicalPollingRef.current)
+      }
+    }
+  }, [])
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type })
   }, [])
+
+  // 恢复指标计算状态（刷新后恢复）
+  useEffect(() => {
+    const savedTaskId = localStorage.getItem('indicatorTaskId')
+    if (savedTaskId) {
+      setIndicatorTaskId(savedTaskId)
+      fetchIndicatorProgress(savedTaskId)
+    }
+  }, [])
+
+  // 保存指标任务ID到localStorage
+  const saveIndicatorTaskId = (taskId) => {
+    if (taskId) {
+      localStorage.setItem('indicatorTaskId', taskId)
+    } else {
+      localStorage.removeItem('indicatorTaskId')
+    }
+  }
+
+  // 获取指标任务进度
+  const fetchIndicatorProgress = useCallback(async (taskId) => {
+    if (!taskId) return
+    try {
+      const res = await fetch(`/api/market/calculate-indicators/${taskId}`)
+      const result = await res.json()
+      if (result.success) {
+        setIndicatorTask(result.data)
+        // 如果任务已完成/失败/停止，停止轮询
+        if (['completed', 'failed', 'stopped'].includes(result.data.status)) {
+          clearInterval(indicatorPollingRef.current)
+          indicatorPollingRef.current = null
+          saveIndicatorTaskId(null)
+          if (result.data.status === 'completed' && !result.data.stopped) {
+            showToast(`指标计算完成：成功 ${result.data.successCount}，失败 ${result.data.failedCount}`, 'success')
+          } else if (result.data.stopped) {
+            showToast(`指标计算已停止：已处理 ${result.data.processed} 只股票`, 'warning')
+          } else {
+            showToast(`指标计算失败：${result.data.error}`, 'error')
+          }
+        }
+      }
+    } catch (e) {
+      console.error('获取指标进度失败', e)
+    }
+  }, [showToast])
+
+  // 开始轮询指标进度
+  const startIndicatorPolling = useCallback((taskId) => {
+    setIndicatorTaskId(taskId)
+    saveIndicatorTaskId(taskId)
+    fetchIndicatorProgress(taskId)
+    // 每1秒轮询一次
+    indicatorPollingRef.current = setInterval(() => {
+      fetchIndicatorProgress(taskId)
+    }, 1000)
+  }, [fetchIndicatorProgress])
+
+  // 停止指标计算
+  const stopIndicatorCalculation = useCallback(async () => {
+    if (!indicatorTaskId) return
+    try {
+      await fetch(`/api/market/calculate-indicators/${indicatorTaskId}/stop`, { method: 'POST' })
+      showToast('已发送停止请求', 'success')
+    } catch (e) {
+      showToast('停止失败', 'error')
+    }
+  }, [indicatorTaskId, showToast])
+
+  // 恢复历史数据初始化状态（刷新后恢复）
+  useEffect(() => {
+    const savedTaskId = localStorage.getItem('historicalTaskId')
+    if (savedTaskId) {
+      setHistoricalTaskId(savedTaskId)
+      fetchHistoricalProgress(savedTaskId)
+    }
+  }, [])
+
+  // 保存历史数据任务ID到localStorage
+  const saveHistoricalTaskId = (taskId) => {
+    if (taskId) {
+      localStorage.setItem('historicalTaskId', taskId)
+    } else {
+      localStorage.removeItem('historicalTaskId')
+    }
+  }
+
+  // 获取历史数据任务进度
+  const fetchHistoricalProgress = useCallback(async (taskId) => {
+    if (!taskId) return
+    try {
+      const res = await fetch(`/api/market/calculate-indicators/${taskId}`)
+      const result = await res.json()
+      if (result.success) {
+        setHistoricalTask(result.data)
+        // 如果任务已完成/失败/停止，停止轮询
+        if (['completed', 'failed', 'stopped'].includes(result.data.status)) {
+          clearInterval(historicalPollingRef.current)
+          historicalPollingRef.current = null
+          saveHistoricalTaskId(null)
+          if (result.data.status === 'completed' && !result.data.stopped) {
+            showToast(`历史数据初始化完成：成功 ${result.data.successCount}，失败 ${result.data.failedCount}`, 'success')
+          } else if (result.data.stopped) {
+            showToast(`历史数据初始化已停止：已处理 ${result.data.processed} 只股票`, 'warning')
+          } else {
+            showToast(`历史数据初始化失败：${result.data.error}`, 'error')
+          }
+        }
+      }
+    } catch (e) {
+      console.error('获取历史数据进度失败', e)
+    }
+  }, [showToast])
+
+  // 开始轮询历史数据进度
+  const startHistoricalPolling = useCallback((taskId) => {
+    setHistoricalTaskId(taskId)
+    saveHistoricalTaskId(taskId)
+    fetchHistoricalProgress(taskId)
+    historicalPollingRef.current = setInterval(() => {
+      fetchHistoricalProgress(taskId)
+    }, 1000)
+  }, [fetchHistoricalProgress])
+
+  // 停止历史数据初始化
+  const stopHistoricalInit = useCallback(async () => {
+    if (!historicalTaskId) return
+    try {
+      await fetch(`/api/market/calculate-indicators/${historicalTaskId}/stop`, { method: 'POST' })
+      showToast('已发送停止请求', 'success')
+    } catch (e) {
+      showToast('停止失败', 'error')
+    }
+  }, [historicalTaskId, showToast])
+
+  // 初始化历史数据
+  const handleInitHistoricalData = async () => {
+    try {
+      const res = await fetch('/api/market/init-historical-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ years: 10, period: 'D' }),
+      })
+      const result = await res.json()
+
+      if (result.success && result.data?.taskId) {
+        startHistoricalPolling(result.data.taskId)
+        showToast('历史数据初始化已启动', 'success')
+      } else {
+        showToast(result.error || '历史数据初始化启动失败', 'error')
+      }
+    } catch (e) {
+      showToast('历史数据初始化请求失败', 'error')
+    }
+  }
 
   const fetchSyncHistory = useCallback(async () => {
     setHistoryLoading(true)
@@ -192,6 +371,27 @@ export default function DataSync() {
     } catch (e) {
       setIsSyncing(false)
       showToast('同步请求失败', 'error')
+    }
+  }
+
+  // 技术指标计算
+  const handleCalculateIndicators = async () => {
+    try {
+      const res = await fetch('/api/market/calculate-indicators', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const result = await res.json()
+
+      if (result.success && result.data?.taskId) {
+        // 开始轮询进度
+        startIndicatorPolling(result.data.taskId)
+        showToast('指标计算已启动', 'success')
+      } else {
+        showToast(result.error || '指标计算启动失败', 'error')
+      }
+    } catch (e) {
+      showToast('指标计算请求失败', 'error')
     }
   }
 
@@ -521,6 +721,219 @@ export default function DataSync() {
                       强制同步
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 技术指标预计算 */}
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-purple-500" />
+                  技术指标预计算
+                </h3>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* 计算状态 */}
+                <div>
+                  <div className="text-xs text-gray-500 mb-1.5">计算状态</div>
+                  <div className="flex items-center gap-2">
+                    {indicatorTask?.status === 'running' ? (
+                      <span className="px-2 py-0.5 text-xs rounded bg-blue-50 text-blue-600 flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> 计算中
+                      </span>
+                    ) : indicatorTask?.status === 'completed' ? (
+                      <span className="px-2 py-0.5 text-xs rounded bg-emerald-50 text-emerald-600 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" /> 已完成
+                      </span>
+                    ) : indicatorTask?.status === 'stopped' ? (
+                      <span className="px-2 py-0.5 text-xs rounded bg-amber-50 text-amber-600 flex items-center gap-1">
+                        <X className="w-3 h-3" /> 已停止
+                      </span>
+                    ) : indicatorTask?.status === 'failed' ? (
+                      <span className="px-2 py-0.5 text-xs rounded bg-red-50 text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> 失败
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-500">未计算</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 进度条 */}
+                {indicatorTask && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500">进度</span>
+                      <span className="font-medium text-gray-700">
+                        {indicatorTask.processed || 0} / {indicatorTask.total || '-'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-2 rounded-full transition-all duration-300 ${
+                          indicatorTask.status === 'running' ? 'bg-blue-500' :
+                          indicatorTask.status === 'completed' ? 'bg-emerald-500' :
+                          indicatorTask.status === 'stopped' ? 'bg-amber-500' :
+                          'bg-red-500'
+                        }`}
+                        style={{ width: `${indicatorTask.progress || 0}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {indicatorTask.progress || 0}%
+                    </div>
+                  </div>
+                )}
+
+                {/* 计算结果统计 */}
+                {indicatorTask && indicatorTask.status !== 'running' && (
+                  <div className="grid grid-cols-4 gap-2">
+                    <StatCard label="总数" value={indicatorTask.total} color="blue" />
+                    <StatCard label="成功" value={indicatorTask.successCount || 0} color="emerald" />
+                    <StatCard label="失败" value={indicatorTask.failedCount || 0} color={indicatorTask.failedCount > 0 ? 'red' : 'gray'} />
+                    <StatCard label="跳过" value={indicatorTask.skippedCount || 0} color="gray" />
+                  </div>
+                )}
+
+                {/* 计算时间 */}
+                {indicatorTask?.duration && (
+                  <div className="text-xs text-gray-500">
+                    计算耗时：{indicatorTask.duration > 1000 ? `${(indicatorTask.duration / 1000).toFixed(1)}秒` : `${indicatorTask.duration}ms`}
+                  </div>
+                )}
+
+                {/* 计算按钮 */}
+                <div className="space-y-2 pt-2 border-t border-gray-100">
+                  <div className="flex gap-2">
+                    {indicatorTask?.status === 'running' ? (
+                      <button
+                        onClick={stopIndicatorCalculation}
+                        className="flex-1 px-4 py-2.5 text-xs font-medium text-white rounded-lg transition-all flex items-center justify-center gap-1.5 bg-red-500 hover:bg-red-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        停止计算
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleCalculateIndicators}
+                        className="flex-1 px-4 py-2.5 text-xs font-medium text-white rounded-lg transition-all flex items-center justify-center gap-1.5 bg-purple-500 hover:bg-purple-600"
+                      >
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        计算指标
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    为所有股票预计算技术指标（MA/BOLL/MACD/RSI/KDJ），提升图表加载速度。每日15:01自动计算，也可手动触发
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 历史数据初始化 */}
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <Database className="w-4 h-4 text-indigo-500" />
+                  历史数据初始化
+                </h3>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* 状态 */}
+                <div>
+                  <div className="text-xs text-gray-500 mb-1.5">初始化状态</div>
+                  <div className="flex items-center gap-2">
+                    {historicalTask?.status === 'running' ? (
+                      <span className="px-2 py-0.5 text-xs rounded bg-blue-50 text-blue-600 flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> 初始化中
+                      </span>
+                    ) : historicalTask?.status === 'completed' ? (
+                      <span className="px-2 py-0.5 text-xs rounded bg-emerald-50 text-emerald-600 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" /> 已完成
+                      </span>
+                    ) : historicalTask?.status === 'stopped' ? (
+                      <span className="px-2 py-0.5 text-xs rounded bg-amber-50 text-amber-600 flex items-center gap-1">
+                        <X className="w-3 h-3" /> 已停止
+                      </span>
+                    ) : historicalTask?.status === 'failed' ? (
+                      <span className="px-2 py-0.5 text-xs rounded bg-red-50 text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> 失败
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-500">未开始</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 进度条 */}
+                {historicalTask && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500">进度</span>
+                      <span className="font-medium text-gray-700">
+                        {historicalTask.processed || 0} / {historicalTask.total || '-'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-2 rounded-full transition-all duration-300 ${
+                          historicalTask.status === 'running' ? 'bg-indigo-500' :
+                          historicalTask.status === 'completed' ? 'bg-emerald-500' :
+                          historicalTask.status === 'stopped' ? 'bg-amber-500' :
+                          'bg-red-500'
+                        }`}
+                        style={{ width: `${historicalTask.progress || 0}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {historicalTask.progress || 0}%
+                    </div>
+                  </div>
+                )}
+
+                {/* 结果统计 */}
+                {historicalTask && historicalTask.status !== 'running' && (
+                  <div className="grid grid-cols-3 gap-2">
+                    <StatCard label="成功" value={historicalTask.successCount || 0} color="emerald" />
+                    <StatCard label="失败" value={historicalTask.failedCount || 0} color={historicalTask.failedCount > 0 ? 'red' : 'gray'} />
+                    <StatCard label="跳过" value={historicalTask.skippedCount || 0} color="gray" />
+                  </div>
+                )}
+
+                {/* 耗时 */}
+                {historicalTask?.duration && (
+                  <div className="text-xs text-gray-500">
+                    耗时：{historicalTask.duration > 60000 ? `${(historicalTask.duration / 60000).toFixed(1)}分钟` : `${(historicalTask.duration / 1000).toFixed(0)}秒`}
+                  </div>
+                )}
+
+                {/* 按钮 */}
+                <div className="space-y-2 pt-2 border-t border-gray-100">
+                  <div className="flex gap-2">
+                    {historicalTask?.status === 'running' ? (
+                      <button
+                        onClick={stopHistoricalInit}
+                        className="flex-1 px-4 py-2.5 text-xs font-medium text-white rounded-lg transition-all flex items-center justify-center gap-1.5 bg-red-500 hover:bg-red-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        停止初始化
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleInitHistoricalData}
+                        className="flex-1 px-4 py-2.5 text-xs font-medium text-white rounded-lg transition-all flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-600"
+                      >
+                        <Database className="w-3.5 h-3.5" />
+                        初始化10年数据
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    从东方财富API拉取约10年（~2440个交易日）的K线数据，为技术指标计算提供充足历史。仅首次使用需要
+                  </p>
                 </div>
               </div>
             </div>

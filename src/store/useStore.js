@@ -311,6 +311,25 @@ const useStore = create(
       // 股票K线数据（按symbol存储）
       stockKlineData: {},
 
+      // 回测配置
+      backtestConfigs: [],
+
+      // 当前回测配置
+      currentBacktestConfig: null,
+
+      // 回测结果
+      backtestResults: [],
+
+      // 当前展示的回测结果
+      currentBacktestResult: null,
+
+      // 参数优化结果
+      optimizationResults: [],
+
+      // 回测状态
+      backtestStatus: 'idle',
+      backtestProgress: 0,
+
       // 更新账户余额
       updateBalance: (amount, accountType = 'real') => set((state) => ({
         account: {
@@ -2132,7 +2151,14 @@ const useStore = create(
           singleAvailable: 94.15
         },
         stockPool: [],
-        stockKlineData: {}
+        stockKlineData: {},
+        backtestConfigs: [],
+        currentBacktestConfig: null,
+        backtestResults: [],
+        currentBacktestResult: null,
+        optimizationResults: [],
+        backtestStatus: 'idle',
+        backtestProgress: 0,
       }),
 
       // ====== 股票池相关 ======
@@ -2621,6 +2647,255 @@ const useStore = create(
       getStockKlineData: (symbol) => {
         const state = get()
         return state.stockKlineData[symbol] || []
+      },
+
+      // ====== 回测相关 ======
+
+      // 批量导入回测配置（从数据库同步）
+      importBacktestConfigs: (dataList) => set((state) => {
+        if (!dataList || dataList === null || dataList === undefined) {
+          console.log('[Store] importBacktestConfigs 跳过空数据')
+          return state
+        }
+        const newData = dataList.map(d => ({
+          id: d.id,
+          name: d.name || '',
+          description: d.description || '',
+          stockCodes: d.stock_codes || d.stockCodes || [],
+          startDate: d.start_date || d.startDate || '',
+          endDate: d.end_date || d.endDate || '',
+          indicators: d.indicators || [],
+          buyConditions: d.buy_conditions || d.buyConditions || { conditions: [] },
+          sellConditions: d.sell_conditions || d.sellConditions || { conditions: [] },
+          stopLoss: d.stop_loss || d.stopLoss || null,
+          takeProfit: d.take_profit || d.takeProfit || null,
+          positionSizing: d.position_sizing || d.positionSizing || { mode: 'FIXED_AMOUNT', params: { amount: 10000 } },
+          initialCapital: parseFloat(d.initial_capital) || 100000,
+          commissionRate: parseFloat(d.commission_rate) || 0.0003,
+          createdAt: d.created_at || d.createdAt || new Date().toISOString(),
+          updatedAt: d.updated_at || d.updatedAt || null,
+          deleted: d.deleted || false,
+          deletedAt: d.deleted_at || d.deletedAt || null
+        }))
+        newData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        return { backtestConfigs: newData }
+      }),
+
+      // 批量导入回测结果（从数据库同步）
+      importBacktestResults: (dataList) => set((state) => {
+        if (!dataList || dataList === null || dataList === undefined) {
+          console.log('[Store] importBacktestResults 跳过空数据')
+          return state
+        }
+        const newData = dataList.map(d => ({
+          id: d.id,
+          configId: d.config_id || d.configId,
+          totalReturn: parseFloat(d.total_return) || 0,
+          annualReturn: parseFloat(d.annual_return) || 0,
+          maxDrawdown: parseFloat(d.max_drawdown) || 0,
+          sharpeRatio: parseFloat(d.sharpe_ratio) || 0,
+          winRate: parseFloat(d.win_rate) || 0,
+          profitLossRatio: parseFloat(d.profit_loss_ratio) || 0,
+          totalTrades: parseInt(d.total_trades) || 0,
+          avgHoldingDays: parseFloat(d.avg_holding_days) || 0,
+          calmarRatio: parseFloat(d.calmar_ratio) || 0,
+          sortinoRatio: parseFloat(d.sortino_ratio) || 0,
+          trades: d.trades || [],
+          equityCurve: d.equity_curve || d.equityCurve || [],
+          drawdownCurve: d.drawdown_curve || d.drawdownCurve || [],
+          runTime: d.run_time || d.runTime || null,
+          createdAt: d.created_at || d.createdAt || new Date().toISOString(),
+        }))
+        newData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        return { backtestResults: newData }
+      }),
+
+      // 添加回测配置
+      addBacktestConfig: async (data) => {
+        const now = new Date().toISOString()
+        const dbData = {
+          name: data.name,
+          description: data.description || '',
+          stock_codes: data.stockCodes || [],
+          start_date: data.startDate,
+          end_date: data.endDate,
+          indicators: JSON.stringify(data.indicators || []),
+          buy_conditions: JSON.stringify(data.buyConditions || { conditions: [] }),
+          sell_conditions: JSON.stringify(data.sellConditions || { conditions: [] }),
+          stop_loss: data.stopLoss ? JSON.stringify(data.stopLoss) : null,
+          take_profit: data.takeProfit ? JSON.stringify(data.takeProfit) : null,
+          position_sizing: JSON.stringify(data.positionSizing || { mode: 'FIXED_AMOUNT', params: { amount: 10000 } }),
+          initial_capital: data.initialCapital || 100000,
+          commission_rate: data.commissionRate || 0.0003,
+          deleted: false,
+          deleted_at: null,
+          created_at: now,
+          updated_at: now
+        }
+        try {
+          const res = await apiCall('/api/backtest_configs', 'POST', dbData)
+          if (res.success && res.data) {
+            const syncResponse = await apiCall('/api/sync/all')
+            if (syncResponse.success && syncResponse.data) {
+              set((state) => {
+                state.importBacktestConfigs(syncResponse.data.backtest_configs)
+                return {}
+              })
+            }
+          }
+          return res
+        } catch (error) {
+          console.error('[Store] 保存回测配置失败:', error)
+          throw error
+        }
+      },
+
+      // 更新回测配置
+      updateBacktestConfig: async (id, data) => {
+        const dbData = {
+          name: data.name,
+          description: data.description || '',
+          stock_codes: data.stockCodes || [],
+          start_date: data.startDate,
+          end_date: data.endDate,
+          indicators: JSON.stringify(data.indicators || []),
+          buy_conditions: JSON.stringify(data.buyConditions || { conditions: [] }),
+          sell_conditions: JSON.stringify(data.sellConditions || { conditions: [] }),
+          stop_loss: data.stopLoss ? JSON.stringify(data.stopLoss) : null,
+          take_profit: data.takeProfit ? JSON.stringify(data.takeProfit) : null,
+          position_sizing: JSON.stringify(data.positionSizing || { mode: 'FIXED_AMOUNT', params: { amount: 10000 } }),
+          initial_capital: data.initialCapital || 100000,
+          commission_rate: data.commissionRate || 0.0003,
+          updated_at: new Date().toISOString()
+        }
+        try {
+          await apiCall(`/api/backtest_configs/${id}`, 'PUT', dbData)
+          const syncResponse = await apiCall('/api/sync/all')
+          if (syncResponse.success && syncResponse.data) {
+            set((state) => {
+              state.importBacktestConfigs(syncResponse.data.backtest_configs)
+              return {}
+            })
+          }
+        } catch (error) {
+          console.error('[Store] 更新回测配置失败:', error)
+          throw error
+        }
+      },
+
+      // 删除回测配置
+      deleteBacktestConfig: async (id) => {
+        try {
+          await apiCall(`/api/backtest_configs/${id}`, 'DELETE')
+          const syncResponse = await apiCall('/api/sync/all')
+          if (syncResponse.success && syncResponse.data) {
+            set((state) => {
+              state.importBacktestConfigs(syncResponse.data.backtest_configs)
+              return {}
+            })
+          }
+          return { success: true }
+        } catch (error) {
+          console.error('[Store] 删除回测配置失败:', error)
+          return { success: false, error: error.message }
+        }
+      },
+
+      // 设置当前回测配置
+      setCurrentBacktestConfig: (config) => set({ currentBacktestConfig: config }),
+
+      // 运行回测
+      runBacktest: async (klineData, config) => {
+        set({ backtestStatus: 'running', backtestProgress: 0 })
+        try {
+          const { BacktestEngine } = await import('../utils/backtest')
+          const engine = new BacktestEngine()
+          const result = await engine.run(klineData, config)
+
+          if (result.success) {
+            set({
+              backtestStatus: 'completed',
+              backtestProgress: 100,
+              currentBacktestResult: result
+            })
+            return result
+          } else {
+            set({ backtestStatus: 'error', backtestProgress: 0 })
+            return { success: false, error: result.error }
+          }
+        } catch (error) {
+          set({ backtestStatus: 'error', backtestProgress: 0 })
+          return { success: false, error: error.message }
+        }
+      },
+
+      // 设置回测状态
+      setBacktestStatus: (status) => set({ backtestStatus: status }),
+
+      // 设置回测进度
+      setBacktestProgress: (progress) => set({ backtestProgress: progress }),
+
+      // 设置当前回测结果
+      setCurrentBacktestResult: (result) => set({ currentBacktestResult: result }),
+
+      // 添加回测结果
+      addBacktestResult: async (result) => {
+        const dbData = {
+          config_id: result.configId,
+          total_return: result.performance?.totalReturn || 0,
+          annual_return: result.performance?.annualReturn || 0,
+          max_drawdown: result.performance?.maxDrawdown || 0,
+          sharpe_ratio: result.performance?.sharpeRatio || 0,
+          win_rate: result.performance?.winRate || 0,
+          profit_loss_ratio: result.performance?.profitLossRatio || 0,
+          total_trades: result.performance?.totalTrades || 0,
+          avg_holding_days: result.performance?.avgHoldingDays || 0,
+          calmar_ratio: result.performance?.calmarRatio || 0,
+          sortino_ratio: result.performance?.sortinoRatio || 0,
+          trades: JSON.stringify(result.trades || []),
+          equity_curve: JSON.stringify(result.equityCurve || []),
+          drawdown_curve: JSON.stringify(result.drawdownCurve || []),
+          run_time: result.runTime ? `${result.runTime} seconds` : null,
+        }
+        try {
+          const res = await apiCall('/api/backtest_results', 'POST', dbData)
+          if (res.success && res.data) {
+            const syncResponse = await apiCall('/api/sync/all')
+            if (syncResponse.success && syncResponse.data) {
+              set((state) => {
+                state.importBacktestResults(syncResponse.data.backtest_results)
+                return {}
+              })
+            }
+          }
+          return res
+        } catch (error) {
+          console.error('[Store] 保存回测结果失败:', error)
+          return { success: false, error: error.message }
+        }
+      },
+
+      // 运行参数优化
+      runOptimization: async (klineData, config, paramRanges, targetMetric) => {
+        set({ backtestStatus: 'running', backtestProgress: 0 })
+        try {
+          const { BacktestEngine } = await import('../utils/backtest')
+          const engine = new BacktestEngine()
+          const optimizer = engine.createOptimizer((progress) => {
+            set({ backtestProgress: progress })
+          })
+          const result = await optimizer.optimize({ ...config, klineData }, paramRanges, targetMetric)
+
+          set((state) => ({
+            backtestStatus: 'completed',
+            backtestProgress: 100,
+            optimizationResults: [...state.optimizationResults, result]
+          }))
+          return result
+        } catch (error) {
+          set({ backtestStatus: 'error', backtestProgress: 0 })
+          return { success: false, error: error.message }
+        }
       },
 
       // ====== 完整交易记录相关 ======

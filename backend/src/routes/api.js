@@ -3,7 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const router = express.Router();
 const { pool } = require('../config/database');
-const { syncTodayStocks } = require('./marketData');
+const { syncTodayStocks, calculateAllStocksIndicatorsAsync, executeIndicatorCalculation, initHistoricalDataAsync } = require('./marketData');
+const { getTask, requestStopTask } = require('../utils/taskManager');
 const { getNextWeekdayTime } = require('../utils/scheduler');
 const {
   findAll,
@@ -74,7 +75,9 @@ router.get('/sync/all', async (req, res) => {
       'trade_orders',
       'stock_pool',
       'stock_kline_data',
-      'strategy_records'
+      'strategy_records',
+      'backtest_configs',
+      'backtest_results'
     ];
 
     const syncData = {};
@@ -299,9 +302,13 @@ router.get('/database/info', async (req, res) => {
     dbInfo.activeConnections = parseInt(connectionCount.rows[0].count);
 
     const uptime = await pool.query(`
-      SELECT date_trunc('second', current_timestamp - pg_postmaster_start_time()) as uptime
+      SELECT EXTRACT(EPOCH FROM (current_timestamp - pg_postmaster_start_time())) as uptime_seconds
     `);
-    dbInfo.uptime = uptime.rows[0].uptime;
+    const uptimeSeconds = parseInt(uptime.rows[0].uptime_seconds);
+    const hours = Math.floor(uptimeSeconds / 3600);
+    const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+    const seconds = uptimeSeconds % 60;
+    dbInfo.uptime = `${hours}时${minutes}分${seconds}秒`;
 
     res.json({ success: true, data: dbInfo });
   } catch (error) {
@@ -981,6 +988,97 @@ router.get('/market/providers', async (req, res) => {
     needApiKey: val.needApiKey,
   }));
   res.json({ success: true, data: providers });
+});
+
+// GET /api/market/indicators?symbol=000001&period=D - 获取预计算的技术指标
+router.get('/market/indicators', async (req, res) => {
+  try {
+    const { symbol, period = 'D' } = req.query;
+    if (!symbol) {
+      return res.status(400).json({ success: false, error: '缺少 symbol 参数' });
+    }
+
+    const result = await pool.query(
+      `SELECT trade_date, ma5, ma10, ma20, ma30, ma60, boll_mid, boll_upper, boll_lower, macd_dif, macd_dea, macd_hist, rsi6, rsi12, rsi24, kdj_k, kdj_d, kdj_j
+       FROM stock_indicators
+       WHERE symbol = $1 AND period = $2
+       ORDER BY trade_date ASC`,
+      [symbol, period]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ success: true, data: [], count: 0, cached: false });
+    }
+
+    res.json({ success: true, data: result.rows, count: result.rows.length, cached: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/market/calculate-indicators - 异步计算技术指标
+router.post('/market/calculate-indicators', async (req, res) => {
+  try {
+    const { symbols, period = 'D' } = req.body || {};
+    
+    const result = await calculateAllStocksIndicatorsAsync(pool, {
+      symbols: symbols || null,
+      period
+    });
+
+    res.json({ success: true, data: result });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// GET /api/market/calculate-indicators/:taskId - 查询计算进度
+router.get('/market/calculate-indicators/:taskId', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const task = getTask(taskId);
+    
+    if (!task) {
+      return res.status(404).json({ success: false, error: '任务不存在' });
+    }
+
+    res.json({ success: true, data: task });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/market/calculate-indicators/:taskId/stop - 停止计算
+router.post('/market/calculate-indicators/:taskId/stop', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const stopped = requestStopTask(taskId);
+    
+    if (!stopped) {
+      return res.status(400).json({ success: false, error: '任务不存在或已结束' });
+    }
+
+    res.json({ success: true, message: '已发送停止请求' });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/market/init-historical-data - 初始化历史K线数据
+router.post('/market/init-historical-data', async (req, res) => {
+  try {
+    const { symbols, years = 10, period = 'D' } = req.body || {};
+    
+    const result = await initHistoricalDataAsync(pool, {
+      symbols: symbols || null,
+      years,
+      period
+    });
+
+    res.json({ success: true, data: result });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 // POST /api/sync/execute - 执行数据同步（使用内置提供商）
@@ -1747,7 +1845,123 @@ router.delete('/scheduled-tasks/logs/:logId', async (req, res) => {
   }
 });
 
+// ========================================
+// 回测系统 API
+// ========================================
+
+// GET /api/backtest_configs - 获取所有回测配置
+router.get('/backtest_configs', async (req, res) => {
+  try {
+    const data = await findAll('backtest_configs', { includeDeleted: true });
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/backtest_configs - 创建回测配置
+router.post('/backtest_configs', async (req, res) => {
+  try {
+    const data = await insert('backtest_configs', req.body);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// PUT /api/backtest_configs/:id - 更新回测配置
+router.put('/backtest_configs/:id', async (req, res) => {
+  try {
+    const data = await update('backtest_configs', req.params.id, req.body);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// DELETE /api/backtest_configs/:id - 软删除回测配置
+router.delete('/backtest_configs/:id', async (req, res) => {
+  try {
+    await remove('backtest_configs', req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// PATCH /api/backtest_configs/:id/restore - 恢复回测配置
+router.patch('/backtest_configs/:id/restore', async (req, res) => {
+  try {
+    await restore('backtest_configs', req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// DELETE /api/backtest_configs/:id/permanent - 永久删除回测配置
+router.delete('/backtest_configs/:id/permanent', async (req, res) => {
+  try {
+    await permanentDelete('backtest_configs', req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// GET /api/backtest_results - 获取所有回测结果
+router.get('/backtest_results', async (req, res) => {
+  try {
+    const data = await findAll('backtest_results');
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/backtest_results - 创建回测结果
+router.post('/backtest_results', async (req, res) => {
+  try {
+    const data = await insert('backtest_results', req.body);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// DELETE /api/backtest_results/:id - 删除回测结果
+router.delete('/backtest_results/:id', async (req, res) => {
+  try {
+    await permanentDelete('backtest_results', req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// GET /api/backtest_optimizations - 获取所有参数优化结果
+router.get('/backtest_optimizations', async (req, res) => {
+  try {
+    const data = await findAll('backtest_optimizations');
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// POST /api/backtest_optimizations - 创建参数优化结果
+router.post('/backtest_optimizations', async (req, res) => {
+  try {
+    const data = await insert('backtest_optimizations', req.body);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json(safeError(error));
+  }
+});
+
+// ========================================
 // 通用CRUD路由
+// ========================================
 
 // GET /api/:table - 获取列表
 router.get('/:table', async (req, res) => {

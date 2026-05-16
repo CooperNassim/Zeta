@@ -30,17 +30,27 @@ async function initScheduler() {
 
   console.log('[Scheduler] 已注册任务: stock_daily_sync (工作日 15:31)')
 
+  // 注册 cron 任务：工作日 15:01 执行技术指标计算
+  cron.schedule('01 15 * * 1-5', async () => {
+    console.log('[Scheduler] 触发定时任务: 技术指标预计算')
+    const { calculateAllStocksIndicatorsAsync } = require('../routes/marketData')
+    const result = await calculateAllStocksIndicatorsAsync(pool, { period: 'D' })
+    console.log(`[Scheduler] 指标计算任务已启动: ${result.taskId}`)
+  })
+
+  console.log('[Scheduler] 已注册任务: stock_indicator_calc (工作日 15:01)')
+
   // 确保默认任务记录存在
   await seedDefaultTask()
 }
 
 async function seedDefaultTask() {
-  const existing = await pool.query(
+  const existingSync = await pool.query(
     'SELECT id, status FROM scheduled_tasks WHERE task_id = $1',
     ['stock_daily_sync']
   )
 
-  if (existing.rows.length === 0) {
+  if (existingSync.rows.length === 0) {
     const nextRun = getNextWeekdayTime(15, 31)
     await pool.query(
       `INSERT INTO scheduled_tasks (task_id, name, cron_expression, trigger_type, status, description, next_run_at)
@@ -56,6 +66,54 @@ async function seedDefaultTask() {
       ]
     )
     console.log('[Scheduler] 已创建默认任务: stock_daily_sync')
+  }
+
+  // 技术指标计算任务
+  const existingIndicator = await pool.query(
+    'SELECT id, status FROM scheduled_tasks WHERE task_id = $1',
+    ['stock_indicator_calc']
+  )
+
+  if (existingIndicator.rows.length === 0) {
+    const nextRun = getNextWeekdayTime(15, 1)
+    await pool.query(
+      `INSERT INTO scheduled_tasks (task_id, name, cron_expression, trigger_type, status, description, next_run_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        'stock_indicator_calc',
+        '技术指标预计算',
+        '01 15 * * 1-5',
+        'cron',
+        'running',
+        '每个交易日 15:01 自动计算所有股票的技术指标（MA、BOLL、MACD、RSI、KDJ等）',
+        nextRun.toISOString()
+      ]
+    )
+    console.log('[Scheduler] 已创建默认任务: stock_indicator_calc')
+  }
+}
+
+async function executeIndicatorCalculation(taskId, dbPool) {
+  const logId = await createLog(taskId, 'running', dbPool)
+  const startTime = Date.now()
+
+  try {
+    const { calculateAllStocksIndicators } = require('../routes/marketData')
+    const result = await calculateAllStocksIndicators(dbPool, { period: 'D' })
+    const duration = Date.now() - startTime
+    const nextRun = getNextWeekdayTime(15, 1)
+
+    await finishLog(logId, 'success', duration, result, null, dbPool)
+    await updateTaskResult(taskId, 'success', duration, nextRun, null, dbPool)
+
+    console.log(`[Scheduler] 指标计算任务完成: ${taskId}, 耗时 ${duration}ms, 成功 ${result.successCount}, 失败 ${result.failedCount}`)
+  } catch (err) {
+    const duration = Date.now() - startTime
+    const nextRun = getNextWeekdayTime(15, 1)
+
+    await finishLog(logId, 'failed', duration, null, err.message, dbPool)
+    await updateTaskResult(taskId, 'failed', duration, nextRun, err.message, dbPool)
+    console.error(`[Scheduler] 指标计算任务失败: ${taskId}`, err.message)
   }
 }
 
@@ -118,5 +176,6 @@ module.exports = {
   initScheduler,
   seedDefaultTask,
   getNextWeekdayTime,
-  executeStockSync
+  executeStockSync,
+  executeIndicatorCalculation
 }

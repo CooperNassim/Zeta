@@ -229,10 +229,11 @@ function calculateKDJ(highs, lows, closes, period = 9) {
 /**
  * 计算所有技术指标
  * @param {Array} klineData - K线数据 [{ date, open, high, low, close, volume }]
+ * @param {number} minBars - 最少需要的数据条数（默认30）
  * @returns {Array} 包含技术指标的数组
  */
-function calculateAllIndicators(klineData) {
-  if (!klineData || klineData.length < 30) return [];
+function calculateAllIndicators(klineData, minBars = 30) {
+  if (!klineData || klineData.length < minBars) return [];
   
   const closes = klineData.map(k => k.close);
   const highs = klineData.map(k => k.high);

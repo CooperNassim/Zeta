@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const router = express.Router();
 const { pool } = require('../config/database');
-const { syncTodayStocks, calculateAllStocksIndicatorsAsync, executeIndicatorCalculation, initHistoricalDataAsync } = require('./marketData');
+const { syncTodayStocks, calculateAllStocksIndicatorsAsync, executeIndicatorCalculation, initHistoricalDataAsync, calculateIndicatorsAfterSync } = require('./marketData');
 const { getTask, requestStopTask } = require('../utils/taskManager');
 const { getNextWeekdayTime } = require('../utils/scheduler');
 const {
@@ -933,7 +933,8 @@ router.get('/market/stocks', async (req, res) => {
   }
 });
 
-// GET /api/market/kline?provider=tushare&symbol=000001&period=D&limit=120 - 获取K线数据
+// GET /api/market/kline?provider=eastmoney&symbol=000001&period=D&limit=120 - 获取K线数据
+// 优先从本地数据库读取，数据库无数据时才调用外部API
 router.get('/market/kline', async (req, res) => {
   try {
     const { provider, symbol, period = 'D', limit = 120 } = req.query;
@@ -941,6 +942,45 @@ router.get('/market/kline', async (req, res) => {
       return res.status(400).json({ success: false, error: '缺少 symbol 参数' });
     }
 
+    // 优先从本地数据库读取K线数据（stock_daily/stock_weekly/stock_monthly）
+    try {
+      const tableName = period === 'D' ? 'stock_daily' : period === 'W' ? 'stock_weekly' : period === 'M' ? 'stock_monthly' : 'stock_daily';
+      const dateField = period === 'D' ? 'trade_date' : period === 'W' ? 'week_date' : period === 'M' ? 'month_date' : 'trade_date';
+
+      const dbResult = await pool.query(
+        `SELECT ${dateField} as date, open_price as open, high_price as high, low_price as low, close_price as close, volume, amount
+         FROM ${tableName}
+         WHERE symbol = $1
+         ORDER BY ${dateField} DESC
+         LIMIT $2`,
+        [symbol, parseInt(limit)]
+      );
+
+      if (dbResult.rows.length > 0) {
+        const klines = dbResult.rows.reverse().map(row => {
+          // 处理日期格式：YYYYMMDD -> timestamp
+          let dateStr = row.date;
+          if (dateStr.length === 8 && !dateStr.includes('-')) {
+            dateStr = `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`;
+          }
+          const timestamp = new Date(dateStr).getTime();
+          return {
+            timestamp,
+            open: parseFloat(row.open),
+            high: parseFloat(row.high),
+            low: parseFloat(row.low),
+            close: parseFloat(row.close),
+            volume: parseFloat(row.volume || 0),
+            amount: parseFloat(row.amount || 0),
+          };
+        });
+        return res.json({ success: true, data: klines, count: klines.length, source: 'database' });
+      }
+    } catch (dbErr) {
+      console.warn(`[MarketKline] 数据库查询失败，尝试外部API: ${dbErr.message}`);
+    }
+
+    // 数据库无数据，回退到外部API
     const p = getProvider(provider);
     if (!p) {
       return res.status(400).json({ success: false, error: `不支持的数据提供商: ${provider}` });
@@ -973,8 +1013,9 @@ router.get('/market/kline', async (req, res) => {
         return res.status(400).json({ success: false, error: '不支持的提供商' });
     }
 
-    res.json({ success: true, data: klines, count: klines.length });
+    res.json({ success: true, data: klines, count: klines.length, source: 'api' });
   } catch (e) {
+    console.error('[MarketKline] 获取K线失败:', e.message);
     res.status(500).json({ success: false, error: e.message });
   }
 });
@@ -1487,6 +1528,25 @@ router.get('/market/history/dates', async (req, res) => {
   }
 });
 
+// POST /api/market/screen - 选股筛选
+router.post('/market/screen', async (req, res) => {
+  try {
+    const { conditions, period = 'D', limit = 100 } = req.body || {};
+    
+    if (!conditions || !Array.isArray(conditions) || conditions.length === 0) {
+      return res.status(400).json({ success: false, error: '请提供选股条件' });
+    }
+
+    const { screenStocks } = require('./stockScreener');
+    const results = await screenStocks(conditions, { period, limit });
+
+    res.json({ success: true, data: results, count: results.length });
+  } catch (e) {
+    console.error('[API] 选股筛选失败:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // 大模型配置路由
 
 // GET /api/llm-configs - 获取大模型列表
@@ -1768,6 +1828,17 @@ router.post('/scheduled-tasks/:taskId/trigger', async (req, res) => {
       const result = await syncTodayStocks(pool);
       const duration = Date.now() - startTime;
 
+      // 数据同步完成后，异步触发指标预计算（不阻塞响应）
+      calculateIndicatorsAfterSync(pool).then(indicatorResult => {
+        if (indicatorResult.success) {
+          console.log(`[Sync] 指标预计算完成: 成功 ${indicatorResult.successCount}, 跳过 ${indicatorResult.skippedCount}, 失败 ${indicatorResult.failedCount}, 耗时 ${indicatorResult.elapsed}`);
+        } else {
+          console.warn(`[Sync] 指标预计算未执行: ${indicatorResult.reason || indicatorResult.error}`);
+        }
+      }).catch(err => {
+        console.error('[Sync] 指标预计算异常:', err.message);
+      });
+
       const nextRun = getNextWeekdayTime(15, 31);
 
       await pool.query(
@@ -1784,7 +1855,7 @@ router.post('/scheduled-tasks/:taskId/trigger', async (req, res) => {
         [taskId, duration, JSON.stringify(result)]
       );
 
-      res.json({ success: true, data: result, duration });
+      res.json({ success: true, data: result, duration, indicatorCalcTriggered: true });
     } else {
       res.status(400).json({ success: false, error: '未知任务ID' });
     }

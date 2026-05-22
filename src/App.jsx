@@ -18,6 +18,7 @@ import ScheduledTask from './pages/ScheduledTask'
 import StockChart from './pages/StockChart'
 import BacktestSystem from './pages/BacktestSystem'
 import TradeAnalysis from './pages/TradeAnalysis'
+import StockScreener from './pages/StockScreener'
 import useStore from './store/useStore'
 import { ToastProvider } from './contexts/ToastContext'
 
@@ -241,6 +242,7 @@ function Navigation() {
   const researchMenuItems = [
     { id: 'stockpool', icon: Database, label: '股票行情', path: '/stock-pool', customIcon: 'stockpool' },
     { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
+    { id: 'screener', icon: TrendingUp, label: '筛选股票', path: '/research/screener', customIcon: 'screener' },
     { id: 'backtest', icon: TrendingUp, label: '股票回测', path: '/research/backtest', customIcon: 'backtest' },
     { id: 'analysis', icon: Brain, label: '交易分析', path: '/research/analysis', customIcon: 'analysis' },
   ]
@@ -551,6 +553,19 @@ function Navigation() {
                         <path d="M772.437333 97.52381l51.712 51.712-126.342095 126.342095H828.952381a73.142857 73.142857 0 0 1 73.142857 73.142857v487.619048a73.142857 73.142857 0 0 1-73.142857 73.142857H195.047619a73.142857 73.142857 0 0 1-73.142857-73.142857v-487.619048a73.142857 73.142857 0 0 1 73.142857-73.142857h131.120762L199.850667 149.23581 251.562667 97.52381l178.054095 178.054095h164.742095L772.437333 97.52381zM828.952381 348.720762H195.047619v487.619048h633.904762v-487.619048z m-280.380952 73.142857v341.333333h-73.142858v-341.333333h73.142858z m-134.095239 73.142857v195.047619h-73.142857v-195.047619h73.142857z m268.190477 24.380953v146.285714h-73.142857v-146.285714h73.142857z"></path>
                       )}
                     </svg>
+                  ) : item.customIcon === 'screener' ? (
+                    <svg
+                      viewBox="0 0 1024 1024"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="w-6 h-6 mr-2"
+                      fill="#0F1419"
+                    >
+                      {isActive ? (
+                        <path d="M853.333333 146.285714a73.142857 73.142857 0 0 1 73.142857 73.142857v585.142857a73.142857 73.142857 0 0 1-73.142857 73.142857H170.666667a73.142857 73.142857 0 0 1-73.142857-73.142857V219.428571a73.142857 73.142857 0 0 1 73.142857-73.142857h682.666666zM780.190476 487.619048H243.809524v73.142857h536.380952v-73.142857z m0-146.285715H243.809524v73.142858h536.380952v-73.142858z m0 292.571429H243.809524v73.142857h536.380952v-73.142857z"></path>
+                      ) : (
+                        <path d="M853.333333 170.666667a48.761905 48.761905 0 0 1 48.761905 48.761904v585.142858a48.761905 48.761905 0 0 1-48.761905 48.761904H170.666667a48.761905 48.761905 0 0 1-48.761905-48.761904V219.428571a48.761905 48.761905 0 0 1 48.761905-48.761904h682.666666z m0 48.761904H170.666667v585.142858h682.666666V219.428571z m-73.142857 195.047619v73.142858H243.809524v-73.142858h536.380952z m0-146.285714v73.142857H243.809524v-73.142857h536.380952z m0 292.571428v73.142857H243.809524v-73.142857h536.380952z"></path>
+                      )}
+                    </svg>
                   ) : (
                     <item.icon className="w-6 h-6 mr-2" style={{ color: isActive ? '#0F1419' : '#9CA3AF' }} />
                   )}
@@ -642,6 +657,7 @@ function AppContent() {
   const researchMenuItems = [
     { path: '/stock-pool' },
     { path: '/technical-indicators' },
+    { path: '/research/screener' },
     { path: '/research/backtest' },
     { path: '/research/analysis' },
   ]
@@ -656,6 +672,7 @@ function AppContent() {
   const isResearchPage = researchMenuItems.some(item => item.path === location.pathname)
   const isBacktestPage = location.pathname === '/research/backtest'
   const isAnalysisPage = location.pathname === '/research/analysis'
+  const isScreenerPage = location.pathname === '/research/screener'
   const isSettingsPage = settingsMenuItems.some(item => item.path === location.pathname)
 
   return (
@@ -688,6 +705,7 @@ function AppContent() {
               <Route path="/data-sync" element={<DataSyncPage />} />
               <Route path="/scheduled-task" element={<ScheduledTask />} />
               <Route path="/llm-config" element={<LLModelConfig />} />
+              <Route path="/research/screener" element={<StockScreener />} />
               <Route path="/research/backtest" element={<BacktestSystem />} />
               <Route path="/research/analysis" element={<TradeAnalysis />} />
             </Routes>

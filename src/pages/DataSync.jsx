@@ -29,16 +29,11 @@ const Toast = ({ message, type = 'success', onClose }) => {
   )
 }
 
-const BUILTIN_PROVIDERS = [
-  { value: 'tushare', label: 'Tushare', market: 'A股', icon: '🇨', desc: '专业金融数据API，提供高质量的A股数据' },
-  { value: 'akshare', label: 'AKShare', market: 'A股', icon: '️', desc: '免费开源，通过雪球获取实时行情' },
-  { value: 'sina', label: '新浪财经', market: 'A股', icon: '️', desc: '新浪财经免费行情，覆盖沪深两市' },
+const SOURCES = [
+  { value: 'tushare', label: 'Tushare', desc: '专业金融数据API，提供高质量的A股数据', tag: '推荐', tagColor: 'bg-emerald-50 text-emerald-600' },
+  { value: 'akshare', label: 'AKShare', desc: '免费开源，通过雪球获取实时行情', tag: '免费', tagColor: 'bg-blue-50 text-blue-600' },
+  { value: 'sina', label: '新浪财经', desc: '新浪财经免费行情，覆盖沪深两市', tag: '免费', tagColor: 'bg-blue-50 text-blue-600' },
 ]
-
-const getProviderInfo = (provider) => {
-  const p = BUILTIN_PROVIDERS.find(b => b.value === provider?.toLowerCase())
-  return p || { label: provider || '未知', market: '-', desc: '自定义数据源' }
-}
 
 const StatCard = ({ icon: Icon, label, value, subLabel, color = 'blue' }) => {
   const colorMap = {
@@ -58,33 +53,11 @@ const StatCard = ({ icon: Icon, label, value, subLabel, color = 'blue' }) => {
   )
 }
 
-const ProviderCard = ({ provider, isSelected, onSelect, isSyncing }) => {
-  const info = getProviderInfo(provider.value)
-  return (
-    <div
-      className={`rounded-xl border-2 p-4 transition-all cursor-pointer ${
-        isSelected ? 'border-[#0F1419] bg-gray-50 shadow-sm' : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
-      } ${isSyncing ? 'opacity-60 cursor-not-allowed' : ''}`}
-      onClick={() => !isSyncing && onSelect(provider.value)}
-    >
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">{info.icon}</span>
-          <span className="text-sm font-bold text-gray-900">{info.label}</span>
-          <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-xs rounded">{info.market}</span>
-        </div>
-      </div>
-      <p className="text-xs text-gray-500 leading-relaxed">{info.desc}</p>
-    </div>
-  )
-}
-
 export default function DataSync() {
   const [syncHistory, setSyncHistory] = useState([])
-  const [loading, setLoading] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(true)
   const [toast, setToast] = useState(null)
-  const [selectedProvider, setSelectedProvider] = useState('tushare')
+  const [selectedSource, setSelectedSource] = useState('tushare')
   const [isSyncing, setIsSyncing] = useState(false)
   const [forceSync, setForceSync] = useState(false)
   const [currentSyncResult, setCurrentSyncResult] = useState(null)
@@ -92,7 +65,6 @@ export default function DataSync() {
   const [useDateRange, setUseDateRange] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [marketFilter, setMarketFilter] = useState('all')
   const [expandedHistoryId, setExpandedHistoryId] = useState(null)
   const pollingTimerRef = useRef(null)
   const activeSyncIdRef = useRef(null)
@@ -110,15 +82,9 @@ export default function DataSync() {
   // 清理定时器
   useEffect(() => {
     return () => {
-      if (pollingTimerRef.current) {
-        clearInterval(pollingTimerRef.current)
-      }
-      if (indicatorPollingRef.current) {
-        clearInterval(indicatorPollingRef.current)
-      }
-      if (historicalPollingRef.current) {
-        clearInterval(historicalPollingRef.current)
-      }
+      if (pollingTimerRef.current) clearInterval(pollingTimerRef.current)
+      if (indicatorPollingRef.current) clearInterval(indicatorPollingRef.current)
+      if (historicalPollingRef.current) clearInterval(historicalPollingRef.current)
     }
   }, [])
 
@@ -126,7 +92,7 @@ export default function DataSync() {
     setToast({ message, type })
   }, [])
 
-  // 恢复指标计算状态（刷新后恢复）
+  // 恢复指标计算状态
   useEffect(() => {
     const savedTaskId = localStorage.getItem('indicatorTaskId')
     if (savedTaskId) {
@@ -135,7 +101,6 @@ export default function DataSync() {
     }
   }, [])
 
-  // 保存指标任务ID到localStorage
   const saveIndicatorTaskId = (taskId) => {
     if (taskId) {
       localStorage.setItem('indicatorTaskId', taskId)
@@ -144,7 +109,6 @@ export default function DataSync() {
     }
   }
 
-  // 获取指标任务进度
   const fetchIndicatorProgress = useCallback(async (taskId) => {
     if (!taskId) return
     try {
@@ -152,7 +116,6 @@ export default function DataSync() {
       const result = await res.json()
       if (result.success) {
         setIndicatorTask(result.data)
-        // 如果任务已完成/失败/停止，停止轮询
         if (['completed', 'failed', 'stopped'].includes(result.data.status)) {
           clearInterval(indicatorPollingRef.current)
           indicatorPollingRef.current = null
@@ -171,18 +134,15 @@ export default function DataSync() {
     }
   }, [showToast])
 
-  // 开始轮询指标进度
   const startIndicatorPolling = useCallback((taskId) => {
     setIndicatorTaskId(taskId)
     saveIndicatorTaskId(taskId)
     fetchIndicatorProgress(taskId)
-    // 每1秒轮询一次
     indicatorPollingRef.current = setInterval(() => {
       fetchIndicatorProgress(taskId)
     }, 1000)
   }, [fetchIndicatorProgress])
 
-  // 停止指标计算
   const stopIndicatorCalculation = useCallback(async () => {
     if (!indicatorTaskId) return
     try {
@@ -193,7 +153,7 @@ export default function DataSync() {
     }
   }, [indicatorTaskId, showToast])
 
-  // 恢复历史数据初始化状态（刷新后恢复）
+  // 恢复历史数据初始化状态
   useEffect(() => {
     const savedTaskId = localStorage.getItem('historicalTaskId')
     if (savedTaskId) {
@@ -202,7 +162,6 @@ export default function DataSync() {
     }
   }, [])
 
-  // 保存历史数据任务ID到localStorage
   const saveHistoricalTaskId = (taskId) => {
     if (taskId) {
       localStorage.setItem('historicalTaskId', taskId)
@@ -211,7 +170,6 @@ export default function DataSync() {
     }
   }
 
-  // 获取历史数据任务进度
   const fetchHistoricalProgress = useCallback(async (taskId) => {
     if (!taskId) return
     try {
@@ -219,7 +177,6 @@ export default function DataSync() {
       const result = await res.json()
       if (result.success) {
         setHistoricalTask(result.data)
-        // 如果任务已完成/失败/停止，停止轮询
         if (['completed', 'failed', 'stopped'].includes(result.data.status)) {
           clearInterval(historicalPollingRef.current)
           historicalPollingRef.current = null
@@ -238,7 +195,6 @@ export default function DataSync() {
     }
   }, [showToast])
 
-  // 开始轮询历史数据进度
   const startHistoricalPolling = useCallback((taskId) => {
     setHistoricalTaskId(taskId)
     saveHistoricalTaskId(taskId)
@@ -248,7 +204,6 @@ export default function DataSync() {
     }, 1000)
   }, [fetchHistoricalProgress])
 
-  // 停止历史数据初始化
   const stopHistoricalInit = useCallback(async () => {
     if (!historicalTaskId) return
     try {
@@ -259,19 +214,17 @@ export default function DataSync() {
     }
   }, [historicalTaskId, showToast])
 
-  // 初始化历史数据
   const handleInitHistoricalData = async () => {
     try {
       const res = await fetch('/api/market/init-historical-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ years: 10, period: 'D' }),
+        body: JSON.stringify({ years: 10, period: 'D', provider: selectedSource }),
       })
       const result = await res.json()
-
       if (result.success && result.data?.taskId) {
         startHistoricalPolling(result.data.taskId)
-        showToast('历史数据初始化已启动', 'success')
+        showToast(`历史数据初始化已启动（数据源: ${SOURCES.find(s => s.value === selectedSource)?.label || selectedSource}）`, 'success')
       } else {
         showToast(result.error || '历史数据初始化启动失败', 'error')
       }
@@ -332,14 +285,8 @@ export default function DataSync() {
   }, [fetchSyncHistory])
 
   const handleExecuteSync = async () => {
-    if (!selectedProvider) {
-      showToast('请选择数据提供商', 'warning')
-      return
-    }
-
-    const provider = BUILTIN_PROVIDERS.find(p => p.value === selectedProvider)
-    if (!provider) {
-      showToast('无效的数据提供商', 'error')
+    if (!selectedSource) {
+      showToast('请选择数据源', 'warning')
       return
     }
 
@@ -351,8 +298,8 @@ export default function DataSync() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          market: provider.market,
-          provider: provider.value,
+          market: 'A股',
+          provider: selectedSource,
           sync_type: syncType,
           force: forceSync,
           start_date: useDateRange && startDate ? startDate.replace(/-/g, '') : null,
@@ -362,7 +309,11 @@ export default function DataSync() {
       const result = await res.json()
 
       if (result.success) {
-        showToast('同步任务已启动', 'success')
+        if (result.data?.indicatorCalcTriggered) {
+          showToast('同步任务已启动，技术指标预计算已自动触发', 'success')
+        } else {
+          showToast('同步任务已启动', 'success')
+        }
         startSyncPolling(result.data.history_id)
       } else {
         setIsSyncing(false)
@@ -374,7 +325,6 @@ export default function DataSync() {
     }
   }
 
-  // 技术指标计算
   const handleCalculateIndicators = async () => {
     try {
       const res = await fetch('/api/market/calculate-indicators', {
@@ -382,9 +332,7 @@ export default function DataSync() {
         headers: { 'Content-Type': 'application/json' },
       })
       const result = await res.json()
-
       if (result.success && result.data?.taskId) {
-        // 开始轮询进度
         startIndicatorPolling(result.data.taskId)
         showToast('指标计算已启动', 'success')
       } else {
@@ -398,13 +346,7 @@ export default function DataSync() {
   const formatTime = (dateStr) => {
     if (!dateStr) return '-'
     const d = new Date(dateStr)
-    const Y = d.getFullYear()
-    const M = String(d.getMonth() + 1).padStart(2, '0')
-    const D = String(d.getDate()).padStart(2, '0')
-    const h = String(d.getHours()).padStart(2, '0')
-    const m = String(d.getMinutes()).padStart(2, '0')
-    const s = String(d.getSeconds()).padStart(2, '0')
-    return `${Y}-${M}-${D} ${h}:${m}:${s}`
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
   }
 
   const getStatusBadge = (status) => {
@@ -422,14 +364,20 @@ export default function DataSync() {
     )
   }
 
-  const filteredProviders = marketFilter === 'all'
-    ? BUILTIN_PROVIDERS
-    : BUILTIN_PROVIDERS.filter(p => p.market === marketFilter)
-
-  const marketCounts = {
-    'A股': BUILTIN_PROVIDERS.filter(p => p.market === 'A股').length,
-    '美股': BUILTIN_PROVIDERS.filter(p => p.market === '美股').length,
-    '港股': BUILTIN_PROVIDERS.filter(p => p.market === '港股').length,
+  const getTaskStatusBadge = (task) => {
+    if (!task) return <span className="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-500">未开始</span>
+    const config = {
+      running: { label: '进行中', class: 'bg-blue-50 text-blue-600', icon: <RefreshCw className="w-3 h-3 animate-spin" /> },
+      completed: { label: '已完成', class: 'bg-emerald-50 text-emerald-600', icon: <CheckCircle className="w-3 h-3" /> },
+      stopped: { label: '已停止', class: 'bg-amber-50 text-amber-600', icon: <X className="w-3 h-3" /> },
+      failed: { label: '失败', class: 'bg-red-50 text-red-600', icon: <AlertTriangle className="w-3 h-3" /> },
+    }
+    const c = config[task.status] || config.running
+    return (
+      <span className={`px-2 py-0.5 text-xs rounded flex items-center gap-1 ${c.class}`}>
+        {c.icon}{c.label}
+      </span>
+    )
   }
 
   return (
@@ -438,57 +386,164 @@ export default function DataSync() {
 
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '16px', paddingRight: '16px', position: 'relative', paddingBottom: '16px', overflow: 'auto' }}>
         <div className="flex gap-4 flex-1 min-h-0">
-          {/* 左侧 - 数据提供商选择 + 同步历史 */}
-          <div className="flex-1 flex flex-col gap-4 min-w-0">
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <Database className="w-4 h-4 text-blue-500" />
-                  数据提供商
-                </h3>
+          {/* 左侧 ~60% */}
+          <div className="flex-[3] flex flex-col gap-4 min-w-0">
+            {/* 第一行：技术指标预计算 + 历史数据初始化 左右并列 */}
+            <div className="flex gap-4">
+              {/* 技术指标预计算 */}
+              <div className="flex-1 bg-white rounded-xl border border-gray-100 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-purple-500" />
+                    技术指标预计算
+                  </h3>
+                </div>
+                <div className="p-4 space-y-3">
+                  <div>
+                    <div className="text-xs text-gray-500 mb-1">计算状态</div>
+                    {getTaskStatusBadge(indicatorTask)}
+                  </div>
+                  {indicatorTask && (
+                    <>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-500">进度</span>
+                        <span className="font-medium text-gray-700">{indicatorTask.processed || 0} / {indicatorTask.total || '-'}</span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className={`h-2 rounded-full transition-all duration-300 ${
+                            indicatorTask.status === 'running' ? 'bg-blue-500' :
+                            indicatorTask.status === 'completed' ? 'bg-emerald-500' :
+                            indicatorTask.status === 'stopped' ? 'bg-amber-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${indicatorTask.progress || 0}%` }}
+                        />
+                      </div>
+                      <div className="text-xs text-gray-500">{indicatorTask.progress || 0}%</div>
+                      {indicatorTask.status !== 'running' && (
+                        <div className="grid grid-cols-4 gap-2">
+                          <div className="bg-white rounded-lg border border-gray-100 p-2 text-center">
+                            <div className="text-lg font-bold text-blue-600">{indicatorTask.total || '-'}</div>
+                            <div className="text-xs text-gray-400">总数</div>
+                          </div>
+                          <div className="bg-white rounded-lg border border-gray-100 p-2 text-center">
+                            <div className="text-lg font-bold text-emerald-600">{indicatorTask.successCount || 0}</div>
+                            <div className="text-xs text-gray-400">成功</div>
+                          </div>
+                          <div className="bg-white rounded-lg border border-gray-100 p-2 text-center">
+                            <div className={`text-lg font-bold ${indicatorTask.failedCount > 0 ? 'text-red-600' : 'text-gray-600'}`}>{indicatorTask.failedCount || 0}</div>
+                            <div className="text-xs text-gray-400">失败</div>
+                          </div>
+                          <div className="bg-white rounded-lg border border-gray-100 p-2 text-center">
+                            <div className="text-lg font-bold text-gray-600">{indicatorTask.skippedCount || 0}</div>
+                            <div className="text-xs text-gray-400">跳过</div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {indicatorTask?.duration && (
+                    <div className="text-xs text-gray-500">
+                      耗时：{indicatorTask.duration > 1000 ? `${(indicatorTask.duration / 1000).toFixed(1)}秒` : `${indicatorTask.duration}ms`}
+                    </div>
+                  )}
+                  <div className="pt-2 border-t border-gray-100">
+                    {indicatorTask?.status === 'running' ? (
+                      <button
+                        onClick={stopIndicatorCalculation}
+                        className="w-full px-3 py-2 text-xs font-medium text-white rounded-lg bg-red-500 hover:bg-red-600 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <X className="w-3.5 h-3.5" />停止计算
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleCalculateIndicators}
+                        className="w-full px-3 py-2 text-xs font-medium text-white rounded-lg bg-purple-500 hover:bg-purple-600 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <TrendingUp className="w-3.5 h-3.5" />计算指标
+                      </button>
+                    )}
+                    <p className="text-xs text-gray-400 mt-1">为所有股票预计算技术指标，每日15:01自动执行</p>
+                  </div>
+                </div>
               </div>
 
-              <div className="p-4">
-                {/* 市场筛选 */}
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-xs text-gray-400 mr-1 font-medium">市场筛选</span>
-                  {[
-                    { key: 'all', label: '全部', count: BUILTIN_PROVIDERS.length },
-                    { key: 'A股', label: 'A股', count: marketCounts['A股'] },
-                    { key: '美股', label: '美股', count: marketCounts['美股'] },
-                    { key: '港股', label: '港股', count: marketCounts['港股'] },
-                  ].map(item => (
-                    <button
-                      key={item.key}
-                      onClick={() => setMarketFilter(item.key)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                        marketFilter === item.key
-                          ? 'bg-[#0F1419] text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      {item.label}
-                      <span className={`ml-1 ${marketFilter === item.key ? 'text-gray-300' : 'text-gray-400'}`}>({item.count})</span>
-                    </button>
-                  ))}
+              {/* 历史数据初始化 */}
+              <div className="flex-1 bg-white rounded-xl border border-gray-100 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                    <Database className="w-4 h-4 text-indigo-500" />
+                    历史数据初始化
+                  </h3>
                 </div>
-
-                {/* 提供商列表 */}
-                <div className="grid grid-cols-3 gap-3">
-                  {filteredProviders.map(provider => (
-                    <ProviderCard
-                      key={provider.value}
-                      provider={provider}
-                      isSelected={selectedProvider === provider.value}
-                      onSelect={setSelectedProvider}
-                      isSyncing={isSyncing}
-                    />
-                  ))}
+                <div className="p-4 space-y-3">
+                  <div>
+                    <div className="text-xs text-gray-500 mb-1">初始化状态</div>
+                    {getTaskStatusBadge(historicalTask)}
+                  </div>
+                  {historicalTask && (
+                    <>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-500">进度</span>
+                        <span className="font-medium text-gray-700">{historicalTask.processed || 0} / {historicalTask.total || '-'}</span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className={`h-2 rounded-full transition-all duration-300 ${
+                            historicalTask.status === 'running' ? 'bg-indigo-500' :
+                            historicalTask.status === 'completed' ? 'bg-emerald-500' :
+                            historicalTask.status === 'stopped' ? 'bg-amber-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${historicalTask.progress || 0}%` }}
+                        />
+                      </div>
+                      <div className="text-xs text-gray-500">{historicalTask.progress || 0}%</div>
+                      {historicalTask.status !== 'running' && (
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="bg-white rounded-lg border border-gray-100 p-2 text-center">
+                            <div className="text-lg font-bold text-emerald-600">{historicalTask.successCount || 0}</div>
+                            <div className="text-xs text-gray-400">成功</div>
+                          </div>
+                          <div className="bg-white rounded-lg border border-gray-100 p-2 text-center">
+                            <div className={`text-lg font-bold ${historicalTask.failedCount > 0 ? 'text-red-600' : 'text-gray-600'}`}>{historicalTask.failedCount || 0}</div>
+                            <div className="text-xs text-gray-400">失败</div>
+                          </div>
+                          <div className="bg-white rounded-lg border border-gray-100 p-2 text-center">
+                            <div className="text-lg font-bold text-gray-600">{historicalTask.skippedCount || 0}</div>
+                            <div className="text-xs text-gray-400">跳过</div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {historicalTask?.duration && (
+                    <div className="text-xs text-gray-500">
+                      耗时：{historicalTask.duration > 60000 ? `${(historicalTask.duration / 60000).toFixed(1)}分钟` : `${(historicalTask.duration / 1000).toFixed(0)}秒`}
+                    </div>
+                  )}
+                  <div className="pt-2 border-t border-gray-100">
+                    {historicalTask?.status === 'running' ? (
+                      <button
+                        onClick={stopHistoricalInit}
+                        className="w-full px-3 py-2 text-xs font-medium text-white rounded-lg bg-red-500 hover:bg-red-600 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <X className="w-3.5 h-3.5" />停止初始化
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleInitHistoricalData}
+                        className="w-full px-3 py-2 text-xs font-medium text-white rounded-lg bg-indigo-500 hover:bg-indigo-600 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <Database className="w-3.5 h-3.5" />初始化10年数据
+                      </button>
+                    )}
+                    <p className="text-xs text-gray-400 mt-1">拉取约10年K线数据，仅首次使用需要</p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* 同步历史 */}
+            {/* 第二行：同步历史 */}
             <div className="bg-white rounded-xl border border-gray-100 overflow-hidden flex-1 min-h-0">
               <div className="px-4 py-3 border-b border-gray-100">
                 <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
@@ -496,7 +551,6 @@ export default function DataSync() {
                   同步历史
                 </h3>
               </div>
-
               <div className="p-2 max-h-[280px] overflow-y-auto">
                 {historyLoading ? (
                   <div className="flex items-center justify-center py-6">
@@ -520,12 +574,11 @@ export default function DataSync() {
                             <div className="flex items-center gap-2">
                               {getStatusBadge(item.status)}
                               <span className="text-xs font-medium text-gray-700">
-                                {item.data_source_name || getProviderInfo(item.provider).label}
+                                {item.data_source_name || SOURCES.find(s => s.value === item.provider)?.label || '未知'}
                               </span>
                             </div>
                             <span className="text-xs text-gray-400">{formatTime(item.started_at)}</span>
                           </div>
-
                           {item.total_count > 0 && (
                             <div className="flex items-center gap-3 text-xs text-gray-500">
                               <span>总 {item.total_count}</span>
@@ -534,15 +587,12 @@ export default function DataSync() {
                               {item.failed_count > 0 && <span className="text-red-600">失败 {item.failed_count}</span>}
                             </div>
                           )}
-
                           {expandedHistoryId === item.id && (
                             <div className="mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500 space-y-1">
-                              <div>数据提供商：{item.provider || '-'}</div>
+                              <div>数据源：{item.provider || '-'}</div>
                               <div>同步类型：{item.sync_type === 'full' ? '全量同步' : '增量同步'}</div>
                               <div>完成时间：{item.completed_at ? formatTime(item.completed_at) : '-'}</div>
-                              {item.error_message && (
-                                <div className="text-red-500 font-mono">{item.error_message}</div>
-                              )}
+                              {item.error_message && <div className="text-red-500 font-mono">{item.error_message}</div>}
                             </div>
                           )}
                         </div>
@@ -554,81 +604,104 @@ export default function DataSync() {
             </div>
           </div>
 
-          {/* 右侧 - 同步控制 */}
-          <div className="w-[420px] flex flex-col gap-4 flex-shrink-0">
-            {/* 同步控制 */}
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100">
+          {/* 右侧 ~40% - 同步控制 */}
+          <div className="flex-[2] min-w-0 flex flex-col">
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+              <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
                 <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                   <RefreshCw className="w-4 h-4 text-blue-500" />
                   同步控制
                 </h3>
               </div>
+              <div className="p-4 space-y-4 overflow-y-auto flex-1">
+                {/* 数据源选择 */}
+                <div>
+                  <div className="text-xs text-gray-500 mb-2">数据源</div>
+                  <div className="space-y-2">
+                    {SOURCES.map(src => (
+                      <div
+                        key={src.value}
+                        className={`rounded-xl border-2 p-3 transition-all cursor-pointer ${
+                          selectedSource === src.value
+                            ? 'border-[#0F1419] bg-gray-50'
+                            : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
+                        } ${isSyncing ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        onClick={() => !isSyncing && setSelectedSource(src.value)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-gray-900">{src.label}</span>
+                            <span className={`px-1.5 py-0.5 text-xs rounded ${src.tagColor}`}>{src.tag}</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">{src.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-              <div className="p-4 space-y-4">
                 {/* 当前状态 */}
                 <div>
                   <div className="text-xs text-gray-500 mb-1.5">当前状态</div>
-                  <div className="flex items-center gap-2">
-                    {currentSyncResult ? (
-                      getStatusBadge(currentSyncResult.status)
-                    ) : (
-                      <span className="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-500">空闲</span>
-                    )}
-                  </div>
+                  {currentSyncResult ? getStatusBadge(currentSyncResult.status) : (
+                    <span className="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-500">空闲</span>
+                  )}
                 </div>
 
                 {/* 同步统计 */}
                 <div>
                   <div className="text-xs text-gray-500 mb-2">同步统计</div>
-                  {currentSyncResult ? (
-                    <div className="grid grid-cols-4 gap-2">
-                      <StatCard label="总数" value={currentSyncResult.total} color="blue" />
-                      <StatCard label="新增" value={currentSyncResult.new} color="emerald" />
-                      <StatCard label="更新" value={currentSyncResult.updated} color="blue" />
-                      <StatCard label="错误" value={currentSyncResult.failed} color={currentSyncResult.failed > 0 ? 'red' : 'gray'} />
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-4 gap-2">
-                      <StatCard label="总数" value="—" color="gray" />
-                      <StatCard label="新增" value="—" color="gray" />
-                      <StatCard label="更新" value="—" color="gray" />
-                      <StatCard label="错误" value="—" color="gray" />
-                    </div>
-                  )}
-                </div>
-
-                {/* 完成时间 */}
-                {currentSyncResult && currentSyncResult.completedAt && (
-                  <div className="text-xs text-gray-500">
-                    完成时间：{formatTime(currentSyncResult.completedAt)}
+                  <div className="grid grid-cols-4 gap-2">
+                    {currentSyncResult ? (
+                      <>
+                        <div className="bg-white rounded-xl border border-gray-100 p-3 text-center">
+                          <div className="text-xl font-bold text-blue-600">{currentSyncResult.total}</div>
+                          <div className="text-xs text-gray-400">总数</div>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-100 p-3 text-center">
+                          <div className="text-xl font-bold text-emerald-600">{currentSyncResult.new}</div>
+                          <div className="text-xs text-gray-400">新增</div>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-100 p-3 text-center">
+                          <div className="text-xl font-bold text-blue-600">{currentSyncResult.updated}</div>
+                          <div className="text-xs text-gray-400">更新</div>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-100 p-3 text-center">
+                          <div className={`text-xl font-bold ${currentSyncResult.failed > 0 ? 'text-red-600' : 'text-gray-600'}`}>{currentSyncResult.failed}</div>
+                          <div className="text-xs text-gray-400">错误</div>
+                        </div>
+                      </>
+                    ) : (
+                      ['总数', '新增', '更新', '错误'].map(l => (
+                        <div key={l} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
+                          <div className="text-xl font-bold text-gray-300">—</div>
+                          <div className="text-xs text-gray-400">{l}</div>
+                        </div>
+                      ))
+                    )}
                   </div>
-                )}
+                </div>
 
                 {/* 同步操作 */}
                 <div className="space-y-3 pt-2 border-t border-gray-100">
-                  <div className="text-xs font-semibold text-gray-700">同步操作</div>
+                  <div className="text-xs font-semibold text-gray-700">同步设置</div>
 
-                  {/* 同步范围选择 */}
+                  {/* 同步范围 */}
                   <div>
                     <div className="text-xs text-gray-500 mb-1.5">同步范围</div>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => setUseDateRange(false)}
                         className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
-                          !useDateRange
-                            ? 'border-[#0F1419] bg-[#0F1419] text-white'
-                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                          !useDateRange ? 'border-[#0F1419] bg-[#0F1419] text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'
                         }`}
                       >
-                        最近一个交易日
+                        最近交易日
                       </button>
                       <button
-                        onClick={() => { setUseDateRange(true); }}
+                        onClick={() => setUseDateRange(true)}
                         className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
-                          useDateRange
-                            ? 'border-[#0F1419] bg-[#0F1419] text-white'
-                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                          useDateRange ? 'border-[#0F1419] bg-[#0F1419] text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'
                         }`}
                       >
                         日期区间
@@ -636,308 +709,51 @@ export default function DataSync() {
                     </div>
                   </div>
 
-                  {/* 日期区间选择器 */}
-                  {selectedProvider === 'tushare' && useDateRange && (
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1.5">选择日期区间</div>
-                      <div className="grid grid-cols-2 gap-2 mb-2">
-                        <div>
-                          <label className="text-xs text-gray-500 mb-1 block">开始日期</label>
-                          <input
-                            type="date"
-                            value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
-                            className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500 mb-1 block">结束日期</label>
-                          <input
-                            type="date"
-                            value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
-                            className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
+                  {/* 日期区间 */}
+                  {selectedSource === 'tushare' && useDateRange && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">开始日期</label>
+                        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                          className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                       </div>
-                      <p className="text-xs text-gray-400">将获取区间内所有交易日的行情数据（Tushare专用）</p>
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">结束日期</label>
+                        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                          className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      </div>
                     </div>
                   )}
 
-                  {/* 强制同步开关 */}
+                  {/* 强制同步 */}
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-500">强制同步</span>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-400">否</span>
-                      <button
-                        onClick={() => setForceSync(!forceSync)}
-                        className={`w-10 h-5 rounded-full transition-colors duration-200 relative ${forceSync ? 'bg-blue-500' : 'bg-gray-300'}`}
-                      >
-                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${forceSync ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      <button onClick={() => setForceSync(!forceSync)}
+                        className={`w-10 h-5 rounded-full transition-colors relative ${forceSync ? 'bg-blue-500' : 'bg-gray-300'}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${forceSync ? 'translate-x-5' : 'translate-x-0.5'}`} />
                       </button>
                       <span className="text-xs text-gray-400">是</span>
                     </div>
                   </div>
-                  <p className="text-xs text-gray-400">强制同步将忽略正在运行的同步任务</p>
 
-                  {/* 操作按钮 */}
+                  {/* 按钮 */}
                   <div className="flex gap-2 pt-1">
-                    <button
-                      onClick={handleExecuteSync}
-                      disabled={isSyncing}
-                      className={`flex-1 px-4 py-2 text-xs font-medium text-white rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                        isSyncing
-                          ? 'bg-gray-400 cursor-not-allowed'
-                          : 'bg-blue-500 hover:bg-blue-600'
-                      }`}
-                    >
-                      {isSyncing ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          同步中...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-3.5 h-3.5" />
-                          开始同步
-                        </>
-                      )}
+                    <button onClick={handleExecuteSync} disabled={isSyncing}
+                      className={`flex-1 px-4 py-2 text-xs font-medium text-white rounded-lg flex items-center justify-center gap-1.5 ${
+                        isSyncing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'
+                      }`}>
+                      {isSyncing ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />同步中...</> : <><Play className="w-3.5 h-3.5" />开始同步</>}
                     </button>
-
-                    <button
-                      onClick={fetchSyncHistory}
-                      className="px-3 py-2 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-1"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      刷新
-                    </button>
-
-                    <button
-                      onClick={handleExecuteSync}
-                      disabled={isSyncing}
-                      className="px-3 py-2 text-xs font-medium text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors flex items-center gap-1"
-                    >
-                      <Zap className="w-3.5 h-3.5" />
-                      强制同步
+                    <button onClick={fetchSyncHistory}
+                      className="px-3 py-2 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center gap-1">
+                      <RefreshCw className="w-3.5 h-3.5" />刷新
                     </button>
                   </div>
                 </div>
               </div>
             </div>
-
-            {/* 技术指标预计算 */}
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100">
-                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-purple-500" />
-                  技术指标预计算
-                </h3>
-              </div>
-
-              <div className="p-4 space-y-4">
-                {/* 计算状态 */}
-                <div>
-                  <div className="text-xs text-gray-500 mb-1.5">计算状态</div>
-                  <div className="flex items-center gap-2">
-                    {indicatorTask?.status === 'running' ? (
-                      <span className="px-2 py-0.5 text-xs rounded bg-blue-50 text-blue-600 flex items-center gap-1">
-                        <RefreshCw className="w-3 h-3 animate-spin" /> 计算中
-                      </span>
-                    ) : indicatorTask?.status === 'completed' ? (
-                      <span className="px-2 py-0.5 text-xs rounded bg-emerald-50 text-emerald-600 flex items-center gap-1">
-                        <CheckCircle className="w-3 h-3" /> 已完成
-                      </span>
-                    ) : indicatorTask?.status === 'stopped' ? (
-                      <span className="px-2 py-0.5 text-xs rounded bg-amber-50 text-amber-600 flex items-center gap-1">
-                        <X className="w-3 h-3" /> 已停止
-                      </span>
-                    ) : indicatorTask?.status === 'failed' ? (
-                      <span className="px-2 py-0.5 text-xs rounded bg-red-50 text-red-600 flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3" /> 失败
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-500">未计算</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 进度条 */}
-                {indicatorTask && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-500">进度</span>
-                      <span className="font-medium text-gray-700">
-                        {indicatorTask.processed || 0} / {indicatorTask.total || '-'}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                      <div
-                        className={`h-2 rounded-full transition-all duration-300 ${
-                          indicatorTask.status === 'running' ? 'bg-blue-500' :
-                          indicatorTask.status === 'completed' ? 'bg-emerald-500' :
-                          indicatorTask.status === 'stopped' ? 'bg-amber-500' :
-                          'bg-red-500'
-                        }`}
-                        style={{ width: `${indicatorTask.progress || 0}%` }}
-                      />
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {indicatorTask.progress || 0}%
-                    </div>
-                  </div>
-                )}
-
-                {/* 计算结果统计 */}
-                {indicatorTask && indicatorTask.status !== 'running' && (
-                  <div className="grid grid-cols-4 gap-2">
-                    <StatCard label="总数" value={indicatorTask.total} color="blue" />
-                    <StatCard label="成功" value={indicatorTask.successCount || 0} color="emerald" />
-                    <StatCard label="失败" value={indicatorTask.failedCount || 0} color={indicatorTask.failedCount > 0 ? 'red' : 'gray'} />
-                    <StatCard label="跳过" value={indicatorTask.skippedCount || 0} color="gray" />
-                  </div>
-                )}
-
-                {/* 计算时间 */}
-                {indicatorTask?.duration && (
-                  <div className="text-xs text-gray-500">
-                    计算耗时：{indicatorTask.duration > 1000 ? `${(indicatorTask.duration / 1000).toFixed(1)}秒` : `${indicatorTask.duration}ms`}
-                  </div>
-                )}
-
-                {/* 计算按钮 */}
-                <div className="space-y-2 pt-2 border-t border-gray-100">
-                  <div className="flex gap-2">
-                    {indicatorTask?.status === 'running' ? (
-                      <button
-                        onClick={stopIndicatorCalculation}
-                        className="flex-1 px-4 py-2.5 text-xs font-medium text-white rounded-lg transition-all flex items-center justify-center gap-1.5 bg-red-500 hover:bg-red-600"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        停止计算
-                      </button>
-                    ) : (
-                      <button
-                        onClick={handleCalculateIndicators}
-                        className="flex-1 px-4 py-2.5 text-xs font-medium text-white rounded-lg transition-all flex items-center justify-center gap-1.5 bg-purple-500 hover:bg-purple-600"
-                      >
-                        <TrendingUp className="w-3.5 h-3.5" />
-                        计算指标
-                      </button>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-400">
-                    为所有股票预计算技术指标（MA/BOLL/MACD/RSI/KDJ），提升图表加载速度。每日15:01自动计算，也可手动触发
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* 历史数据初始化 */}
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100">
-                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <Database className="w-4 h-4 text-indigo-500" />
-                  历史数据初始化
-                </h3>
-              </div>
-
-              <div className="p-4 space-y-4">
-                {/* 状态 */}
-                <div>
-                  <div className="text-xs text-gray-500 mb-1.5">初始化状态</div>
-                  <div className="flex items-center gap-2">
-                    {historicalTask?.status === 'running' ? (
-                      <span className="px-2 py-0.5 text-xs rounded bg-blue-50 text-blue-600 flex items-center gap-1">
-                        <RefreshCw className="w-3 h-3 animate-spin" /> 初始化中
-                      </span>
-                    ) : historicalTask?.status === 'completed' ? (
-                      <span className="px-2 py-0.5 text-xs rounded bg-emerald-50 text-emerald-600 flex items-center gap-1">
-                        <CheckCircle className="w-3 h-3" /> 已完成
-                      </span>
-                    ) : historicalTask?.status === 'stopped' ? (
-                      <span className="px-2 py-0.5 text-xs rounded bg-amber-50 text-amber-600 flex items-center gap-1">
-                        <X className="w-3 h-3" /> 已停止
-                      </span>
-                    ) : historicalTask?.status === 'failed' ? (
-                      <span className="px-2 py-0.5 text-xs rounded bg-red-50 text-red-600 flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3" /> 失败
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-500">未开始</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 进度条 */}
-                {historicalTask && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-500">进度</span>
-                      <span className="font-medium text-gray-700">
-                        {historicalTask.processed || 0} / {historicalTask.total || '-'}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                      <div
-                        className={`h-2 rounded-full transition-all duration-300 ${
-                          historicalTask.status === 'running' ? 'bg-indigo-500' :
-                          historicalTask.status === 'completed' ? 'bg-emerald-500' :
-                          historicalTask.status === 'stopped' ? 'bg-amber-500' :
-                          'bg-red-500'
-                        }`}
-                        style={{ width: `${historicalTask.progress || 0}%` }}
-                      />
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {historicalTask.progress || 0}%
-                    </div>
-                  </div>
-                )}
-
-                {/* 结果统计 */}
-                {historicalTask && historicalTask.status !== 'running' && (
-                  <div className="grid grid-cols-3 gap-2">
-                    <StatCard label="成功" value={historicalTask.successCount || 0} color="emerald" />
-                    <StatCard label="失败" value={historicalTask.failedCount || 0} color={historicalTask.failedCount > 0 ? 'red' : 'gray'} />
-                    <StatCard label="跳过" value={historicalTask.skippedCount || 0} color="gray" />
-                  </div>
-                )}
-
-                {/* 耗时 */}
-                {historicalTask?.duration && (
-                  <div className="text-xs text-gray-500">
-                    耗时：{historicalTask.duration > 60000 ? `${(historicalTask.duration / 60000).toFixed(1)}分钟` : `${(historicalTask.duration / 1000).toFixed(0)}秒`}
-                  </div>
-                )}
-
-                {/* 按钮 */}
-                <div className="space-y-2 pt-2 border-t border-gray-100">
-                  <div className="flex gap-2">
-                    {historicalTask?.status === 'running' ? (
-                      <button
-                        onClick={stopHistoricalInit}
-                        className="flex-1 px-4 py-2.5 text-xs font-medium text-white rounded-lg transition-all flex items-center justify-center gap-1.5 bg-red-500 hover:bg-red-600"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        停止初始化
-                      </button>
-                    ) : (
-                      <button
-                        onClick={handleInitHistoricalData}
-                        className="flex-1 px-4 py-2.5 text-xs font-medium text-white rounded-lg transition-all flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-600"
-                      >
-                        <Database className="w-3.5 h-3.5" />
-                        初始化10年数据
-                      </button>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-400">
-                    从东方财富API拉取约10年（~2440个交易日）的K线数据，为技术指标计算提供充足历史。仅首次使用需要
-                  </p>
-                </div>
-              </div>
-            </div>
-
           </div>
         </div>
       </div>

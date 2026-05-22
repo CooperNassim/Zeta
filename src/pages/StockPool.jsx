@@ -336,7 +336,7 @@ const StockPool = () => {
                   if (isNaN(val)) return '-'
                   const isPositive = val > 0
                   const isNegative = val < 0
-                  const color = isPositive ? '#16a34a' : isNegative ? '#dc2626' : '#6b7280'
+                  const color = isPositive ? '#ef4444' : isNegative ? '#22c55e' : '#6b7280'
                   return (
                     <span style={{ color }}>
                       {val >= 0 ? '+' : ''}{val.toFixed(2)}%

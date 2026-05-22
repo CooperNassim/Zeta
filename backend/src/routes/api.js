@@ -935,9 +935,10 @@ router.get('/market/stocks', async (req, res) => {
 
 // GET /api/market/kline?provider=eastmoney&symbol=000001&period=D&limit=120 - 获取K线数据
 // 优先从本地数据库读取，数据库无数据时才调用外部API
+// 注意：不传 limit 参数时，返回数据库中该股票的全部K线数据
 router.get('/market/kline', async (req, res) => {
   try {
-    const { provider, symbol, period = 'D', limit = 120 } = req.query;
+    const { provider, symbol, period = 'D', limit } = req.query;
     if (!symbol) {
       return res.status(400).json({ success: false, error: '缺少 symbol 参数' });
     }
@@ -947,14 +948,27 @@ router.get('/market/kline', async (req, res) => {
       const tableName = period === 'D' ? 'stock_daily' : period === 'W' ? 'stock_weekly' : period === 'M' ? 'stock_monthly' : 'stock_daily';
       const dateField = period === 'D' ? 'trade_date' : period === 'W' ? 'week_date' : period === 'M' ? 'month_date' : 'trade_date';
 
-      const dbResult = await pool.query(
-        `SELECT ${dateField} as date, open_price as open, high_price as high, low_price as low, close_price as close, volume, amount
-         FROM ${tableName}
-         WHERE symbol = $1
-         ORDER BY ${dateField} DESC
-         LIMIT $2`,
-        [symbol, parseInt(limit)]
-      );
+      // 如果传了 limit 参数则限制条数，否则返回数据库中该股票的全部数据
+      let dbResult;
+      if (limit) {
+        dbResult = await pool.query(
+          `SELECT ${dateField} as date, open_price as open, high_price as high, low_price as low, close_price as close, volume, amount
+           FROM ${tableName}
+           WHERE symbol = $1
+           ORDER BY ${dateField} DESC
+           LIMIT $2`,
+          [symbol, parseInt(limit)]
+        );
+      } else {
+        // 不限制条数，返回数据库中全部历史数据
+        dbResult = await pool.query(
+          `SELECT ${dateField} as date, open_price as open, high_price as high, low_price as low, close_price as close, volume, amount
+           FROM ${tableName}
+           WHERE symbol = $1
+           ORDER BY ${dateField} DESC`,
+          [symbol]
+        );
+      }
 
       if (dbResult.rows.length > 0) {
         const klines = dbResult.rows.reverse().map(row => {
@@ -966,6 +980,7 @@ router.get('/market/kline', async (req, res) => {
           const timestamp = new Date(dateStr).getTime();
           return {
             timestamp,
+            date: dateStr,
             open: parseFloat(row.open),
             high: parseFloat(row.high),
             low: parseFloat(row.low),
@@ -974,7 +989,18 @@ router.get('/market/kline', async (req, res) => {
             amount: parseFloat(row.amount || 0),
           };
         });
-        return res.json({ success: true, data: klines, count: klines.length, source: 'database' });
+
+        // 按日期去重（保留最新一条，防止数据库中同一日期有多条记录）
+        const dateMap = new Map();
+        klines.forEach(k => {
+          const key = k.date;
+          if (!dateMap.has(key) || k.timestamp > dateMap.get(key).timestamp) {
+            dateMap.set(key, k);
+          }
+        });
+        const dedupedKlines = Array.from(dateMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+
+        return res.json({ success: true, data: dedupedKlines, count: dedupedKlines.length, source: 'database' });
       }
     } catch (dbErr) {
       console.warn(`[MarketKline] 数据库查询失败，尝试外部API: ${dbErr.message}`);
@@ -1108,12 +1134,13 @@ router.post('/market/calculate-indicators/:taskId/stop', async (req, res) => {
 // POST /api/market/init-historical-data - 初始化历史K线数据
 router.post('/market/init-historical-data', async (req, res) => {
   try {
-    const { symbols, years = 10, period = 'D' } = req.body || {};
+    const { symbols, years = 10, period = 'D', provider } = req.body || {};
     
     const result = await initHistoricalDataAsync(pool, {
       symbols: symbols || null,
       years,
-      period
+      period,
+      provider
     });
 
     res.json({ success: true, data: result });

@@ -232,10 +232,25 @@ async function fetchTushareStocks() {
 
 async function fetchTushareKline(symbol, period = 'D', limit = 120) {
   try {
+    // 将symbol转换为ts_code格式 (000001 -> 000001.SZ, 600001 -> 600001.SH)
+    let tsCode = symbol;
+    if (!symbol.includes('.')) {
+      const suffix = symbol.startsWith('6') || symbol.startsWith('9') || symbol.startsWith('1') ? 'SH' : 'SZ';
+      tsCode = `${symbol}.${suffix}`;
+    }
+    
+    // 对于大量数据请求（历史初始化），使用日期范围而非 limit
+    const endDate = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const startDate = new Date(Date.now() - limit * 24 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
+    
     const requestBody = {
       api_name: 'daily',
       token: TUSHARE_API_TOKEN,
-      params: { ts_code: symbol, limit: limit },
+      params: { 
+        ts_code: tsCode, 
+        start_date: startDate,
+        end_date: endDate
+      },
       fields: 'trade_date,open,high,low,close,vol,amount',
     };
 
@@ -547,7 +562,7 @@ async function fetchEastmoneyKline(symbol, period = 'D', limit = 120) {
     // Use https.get (HTTP/1.1) instead of fetch (HTTP/2) to avoid Eastmoney server compatibility issues
     const data = await new Promise((resolve, reject) => {
       const req = https.get(url, {
-        timeout: 10000,
+        timeout: 30000,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         },
@@ -1638,12 +1653,12 @@ async function calculateIndicatorsAfterSync(dbPool) {
  * 异步初始化10年历史K线数据（支持进度跟踪和停止）
  */
 async function initHistoricalDataAsync(dbPool, options = {}) {
-  const { symbols = null, years = 10, period = 'D' } = options;
+  const { symbols = null, years = 10, period = 'D', provider = 'eastmoney' } = options;
   const taskId = `historical_init_${Date.now()}`;
   
-  createTask(taskId, { years, period, type: 'historical_init' });
+  createTask(taskId, { years, period, type: 'historical_init', provider });
   
-  executeHistoricalInit(taskId, dbPool, { symbols, years, period }).catch(err => {
+  executeHistoricalInit(taskId, dbPool, { symbols, years, period, provider }).catch(err => {
     console.error('[HistoricalData] 任务执行异常:', err);
     failTask(taskId, err.message);
   });
@@ -1655,7 +1670,7 @@ async function initHistoricalDataAsync(dbPool, options = {}) {
  * 执行历史数据初始化的实际逻辑
  */
 async function executeHistoricalInit(taskId, dbPool, options = {}) {
-  const { symbols = null, years = 10, period = 'D' } = options;
+  const { symbols = null, years = 10, period = 'D', provider = 'tushare' } = options;
   
   try {
     // 从stock_pool获取所有股票
@@ -1680,7 +1695,7 @@ async function executeHistoricalInit(taskId, dbPool, options = {}) {
     }
     
     updateTask(taskId, { total: stocks.length });
-    console.log(`[HistoricalData] [${taskId}] 开始初始化 ${stocks.length} 只股票的 ${years} 年历史数据 (周期: ${period})`);
+    console.log(`[HistoricalData] [${taskId}] 开始初始化 ${stocks.length} 只股票的 ${years} 年历史数据 (周期: ${period}, 数据源: ${provider})`);
     
     let successCount = 0;
     let failedCount = 0;
@@ -1689,52 +1704,100 @@ async function executeHistoricalInit(taskId, dbPool, options = {}) {
     
     // 10年约2440个交易日
     const limit = years * 244;
-    const batchSize = 50; // 每批50只，避免API过载
+    const batchSize = 5; // 每批5只，避免Tushare API限流
     
-    for (let i = 0; i < stocks.length; i += batchSize) {
-      // 检查是否请求停止
-      if (isStopRequested(taskId)) {
-        console.log(`[HistoricalData] [${taskId}] 收到停止请求，终止初始化`);
-        completeTask(taskId, {
-          stopped: true,
-          successCount,
-          failedCount,
-          skippedCount,
-          processed,
-        });
-        return;
+    // 多轮重试机制
+    const maxRounds = 3;
+    let currentStocks = stocks;
+    let failedStocks = [];
+    
+    for (let round = 1; round <= maxRounds; round++) {
+      if (currentStocks.length === 0) break;
+      
+      if (round > 1) {
+        console.log(`[HistoricalData] [${taskId}] ===== 第${round}轮重试 =====`);
+        console.log(`[HistoricalData] [${taskId}] 重试 ${currentStocks.length} 只失败股票`);
+        // 轮间间隔：等待更长时间让API恢复
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
       
-      const batch = stocks.slice(i, i + batchSize);
+      const batchDelay = round === 1 ? 2000 : 3000; // 重试轮次间隔更长
       
-      const promises = batch.map(async (stock) => {
-        try {
-          const result = await fetchAndStoreKlineData(
-            stock.symbol,
-            period,
-            limit,
-            dbPool
-          );
-          return result;
-        } catch (err) {
-          return { symbol: stock.symbol, status: 'failed', error: err.message };
+      // 重置本轮计数
+      let roundSuccess = 0;
+      let roundFailed = 0;
+      let roundSkipped = 0;
+      failedStocks = [];
+      
+      for (let i = 0; i < currentStocks.length; i += batchSize) {
+        // 检查是否请求停止
+        if (isStopRequested(taskId)) {
+          console.log(`[HistoricalData] [${taskId}] 收到停止请求，终止初始化`);
+          completeTask(taskId, {
+            stopped: true,
+            successCount,
+            failedCount,
+            skippedCount,
+            processed,
+          });
+          return;
         }
-      });
-      
-      const results = await Promise.all(promises);
-      
-      for (const result of results) {
-        if (result.status === 'success') successCount++;
-        else if (result.status === 'failed') failedCount++;
-        else skippedCount++;
+        
+        const batch = currentStocks.slice(i, i + batchSize);
+        
+        // 串行处理，避免并发请求触发限流
+        for (const stock of batch) {
+          try {
+            const result = await fetchAndStoreKlineData(
+              stock.symbol,
+              period,
+              limit,
+              dbPool,
+              provider,
+              round === 1 ? 1 : 2 // 重试轮次增加每数据源的重试次数
+            );
+            
+            if (result.status === 'success') {
+              roundSuccess++;
+              successCount++;
+            } else if (result.status === 'failed') {
+              roundFailed++;
+              failedStocks.push(stock);
+            } else {
+              roundSkipped++;
+            }
+            
+            processed++;
+            updateTask(taskId, { processed, successCount, failedCount: failedStocks.length, skippedCount });
+          } catch (err) {
+            failedStocks.push(stock);
+            processed++;
+            updateTask(taskId, { processed, successCount, failedCount: failedStocks.length, skippedCount });
+            console.warn(`[HistoricalData] ${stock.symbol}: 处理失败: ${err.message}`);
+          }
+          
+          // 每只股票之间间隔
+          if (batch.indexOf(stock) < batch.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 400));
+          }
+        }
+        
+        if (processed < stocks.length) {
+          const pct = Math.round(processed / stocks.length * 100);
+          console.log(`[HistoricalData] [${taskId}] 进度: ${processed}/${stocks.length} (${pct}%) 成功:${successCount} 失败:${failedStocks.length} 跳过:${skippedCount + roundSkipped} (轮${round})`);
+        }
+        
+        // 每批次后暂停，避免API限流
+        if (i + batchSize < currentStocks.length) {
+          await new Promise(resolve => setTimeout(resolve, batchDelay));
+        }
       }
       
-      processed += batch.length;
-      updateTask(taskId, { processed, successCount, failedCount, skippedCount });
-      console.log(`[HistoricalData] [${taskId}] 进度: ${processed}/${stocks.length} (${Math.round(processed/stocks.length*100)}%)`);
+      skippedCount += roundSkipped;
+      console.log(`[HistoricalData] [${taskId}] 第${round}轮结果: 成功${roundSuccess} 失败${roundFailed} 跳过${roundSkipped}`);
       
-      // 每批次后暂停500ms，避免API限流
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // 准备下一轮重试
+      currentStocks = failedStocks;
     }
     
     completeTask(taskId, {
@@ -1755,87 +1818,83 @@ async function executeHistoricalInit(taskId, dbPool, options = {}) {
 /**
  * 获取并存储K线历史数据
  */
-async function fetchAndStoreKlineData(symbol, period = 'D', limit = 2440, dbPool = null) {
+async function fetchAndStoreKlineData(symbol, period = 'D', limit = 2440, dbPool = null, provider = null, maxRetries = 2) {
   try {
     let klineData = null;
     let usedProvider = '';
-    
-    // 1. 优先尝试新浪财经（在国内网络下更稳定）
-    try {
-      klineData = await fetchSinaKline(symbol, period, Math.min(limit, 1000));
-      if (klineData && klineData.length > 0) {
-        usedProvider = 'sina';
-      }
-    } catch (e) {
-      console.warn(`[fetchAndStoreKlineData] ${symbol}: 新浪失败: ${e.message}`);
+
+    // 定义数据源尝试顺序：优先使用用户指定的数据源，失败后fallback
+    const providers = [];
+    if (provider && MARKET_PROVIDERS[provider]?.fetchKline) {
+      providers.push({ name: provider, fetchFn: MARKET_PROVIDERS[provider].fetchKline });
     }
     
-    // 2. 新浪失败，尝试东方财富
-    if (!klineData || klineData.length === 0) {
-      try {
-        klineData = await fetchEastmoneyKline(symbol, period, limit);
-        if (klineData && klineData.length > 0) {
-          usedProvider = 'eastmoney';
+    // 添加其他数据源作为fallback（按可用性和历史数据完整性排序）
+    if (!providers.find(p => p.name === 'eastmoney') && MARKET_PROVIDERS.eastmoney?.fetchKline) {
+      providers.push({ name: 'eastmoney', fetchFn: MARKET_PROVIDERS.eastmoney.fetchKline });
+    }
+    if (!providers.find(p => p.name === 'tushare') && MARKET_PROVIDERS.tushare?.fetchKline) {
+      providers.push({ name: 'tushare', fetchFn: MARKET_PROVIDERS.tushare.fetchKline });
+    }
+    if (!providers.find(p => p.name === 'sina') && MARKET_PROVIDERS.sina?.fetchKline) {
+      providers.push({ name: 'sina', fetchFn: MARKET_PROVIDERS.sina.fetchKline });
+    }
+    if (!providers.find(p => p.name === 'akshare') && MARKET_PROVIDERS.akshare?.fetchKline) {
+      providers.push({ name: 'akshare', fetchFn: MARKET_PROVIDERS.akshare.fetchKline });
+    }
+
+    // 依次尝试各数据源，每个数据源支持重试
+    for (const { name, fetchFn } of providers) {
+      let retries = 0;
+      let lastError = null;
+      
+      while (retries <= maxRetries) {
+        try {
+          if (retries > 0) {
+            console.log(`[fetchAndStoreKlineData] ${symbol}: ${name} 重试 ${retries}/${maxRetries}`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * retries)); // 递增延迟
+          }
+          
+          klineData = await fetchFn(symbol, period, limit);
+          if (klineData && klineData.length > 0) {
+            usedProvider = name;
+            break;
+          }
+          lastError = new Error('数据为空');
+        } catch (e) {
+          lastError = e;
+          console.warn(`[fetchAndStoreKlineData] ${symbol}: ${name} 第${retries + 1}次失败: ${e.message}`);
         }
-      } catch (e) {
-        console.warn(`[fetchAndStoreKlineData] ${symbol}: 东方财富失败: ${e.message}`);
+        retries++;
       }
-    }
-    
-    // 3. 仍然失败，尝试AKShare
-    if (!klineData || klineData.length === 0) {
-      try {
-        klineData = await fetchAKShareKline(symbol, period, limit);
-        if (klineData && klineData.length > 0) {
-          usedProvider = 'akshare';
-        }
-      } catch (e) {
-        console.warn(`[fetchAndStoreKlineData] ${symbol}: AKShare失败: ${e.message}`);
-      }
+      
+      if (usedProvider) break;
     }
     
     if (!klineData || klineData.length === 0) {
-      return { symbol, status: 'skipped', reason: '所有数据源均无数据' };
+      return { symbol, status: 'skipped', reason: `所有数据源均无数据 (最后错误: ${lastError?.message || '未知'})` };
     }
     
-    // 检查是否已有数据 - 只检查最新日期是否已存在
-    const existingResult = await dbPool.query(
-      `SELECT MAX(trade_date) as max_date FROM stock_daily WHERE symbol = $1`,
-      [symbol]
-    );
-    const maxDate = existingResult.rows[0].max_date;
-    
-    // 获取新数据中最早的日期
-    const newMinDate = klineData[0].date.replace(/-/g, '');
-    
-    // 如果最新数据的最早日期已经在数据库中存在（说明数据已完整），跳过
-    if (maxDate && newMinDate >= maxDate) {
-      return { symbol, status: 'skipped', reason: '数据已存在' };
-    }
-    
-    // 批量插入/更新数据（只插入数据库中不存在的数据）
+    // 批量插入/更新数据（ON CONFLICT 会自动处理重复数据）
     const values = [];
     const placeholders = [];
     let insertCount = 0;
     
     klineData.forEach((item) => {
       const dateStr = item.date.replace(/-/g, '');
-      // 只插入数据库中不存在的日期
-      if (!maxDate || dateStr < maxDate) {
-        const baseIdx = insertCount * 8;
-        values.push(
-          symbol, dateStr,
-          item.open, item.high, item.low, item.close,
-          item.volume, item.amount || 0
-        );
-        placeholders.push(`($${baseIdx + 1}, $${baseIdx + 2}, $${baseIdx + 3}, $${baseIdx + 4}, $${baseIdx + 5}, $${baseIdx + 6}, $${baseIdx + 7}, $${baseIdx + 8})`);
-        insertCount++;
-      }
+      const baseIdx = insertCount * 8;
+      values.push(
+        symbol, dateStr,
+        item.open, item.high, item.low, item.close,
+        item.volume, item.amount || 0
+      );
+      placeholders.push(`($${baseIdx + 1}, $${baseIdx + 2}, $${baseIdx + 3}, $${baseIdx + 4}, $${baseIdx + 5}, $${baseIdx + 6}, $${baseIdx + 7}, $${baseIdx + 8})`);
+      insertCount++;
     });
     
-    // 如果没有新数据需要插入
+    // 如果没有数据需要插入
     if (insertCount === 0) {
-      return { symbol, status: 'skipped', reason: '无新数据' };
+      return { symbol, status: 'skipped', reason: '无数据' };
     }
     
     const sql = `

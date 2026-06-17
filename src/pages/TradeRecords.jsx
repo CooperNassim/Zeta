@@ -11,7 +11,6 @@ import FormModal from '../components/FormModal'
 import Modal from '../components/Modal'
 import Toolbar from '../components/Toolbar'
 import ErrorMessage from '../components/ErrorMessage'
-import StockChartModal from '../components/StockChartModal'
 import useStore from '../store/useStore'
 import { format } from 'date-fns'
 import ExcelJS from 'exceljs'
@@ -111,8 +110,6 @@ const TradeRecords = () => {
   const [showSummaryModal, setShowSummaryModal] = useState(false)
   const [showBuyDetailModal, setShowBuyDetailModal] = useState(false)
   const [showSellDetailModal, setShowSellDetailModal] = useState(false)
-  const [showStockChartModal, setShowStockChartModal] = useState(false)
-  const [chartRecord, setChartRecord] = useState(null)
   const [summaryFormData, setSummaryFormData] = useState({})
   const [summaryFormErrors, setSummaryFormErrors] = useState({})
   const [buyDetailFormData, setBuyDetailFormData] = useState({})
@@ -401,6 +398,8 @@ const TradeRecords = () => {
         sellPrice: formatField(effectiveSellPrice),
         sellTradeCommission: formatField(currentRecord.sellTradeCommission),
         sellOtherFees: formatField(currentRecord.sellOtherFees),
+        upperBand: formatField(currentRecord.upperBand),
+        lowerBand: formatField(currentRecord.lowerBand),
         tradeSummary: currentRecord.tradeSummary || ''
       })
     } else {
@@ -412,6 +411,8 @@ const TradeRecords = () => {
         sellPrice: '',
         sellTradeCommission: '',
         sellOtherFees: '',
+        upperBand: '',
+        lowerBand: '',
         tradeSummary: ''
       })
     }
@@ -551,6 +552,8 @@ const TradeRecords = () => {
         actual_sell_price: sellPrice,
         sell_trade_commission: summaryFormData.sellTradeCommission != null && summaryFormData.sellTradeCommission !== '' ? parseFloat(summaryFormData.sellTradeCommission.trim()) : null,
         sell_other_fees: summaryFormData.sellOtherFees != null && summaryFormData.sellOtherFees !== '' ? parseFloat(summaryFormData.sellOtherFees.trim()) : null,
+        upper_band: summaryFormData.upperBand != null && summaryFormData.upperBand !== '' ? parseFloat(summaryFormData.upperBand.trim()) : null,
+        lower_band: summaryFormData.lowerBand != null && summaryFormData.lowerBand !== '' ? parseFloat(summaryFormData.lowerBand.trim()) : null,
         trade_summary: summaryFormData.tradeSummary != null ? summaryFormData.tradeSummary.trim() : null,
         // 同时更新金额、盈亏、滑点字段
         buy_amount: newBuyAmount,
@@ -563,9 +566,13 @@ const TradeRecords = () => {
         slippage_net_profit_ratio: Math.round(slippageNetProfitRatioValue * 100) / 100
       }
 
+      const token = localStorage.getItem('auth_token')
       const response = await fetch('/api/trade_records/' + currentRecord.id, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(updateRequest)
       }).then(res => res.json())
 
@@ -615,7 +622,10 @@ const TradeRecords = () => {
                 updatePromises.push(
                   fetch('/api/transactions/' + t.id, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
                     body: JSON.stringify({ total_price: newAmount })
                   }).then(res => res.json())
                     .then(r => console.log('[交易结案] 更新买入账单', t.id, ':', newAmount))
@@ -640,7 +650,10 @@ const TradeRecords = () => {
                 updatePromises.push(
                   fetch('/api/transactions/' + t.id, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
                     body: JSON.stringify({ total_price: newAmount })
                   }).then(res => res.json())
                     .then(r => console.log('[交易结案] 更新卖出账单', t.id, ':', newAmount))
@@ -696,7 +709,10 @@ const TradeRecords = () => {
                 feePromises.push(
                   fetch('/api/transactions/' + existingFeeTransaction.id, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
                     body: JSON.stringify({ total_price: negativeAmount, quantity: descriptionQuantity })
                   }).catch(err => console.error('[交易结案] 更新费用账单失败', fee.type, err))
                 )
@@ -710,7 +726,10 @@ const TradeRecords = () => {
                 feePromises.push(
                   fetch('/api/transactions', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
                     body: JSON.stringify({
                       transaction_type: fee.type,
                       symbol: symbol,
@@ -732,7 +751,10 @@ const TradeRecords = () => {
               console.log('[交易结案] 删除费用账单:', fee.type, existingFeeTransaction.id)
               feePromises.push(
                 fetch('/api/transactions/' + existingFeeTransaction.id, {
-                  method: 'DELETE'
+                  method: 'DELETE',
+                  headers: {
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                  }
                 }).catch(err => console.error('[交易结案] 删除费用账单失败', fee.type, err))
               )
             }
@@ -741,7 +763,11 @@ const TradeRecords = () => {
         }
 
         // 从数据库重新同步数据，确保数据一致性
-        const syncResponse = await fetch('/api/sync/all')
+        const syncResponse = await fetch('/api/sync/all', {
+          headers: {
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          }
+        })
         const syncData = await syncResponse.json()
         if (syncData.success && syncData.data) {
           if (syncData.data.trade_records !== undefined) {
@@ -935,31 +961,18 @@ const TradeRecords = () => {
     // 获取卖出策略：参考买入详情弹窗的逻辑
     let sellStrategyValue = ''
     
-    console.log('🔍 [Debug Strategy] 查找卖出策略:')
-    console.log('   - sellOrders数量:', sellOrders.length)
-    console.log('   - record.sellStrategyId:', record.sellStrategyId)
-    console.log('   - strategyRecords长度:', strategyRecords.length)
-    
     // 使用策略记录查找策略名称
     if (sellOrders.length > 0 && sellOrders[0].strategyId) {
-      console.log('   - 从卖出订单策略ID查找:', sellOrders[0].strategyId, ', ID类型:', typeof sellOrders[0].strategyId)
       const strategy = strategyRecords.find(s => {
-        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', sellOrders[0].strategyId, '(类型:', typeof sellOrders[0].strategyId, ')')
         return s.id === sellOrders[0].strategyId
       })
-      console.log('   - 查找结果:', strategy)
       sellStrategyValue = strategy ? strategy.name : ''
-    } else if ((fullRecord || record).sellStrategyId) {
-      console.log('   - 从交易记录策略ID查找:', (fullRecord || record).sellStrategyId, ', ID类型:', typeof (fullRecord || record).sellStrategyId)
+    } else if (record.sellStrategyId) {
       const strategy = strategyRecords.find(s => {
-        console.log('     - 比较:', s.id, '(类型:', typeof s.id, ') 与', (fullRecord || record).sellStrategyId, '(类型:', typeof (fullRecord || record).sellStrategyId, ')')
-        return s.id === (fullRecord || record).sellStrategyId
+        return s.id === record.sellStrategyId
       })
-      console.log('   - 查找结果:', strategy)
       sellStrategyValue = strategy ? strategy.name : ''
     }
-    
-    console.log('   - 最终策略名称:', sellStrategyValue)
     
     // 如果仍然为空，设置默认值
     if (!sellStrategyValue) {
@@ -1068,10 +1081,14 @@ const TradeRecords = () => {
     }
 
     try {
+      const token = localStorage.getItem('auth_token')
       // 保存到数据库
       const response = await fetch('/api/trade_records/' + detailRecord.id, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
             actual_sell_price: parsePrice(sellDetailFormData.sellPrice),
             sell_trade_commission: sellDetailFormData.sellTradeCommission?.toString().trim() || '',
@@ -1081,7 +1098,11 @@ const TradeRecords = () => {
 
       if (response.success) {
         // 从数据库重新同步数据
-        await fetch('/api/sync/all')
+        await fetch('/api/sync/all', {
+          headers: {
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          }
+        })
           .then(res => res.json())
           .then(syncResponse => {
             if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
@@ -1118,10 +1139,14 @@ const TradeRecords = () => {
     }
 
     try {
+      const token = localStorage.getItem('auth_token')
       // 保存到数据库
       const response = await fetch('/api/trade_records/' + detailRecord.id, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
           buy_price: parsePrice(buyDetailFormData.buyPrice),
           trade_commission: buyDetailFormData.tradeCommission?.toString().trim() || '',
@@ -1131,7 +1156,11 @@ const TradeRecords = () => {
 
       if (response.success) {
         // 从数据库重新同步数据
-        await fetch('/api/sync/all')
+        await fetch('/api/sync/all', {
+          headers: {
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          }
+        })
           .then(res => res.json())
           .then(syncResponse => {
             if (syncResponse.success && syncResponse.data && syncResponse.data.trade_records !== undefined) {
@@ -1326,6 +1355,24 @@ const TradeRecords = () => {
       key: 'sellOtherFees',
       label: '卖出其他费用',
       type: 'text',
+      placeholder: '请输入',
+      required: false,
+      grid: true
+    },
+    {
+      key: 'upperBand',
+      label: '通道上轨',
+      type: 'text',
+      inputType: 'number',
+      placeholder: '请输入',
+      required: false,
+      grid: true
+    },
+    {
+      key: 'lowerBand',
+      label: '通道下轨',
+      type: 'text',
+      inputType: 'number',
       placeholder: '请输入',
       required: false,
       grid: true
@@ -1658,10 +1705,18 @@ const TradeRecords = () => {
           return formatNum(ratio) + '%'
         }
         return '-'
-      case 'upperBand':
-        return item.buyChannel?.upperBand ? item.buyChannel.upperBand.toFixed(2) : '-'
-      case 'lowerBand':
-        return item.buyChannel?.lowerBand ? item.buyChannel.lowerBand.toFixed(2) : '-'
+      case 'upperBand': {
+        const val = item.upperBand != null ? parseFloat(item.upperBand) : (item.buyChannel?.upperBand != null ? parseFloat(item.buyChannel.upperBand) : null)
+        if (val == null) return '-'
+        const rounded = Math.round(val * 100) / 100
+        return Number.isInteger(rounded) ? rounded : rounded.toFixed(2)
+      }
+      case 'lowerBand': {
+        const val = item.lowerBand != null ? parseFloat(item.lowerBand) : (item.buyChannel?.lowerBand != null ? parseFloat(item.buyChannel.lowerBand) : null)
+        if (val == null) return '-'
+        const rounded = Math.round(val * 100) / 100
+        return Number.isInteger(rounded) ? rounded : rounded.toFixed(2)
+      }
       case 'overallScore': {
         const upperBand = item.buyChannel?.upperBand ? parseFloat(item.buyChannel.upperBand) : 0
         const lowerBand = item.buyChannel?.lowerBand ? parseFloat(item.buyChannel.lowerBand) : 0
@@ -2171,19 +2226,31 @@ const TradeRecords = () => {
                     // 优先使用数据库通道上轨字段
                     const dbUpperBand = item.upperBand != null ? parseFloat(item.upperBand) : null
                     if (dbUpperBand != null) {
-                      return <span>{dbUpperBand.toFixed(2)}</span>
+                      const rounded = Math.round(dbUpperBand * 100) / 100
+                      return <span>{Number.isInteger(rounded) ? rounded : rounded.toFixed(2)}</span>
                     }
                     // 回退：从 buyChannel 对象获取
-                    return <span>{item.buyChannel?.upperBand ? item.buyChannel.upperBand.toFixed(2) : '-'}</span>
+                    const fallback = item.buyChannel?.upperBand
+                    if (fallback != null) {
+                      const rounded = Math.round(parseFloat(fallback) * 100) / 100
+                      return <span>{Number.isInteger(rounded) ? rounded : rounded.toFixed(2)}</span>
+                    }
+                    return <span>-</span>
                   }
                   if (field.key === 'lowerBand') {
                     // 优先使用数据库通道下轨字段
                     const dbLowerBand = item.lowerBand != null ? parseFloat(item.lowerBand) : null
                     if (dbLowerBand != null) {
-                      return <span>{dbLowerBand.toFixed(2)}</span>
+                      const rounded = Math.round(dbLowerBand * 100) / 100
+                      return <span>{Number.isInteger(rounded) ? rounded : rounded.toFixed(2)}</span>
                     }
                     // 回退：从 buyChannel 对象获取
-                    return <span>{item.buyChannel?.lowerBand ? item.buyChannel.lowerBand.toFixed(2) : '-'}</span>
+                    const fallback = item.buyChannel?.lowerBand
+                    if (fallback != null) {
+                      const rounded = Math.round(parseFloat(fallback) * 100) / 100
+                      return <span>{Number.isInteger(rounded) ? rounded : rounded.toFixed(2)}</span>
+                    }
+                    return <span>-</span>
                   }
                   if (field.key === 'tradeSummary') {
                     return <span>{item.tradeSummary || '-'}</span>
@@ -2220,19 +2287,6 @@ const TradeRecords = () => {
                     }
                     
                     return <span>{grade}</span>
-                  }
-                  if (field.key === 'chartReview') {
-                    return (
-                      <button
-                        onClick={() => {
-                          setChartRecord(item)
-                          setShowStockChartModal(true)
-                        }}
-                        className="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition-colors"
-                      >
-                        查看
-                      </button>
-                    )
                   }
                   if (field.key === 'buyStrategyName') {
                     // 获取第2选择的买入策略名称
@@ -2370,13 +2424,6 @@ const TradeRecords = () => {
         onFormDataChange={handleSellDetailFormDataChange}
         width="max-w-2xl"
         hideButtons={true}
-      />
-
-      {/* 图表回顾弹窗 */}
-      <StockChartModal
-        isOpen={showStockChartModal}
-        onClose={() => setShowStockChartModal(false)}
-        record={chartRecord}
       />
     </div>
   )

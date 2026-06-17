@@ -165,13 +165,28 @@ export default function DatabaseManagement() {
   const [expandedTable, setExpandedTable] = useState(null)
   const [dbEnabled, setDbEnabled] = useState(true)
 
+  // 获取认证头
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('auth_token')
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    }
+  }
+
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type })
   }, [])
 
   const fetchDbInfo = useCallback(async () => {
     try {
-      const res = await fetch('/api/database/info')
+      const res = await fetch('/api/database/info', { headers: getAuthHeaders() })
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
+      }
       const result = await res.json()
       if (result.success) setDbInfo(result.data)
     } catch (e) {
@@ -181,7 +196,13 @@ export default function DatabaseManagement() {
 
   const fetchDbStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/database/status')
+      const res = await fetch('/api/database/status', { headers: getAuthHeaders() })
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
+      }
       const result = await res.json()
       if (result.success) setDbStatus(result.data)
     } catch (e) {
@@ -191,7 +212,13 @@ export default function DatabaseManagement() {
 
   const fetchBackups = useCallback(async () => {
     try {
-      const res = await fetch('/api/database/backups')
+      const res = await fetch('/api/database/backups', { headers: getAuthHeaders() })
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
+      }
       const result = await res.json()
       if (result.success) setBackups(result.data)
     } catch (e) {
@@ -217,7 +244,13 @@ export default function DatabaseManagement() {
 
   const handleRestart = async () => {
     try {
-      const res = await fetch('/api/database/restart', { method: 'POST' })
+      const res = await fetch('/api/database/restart', { method: 'POST', headers: getAuthHeaders() })
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
+      }
       const result = await res.json()
       if (result.success) {
         showToast('数据库连接池已重启', 'success')
@@ -230,7 +263,13 @@ export default function DatabaseManagement() {
 
   const handleBackup = async () => {
     try {
-      const res = await fetch('/api/database/backup', { method: 'POST' })
+      const res = await fetch('/api/database/backup', { method: 'POST', headers: getAuthHeaders() })
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
+      }
       const result = await res.json()
       if (result.success) {
         showToast(`备份成功：${result.data.fileName}`, 'success')
@@ -243,7 +282,13 @@ export default function DatabaseManagement() {
 
   const handleExport = async () => {
     try {
-      const res = await fetch('/api/database/export', { method: 'POST' })
+      const res = await fetch('/api/database/export', { method: 'POST', headers: getAuthHeaders() })
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
+      }
       const result = await res.json()
       if (result.success) {
         showToast(`导出成功：${result.data.fileName}`, 'success')
@@ -265,9 +310,15 @@ export default function DatabaseManagement() {
         try {
           const res = await fetch('/api/database/restore', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ filename })
           })
+          if (res.status === 401) {
+            localStorage.removeItem('auth_token')
+            localStorage.removeItem('auth_user')
+            window.location.href = '/login'
+            return
+          }
           const result = await res.json()
           if (result.success) {
             showToast('数据恢复成功', 'success')
@@ -291,7 +342,13 @@ export default function DatabaseManagement() {
       onConfirm: async () => {
         setConfirmModal(prev => ({ ...prev, open: false }))
         try {
-          const res = await fetch(`/api/database/backup/${encodeURIComponent(filename)}`, { method: 'DELETE' })
+          const res = await fetch(`/api/database/backup/${encodeURIComponent(filename)}`, { method: 'DELETE', headers: getAuthHeaders() })
+          if (res.status === 401) {
+            localStorage.removeItem('auth_token')
+            localStorage.removeItem('auth_user')
+            window.location.href = '/login'
+            return
+          }
           const result = await res.json()
           if (result.success) {
             showToast('备份文件已删除', 'success')
@@ -315,9 +372,15 @@ export default function DatabaseManagement() {
         try {
           const res = await fetch('/api/database/cleanup', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ type: 'soft-deleted' })
           })
+          if (res.status === 401) {
+            localStorage.removeItem('auth_token')
+            localStorage.removeItem('auth_user')
+            window.location.href = '/login'
+            return
+          }
           const result = await res.json()
           if (result.success) {
             showToast(`已清理 ${result.data.totalDeleted || 0} 条软删除数据`, 'success')
@@ -341,9 +404,15 @@ export default function DatabaseManagement() {
         try {
           const res = await fetch('/api/database/cleanup', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ type: 'all-data' })
           })
+          if (res.status === 401) {
+            localStorage.removeItem('auth_token')
+            localStorage.removeItem('auth_user')
+            window.location.href = '/login'
+            return
+          }
           const result = await res.json()
           if (result.success) {
             showToast('所有数据已清空', 'success')
@@ -389,89 +458,29 @@ export default function DatabaseManagement() {
         type={confirmModal.type}
       />
 
-      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '0px', paddingRight: '10px', position: 'relative', paddingBottom: '10px', overflow: 'auto' }}>
-        {/* 页面头部 */}
-      <div className="bg-white border-b border-gray-100 px-6 py-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-sm">
-              <Database className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-gray-900">数据库管理</h1>
-              <p className="text-xs text-gray-400 mt-0.5">PostgreSQL 数据库状态与控制面板</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {/* 数据库开关 */}
-            <div className="flex items-center gap-2 mr-2">
-              <span className="text-xs text-gray-500">{dbEnabled ? '开启' : '关闭'}</span>
-              <button
-                onClick={() => setDbEnabled(!dbEnabled)}
-                className={`w-10 h-5 rounded-full transition-colors duration-200 relative ${dbEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
-              >
-                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${dbEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
-              </button>
-            </div>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '0px', paddingRight: '10px', paddingTop: '10px', position: 'relative', paddingBottom: '10px', overflow: 'auto' }}>
+      <div className="pr-2.5 pb-2.5">
+        {/* 操作按钮 */}
+        <div className="bg-white rounded-xl border border-gray-100 p-3 mb-2.5 flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-400 mr-1 font-medium">快捷操作</span>
+          {/* 数据库开关 */}
+          <div className="flex items-center gap-2 mr-2">
+            <span className="text-xs text-gray-500">{dbEnabled ? '开启' : '关闭'}</span>
             <button
-              onClick={refreshAll}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
-              title="刷新"
+              onClick={() => setDbEnabled(!dbEnabled)}
+              className={`w-10 h-5 rounded-full transition-colors duration-200 relative ${dbEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${dbEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
             </button>
           </div>
-        </div>
-      </div>
-
-      <div className="p-6">
-        {/* 状态卡片行 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-5">
-          <StatCard
-            icon={dbStatus?.connected ? Wifi : WifiOff}
-            label="状态"
-            value={dbStatus?.connected ? '在线' : '离线'}
-            color={dbStatus?.connected ? 'emerald' : 'rose'}
-          />
-          <StatCard
-            icon={Activity}
-            label="延迟"
-            value={`${dbStatus?.latency ?? '—'}ms`}
-            color="blue"
-            subValue="响应时间"
-          />
-          <StatCard
-            icon={Server}
-            label="版本"
-            value={extractPgVersion(dbInfo?.version)}
-            color="purple"
-            subValue="PostgreSQL"
-          />
-          <StatCard
-            icon={HardDrive}
-            label="大小"
-            value={dbInfo?.size || '—'}
-            color="slate"
-            subValue="数据库容量"
-          />
-          <StatCard
-            icon={Layers}
-            label="表数"
-            value={dbInfo?.tableCount || '—'}
-            color="amber"
-            subValue={`${totalRows} 条记录`}
-          />
-          <StatCard
-            icon={Clock}
-            label="运行时间"
-            value={formatUptime(dbInfo?.uptime)}
-            color="emerald"
-          />
-        </div>
-
-        {/* 操作按钮 */}
-        <div className="bg-white rounded-xl border border-gray-100 p-3 mb-5 flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-400 mr-1 font-medium">快捷操作</span>
+          {/* 刷新按钮 */}
+          <button
+            onClick={refreshAll}
+            className="px-3.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
           {actionButtons.map(btn => (
             <button
               key={btn.label}
@@ -486,7 +495,7 @@ export default function DatabaseManagement() {
 
         {/* Tab 导航 */}
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="flex border-b border-gray-100 px-4 pt-3">
+          <div className="flex border-b border-gray-100 px-2.5 pt-2.5">
             {tabs.map(tab => {
               const isActive = activeTab === tab.id
               return (
@@ -507,12 +516,12 @@ export default function DatabaseManagement() {
           </div>
 
           {/* Tab 内容 */}
-          <div className="p-5">
+          <div className="p-2.5">
             {/* ===== 概览 Tab ===== */}
             {activeTab === 'overview' && (
-              <div className="space-y-4">
+              <div className="space-y-2.5">
                 {/* 连接信息 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   <div className="bg-gray-50 rounded-xl p-4">
                     <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                       <Server className="w-4 h-4" />
@@ -646,7 +655,7 @@ export default function DatabaseManagement() {
 
             {/* ===== 备份管理 Tab ===== */}
             {activeTab === 'backup' && (
-              <div className="space-y-4">
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-700">备份列表</h3>
@@ -709,7 +718,7 @@ export default function DatabaseManagement() {
 
             {/* ===== 数据清理 Tab ===== */}
             {activeTab === 'cleanup' && (
-              <div className="space-y-4">
+              <div className="space-y-2.5">
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-1">数据清理</h3>
                   <p className="text-xs text-gray-400 mb-4">清理不需要的数据以释放空间</p>
@@ -799,8 +808,8 @@ export default function DatabaseManagement() {
 
             {/* ===== 导入导出 Tab ===== */}
             {activeTab === 'import-export' && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {/* 导出 */}
                   <div className="border border-gray-100 rounded-xl p-5 hover:shadow-md transition-shadow">
                     <div className="flex items-center gap-3 mb-4">

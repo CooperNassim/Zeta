@@ -511,17 +511,6 @@ const AccountRisk = () => {
   // 转换为数组
   const monthlyLossFilteredArray = Object.values(monthlyLossFiltered)
 
-  console.log('🔍 [monthlyLoss] 去重后的亏损记录:', monthlyLossFilteredArray)
-  console.log('🔍 [monthlyLoss] 亏损记录详情:', monthlyLossFilteredArray.map(r => ({
-    tradeNumber: r.tradeNumber,
-    buyQuantity: r.buyQuantity,
-    sellQuantity: r.sellQuantity,
-    profit: r.profit,
-    sellDate: r.sellDate,
-    sellTime: r.sellTime,
-    calculatedDate: r.sellDate || r.sellTime
-  })))
-
   const monthlyLoss = monthlyLossFilteredArray.reduce((sum, r) => sum + Math.abs(parseFloat(r.profit) || 0), 0)
     
   // 只使用实盘数据（用于计算月初账户总额）
@@ -538,10 +527,10 @@ const AccountRisk = () => {
     })
     .sort((a, b) => new Date(b.createdAt || b.created_at || b.buyDate || b.buyTime) - new Date(a.createdAt || a.created_at || a.buyDate || a.buyTime)) // 按时间倒序，最新的在前
   
-  // 使用上月最后一笔交易的余额作为上月总资产基准值，使用初始值1072680.52
+  // 使用上月最后一笔交易的余额作为上月总资产基准值
   const startMonthTotal = lastMonthTransactions.length > 0 
-    ? (lastMonthTransactions[0].balance || 1072680.52)
-    : 1072680.52
+    ? (lastMonthTransactions[0].balance || 0)
+    : 0
 
   // 计算已用额度（本月亏损 + 持仓风险）
   const usedRiskAmount = monthlyLoss + holdingOccupancy
@@ -552,17 +541,6 @@ const AccountRisk = () => {
   // 风险额度百分比（从风险配置数据获取）
   const riskConfig = useStore(state => state.riskConfig)
   const riskLimitPercentage = riskConfig?.real?.totalRiskPercent || 5
-  
-  // 调试信息：显示关键数值
-  console.log('=== 账户可用计算调试 ===')
-  console.log('月初账户:', startMonthTotal)
-  console.log('完整accountRiskData对象:', accountRiskData)
-  console.log('totalRiskPercent字段:', accountRiskData.totalRiskPercent)
-  console.log('使用的风险额度百分比:', riskLimitPercentage)
-  console.log('风险额度金额:', startMonthTotal * (riskLimitPercentage / 100))
-  console.log('已用额度:', usedRiskAmount)
-  console.log('计算结果:', (startMonthTotal * (riskLimitPercentage / 100)) - usedRiskAmount)
-  console.log('=========================')
   
   // 计算账户可用额度（月初账户总额 × 账户风险额度百分比 - 已用额度）
   const accountAvailable = (startMonthTotal * (riskLimitPercentage / 100)) - usedRiskAmount
@@ -790,8 +768,6 @@ const StrategyRanking = () => {
   const currentYear = new Date().getFullYear()
 
   // 当月亏损列表实时查询交易记录数据表
-  console.log('🔍 [StrategyRanking] 所有交易记录:', tradeRecords)
-  console.log('🔍 [StrategyRanking] 当前月份:', currentYear, '-', currentMonth + 1)
   
   const lossRankingsFiltered = tradeRecords
     .filter(r => !r.deleted) // 排除已删除的记录
@@ -815,26 +791,6 @@ const StrategyRanking = () => {
       // 优先使用r.profit，如果没有则计算：卖出金额 - 买入金额
       const profit = r.profit != null ? parseFloat(r.profit) : (r.sellAmount && r.buyAmount ? parseFloat(r.sellAmount) - parseFloat(r.buyAmount) : 0)
       const isLoss = profit < 0
-
-      // 调试信息
-      console.log('🔍 [StrategyRanking] 交易记录:', {
-        tradeNumber: r.tradeNumber,
-        symbol: r.symbol,
-        name: r.name,
-        sellDate: sellDateStr,
-        isCurrentMonth: isCurrentMonth,
-        profit: profit,
-        isLoss: isLoss,
-        deleted: r.deleted,
-        tradeStatus: r.tradeStatus,
-        buyPrice: r.buyPrice,
-        sellPrice: r.sellPrice,
-        buyQuantity: r.buyQuantity,
-        sellQuantity: r.sellQuantity,
-        buyAmount: r.buyAmount,
-        sellAmount: r.sellAmount,
-        rProfit: r.profit
-      })
 
       return isCurrentMonth && isLoss
     })

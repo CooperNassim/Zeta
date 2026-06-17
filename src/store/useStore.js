@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { calculateTradeGrade, calculateOverallScore } from '../utils/technicalIndicators'
 
 // API基础URL
 // 使用相对路径，通过 Vite 代理到后端
@@ -9,16 +8,28 @@ const API_BASE_URL = ''
 // API调用函数
 const apiCall = async (endpoint, method = 'GET', data = null) => {
   try {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
     const options = {
       method,
       headers: {
         'Content-Type': 'application/json',
       },
     }
+    if (token) {
+      options.headers['Authorization'] = `Bearer ${token}`
+    }
     if (data) {
       options.body = JSON.stringify(data)
     }
     const response = await fetch(`${API_BASE_URL}${endpoint}`, options)
+    if (response.status === 401) {
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('auth_user')
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login'
+      }
+      return { success: false, error: '认证已过期' }
+    }
     return await response.json()
   } catch (error) {
     console.error('API调用失败:', error)
@@ -63,38 +74,6 @@ export const initialRiskModels = [
     description: '单笔最大亏损不超过总资金的5%',
     maxLossPercent: 5,
     positionSize: 0.3
-  }
-]
-
-// 技术指标模板
-export const initialTechnicalIndicators = [
-  {
-    id: '1',
-    name: 'MACD',
-    description: '指数平滑异同移动平均线，用于判断趋势和买卖点',
-    icon: null,
-    tags: ['趋势', '动量']
-  },
-  {
-    id: '2',
-    name: 'RSI',
-    description: '相对强弱指数，用于判断超买超卖状态',
-    icon: null,
-    tags: ['动量', '震荡']
-  },
-  {
-    id: '3',
-    name: 'KDJ',
-    description: '随机指标，用于判断短期买卖点',
-    icon: null,
-    tags: ['震荡', '短期']
-  },
-  {
-    id: '4',
-    name: 'BOLL',
-    description: '布林带，用于判断价格波动范围和突破',
-    icon: null,
-    tags: ['趋势', '波动']
   }
 ]
 
@@ -146,9 +125,6 @@ const useStore = create(
         accountAvailable: 95.9,
         singleAvailable: 94.15
       },
-
-      // 技术指标
-      technicalIndicators: [...initialTechnicalIndicators],
 
       // 交易策略记录（扁平化存储，用于表格展示）
       strategyRecords: [],
@@ -298,37 +274,6 @@ const useStore = create(
 
       // 交易记录
       tradeRecords: [],
-
-      // 股票池数据
-      stockPool: [
-        { id: 1, symbol: '000001', name: '平安银行', market: 'cn', exchange: '深交所', sector: '银行', currentPrice: 10.50, change: 0.15, changePercent: 1.45, volume: 52000000, createdAt: new Date().toISOString(), deleted: false, deletedAt: null },
-        { id: 2, symbol: '600036', name: '招商银行', market: 'cn', exchange: '上交所', sector: '银行', currentPrice: 35.20, change: 0.50, changePercent: 1.44, volume: 28000000, createdAt: new Date().toISOString(), deleted: false, deletedAt: null },
-        { id: 3, symbol: '600519', name: '贵州茅台', market: 'cn', exchange: '上交所', sector: '白酒', currentPrice: 1680.00, change: -12.00, changePercent: -0.71, volume: 2500000, createdAt: new Date().toISOString(), deleted: false, deletedAt: null },
-        { id: 4, symbol: '000333', name: '美的集团', market: 'cn', exchange: '深交所', sector: '家电', currentPrice: 62.80, change: 1.20, changePercent: 1.95, volume: 35000000, createdAt: new Date().toISOString(), deleted: false, deletedAt: null },
-        { id: 5, symbol: '601318', name: '中国平安', market: 'cn', exchange: '上交所', sector: '保险', currentPrice: 45.60, change: -0.80, changePercent: -1.72, volume: 48000000, createdAt: new Date().toISOString(), deleted: false, deletedAt: null }
-      ],
-
-      // 股票K线数据（按symbol存储）
-      stockKlineData: {},
-
-      // 回测配置
-      backtestConfigs: [],
-
-      // 当前回测配置
-      currentBacktestConfig: null,
-
-      // 回测结果
-      backtestResults: [],
-
-      // 当前展示的回测结果
-      currentBacktestResult: null,
-
-      // 参数优化结果
-      optimizationResults: [],
-
-      // 回测状态
-      backtestStatus: 'idle',
-      backtestProgress: 0,
 
       // 更新账户余额
       updateBalance: (amount, accountType = 'real') => set((state) => ({
@@ -980,46 +925,6 @@ const useStore = create(
       updateAccountRiskData: (data) => set((state) => ({
         accountRiskData: { ...state.accountRiskData, ...data }
       })),
-
-      // 添加技术指标
-      addTechnicalIndicator: (indicator) => set((state) => ({
-        technicalIndicators: [...state.technicalIndicators, { ...indicator, id: Date.now(), deleted: false, deletedAt: null }]
-      })),
-
-      // 更新技术指标
-      updateTechnicalIndicator: (id, indicator) => set((state) => ({
-        technicalIndicators: state.technicalIndicators.map(i =>
-          i.id === id ? indicator : i
-        )
-      })),
-
-      // 删除技术指标
-      deleteTechnicalIndicator: (id) => set((state) => {
-        apiCall(`/api/technical_indicators/${id}`, 'DELETE')
-        return {
-          technicalIndicators: state.technicalIndicators.map(i =>
-            i.id === id ? { ...i, deleted: true, deletedAt: new Date().toISOString() } : i
-          )
-        }
-      }),
-
-      // 恢复技术指标
-      restoreTechnicalIndicator: (id) => set((state) => {
-        apiCall(`/api/technical_indicators/${id}/restore`, 'PATCH')
-        return {
-          technicalIndicators: state.technicalIndicators.map(i =>
-            i.id === id ? { ...i, deleted: false, deletedAt: null } : i
-          )
-        }
-      }),
-
-      // 永久删除技术指标
-      permanentDeleteTechnicalIndicator: (id) => set((state) => {
-        apiCall(`/api/technical_indicators/${id}/permanent`, 'DELETE')
-        return {
-          technicalIndicators: state.technicalIndicators.filter(i => i.id !== id)
-        }
-      }),
 
       // 添加交易策略记录
       addStrategyRecord: async (record) => {
@@ -2138,7 +2043,6 @@ const useStore = create(
         psychologicalIndicators: [...initialPsychologicalIndicators],
         strategies: { ...initialStrategies },
         riskModels: [...initialRiskModels],
-        technicalIndicators: [...initialTechnicalIndicators],
         strategyRecords: [],
         riskConfig: { totalRiskPercent: 6, singleRiskPercent: 2 },
         accountRiskData: {
@@ -2150,29 +2054,6 @@ const useStore = create(
           accountAvailable: 95.9,
           singleAvailable: 94.15
         },
-        stockPool: [],
-        stockKlineData: {},
-        backtestConfigs: [],
-        currentBacktestConfig: null,
-        backtestResults: [],
-        currentBacktestResult: null,
-        optimizationResults: [],
-        backtestStatus: 'idle',
-        backtestProgress: 0,
-      }),
-
-      // ====== 股票池相关 ======
-
-      // 添加股票到股票池
-      addStock: (stock) => set((state) => {
-        const newStock = { ...stock, id: Date.now(), createdAt: new Date().toISOString(), deleted: false, deletedAt: null }
-
-        // 同步到数据库
-        apiCall('/api/stock_pool', 'POST', newStock).catch(err => console.error('同步股票到数据库失败:', err))
-
-        return {
-          stockPool: [...state.stockPool, newStock]
-        }
       }),
 
       // 批量导入订单（从数据库同步）- 合并去重，优先使用数据库数据
@@ -2181,10 +2062,14 @@ const useStore = create(
           console.log('[Store] importOrders 跳过空数据')
           return state
         }
+        const filteredOrders = orders.filter(o => !o.deleted)
+        if (filteredOrders.length === 0 && state.orders && state.orders.length > 0) {
+          console.log('[Store] importOrders 跳过空数据，保留当前', state.orders.length, '条订单')
+          return state
+        }
         // 转换数据库字段名 (snake_case -> camelCase)
         // 过滤掉已删除的订单
-        const newOrders = orders
-          .filter(o => !o.deleted)
+        const newOrders = filteredOrders
           .map(o => ({
             id: o.id?.toString(),
             tradeNumber: o.trade_number || o.tradeNumber || o.id?.toString(),
@@ -2533,371 +2418,6 @@ const useStore = create(
         return { tradeRecords: finalRecords }
       }),
 
-      // 批量导入股票（从数据库同步）- 合并到现有数据
-      importStocks: (stocks) => set((state) => {
-        if (!stocks || stocks === null || stocks === undefined) {
-          console.log('[Store] importStocks 跳过空数据')
-          return state
-        }
-        const newStocks = stocks.map(s => ({
-          id: s.id,
-          symbol: s.symbol,
-          name: s.name || '',
-          market: s.market || 'cn',
-          status: s.status || '正常',
-          currentPrice: s.current_price !== null && s.current_price !== undefined ? parseFloat(s.current_price) : null,
-          changePercent: s.change_percent !== null && s.change_percent !== undefined ? parseFloat(s.change_percent) : null,
-          openPrice: s.open_price !== null && s.open_price !== undefined ? parseFloat(s.open_price) : null,
-          highPrice: s.high_price !== null && s.high_price !== undefined ? parseFloat(s.high_price) : null,
-          lowPrice: s.low_price !== null && s.low_price !== undefined ? parseFloat(s.low_price) : null,
-          volume: s.volume !== null && s.volume !== undefined ? parseInt(s.volume) : null,
-          tradeDate: s.trade_date || s.tradeDate || null,
-          exchange: s.exchange || null,
-          rawCode: s.raw_code || s.rawCode || null,
-          createdAt: s.created_at || s.createdAt || new Date().toISOString(),
-          updatedAt: s.updated_at || s.updatedAt || null,
-          deleted: s.deleted || false,
-          deletedAt: s.deleted_at || s.deletedAt || null
-        }))
-        // 按 symbol 去重，已存在的用新数据覆盖更新
-        const symbolMap = new Map(state.stockPool.map(s => [s.symbol, s]))
-        newStocks.forEach(s => {
-          if (symbolMap.has(s.symbol)) {
-            // 已存在，用数据库数据覆盖更新
-            symbolMap.set(s.symbol, s)
-          } else {
-            symbolMap.set(s.symbol, s)
-          }
-        })
-        return { stockPool: Array.from(symbolMap.values()) }
-      }),
-
-      // 更新股票信息
-      updateStock: (id, data) => set((state) => ({
-        stockPool: state.stockPool.map(s =>
-          s.id === id ? { ...s, ...data, updatedAt: new Date().toISOString() } : s
-        )
-      })),
-
-      // 删除股票
-      deleteStock: (id) => set((state) => {
-        apiCall(`/api/stock_pool/${id}`, 'DELETE')
-        return {
-          stockPool: state.stockPool.map(s =>
-            s.id === id ? { ...s, deleted: true, deletedAt: new Date().toISOString() } : s
-          )
-        }
-      }),
-
-      // 批量删除股票
-      deleteMultipleStocks: (ids) => set((state) => {
-        apiCall(`/api/stock_pool/bulk`, 'DELETE', { ids })
-        return {
-          stockPool: state.stockPool.map(s =>
-            ids.includes(s.id) ? { ...s, deleted: true, deletedAt: new Date().toISOString() } : s
-          )
-        }
-      }),
-
-      // 恢复股票
-      restoreStock: (id) => set((state) => {
-        apiCall(`/api/stock_pool/${id}/restore`, 'PATCH')
-        return {
-          stockPool: state.stockPool.map(s =>
-            s.id === id ? { ...s, deleted: false, deletedAt: null } : s
-          )
-        }
-      }),
-
-      // 永久删除股票
-      permanentDeleteStock: (id) => set((state) => {
-        apiCall(`/api/stock_pool/${id}/permanent`, 'DELETE')
-        return {
-          stockPool: state.stockPool.filter(s => s.id !== id)
-        }
-      }),
-
-      // 批量恢复股票
-      restoreMultipleStocks: (ids) => set((state) => {
-        apiCall(`/api/stock_pool/bulk/restore`, 'PATCH', { ids })
-        return {
-          stockPool: state.stockPool.map(s =>
-            ids.includes(s.id) ? { ...s, deleted: false, deletedAt: null } : s
-          )
-        }
-      }),
-
-      // 批量永久删除股票
-      permanentDeleteMultipleStocks: (ids) => set((state) => {
-        apiCall(`/api/stock_pool/bulk/permanent`, 'DELETE', { ids })
-        return {
-          stockPool: state.stockPool.filter(s => !ids.includes(s.id))
-        }
-      }),
-
-      // 更新股票K线数据
-      updateStockKlineData: (symbol, klineData) => set((state) => ({
-        stockKlineData: {
-          ...state.stockKlineData,
-          [symbol]: klineData
-        }
-      })),
-
-      // 获取股票的K线数据
-      getStockKlineData: (symbol) => {
-        const state = get()
-        return state.stockKlineData[symbol] || []
-      },
-
-      // ====== 回测相关 ======
-
-      // 批量导入回测配置（从数据库同步）
-      importBacktestConfigs: (dataList) => set((state) => {
-        if (!dataList || dataList === null || dataList === undefined) {
-          console.log('[Store] importBacktestConfigs 跳过空数据')
-          return state
-        }
-        const newData = dataList.map(d => ({
-          id: d.id,
-          name: d.name || '',
-          description: d.description || '',
-          stockCodes: d.stock_codes || d.stockCodes || [],
-          startDate: d.start_date || d.startDate || '',
-          endDate: d.end_date || d.endDate || '',
-          indicators: d.indicators || [],
-          buyConditions: d.buy_conditions || d.buyConditions || { conditions: [] },
-          sellConditions: d.sell_conditions || d.sellConditions || { conditions: [] },
-          stopLoss: d.stop_loss || d.stopLoss || null,
-          takeProfit: d.take_profit || d.takeProfit || null,
-          positionSizing: d.position_sizing || d.positionSizing || { mode: 'FIXED_AMOUNT', params: { amount: 10000 } },
-          initialCapital: parseFloat(d.initial_capital) || 100000,
-          commissionRate: parseFloat(d.commission_rate) || 0.0003,
-          createdAt: d.created_at || d.createdAt || new Date().toISOString(),
-          updatedAt: d.updated_at || d.updatedAt || null,
-          deleted: d.deleted || false,
-          deletedAt: d.deleted_at || d.deletedAt || null
-        }))
-        newData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        return { backtestConfigs: newData }
-      }),
-
-      // 批量导入回测结果（从数据库同步）
-      importBacktestResults: (dataList) => set((state) => {
-        if (!dataList || dataList === null || dataList === undefined) {
-          console.log('[Store] importBacktestResults 跳过空数据')
-          return state
-        }
-        const newData = dataList.map(d => ({
-          id: d.id,
-          configId: d.config_id || d.configId,
-          totalReturn: parseFloat(d.total_return) || 0,
-          annualReturn: parseFloat(d.annual_return) || 0,
-          maxDrawdown: parseFloat(d.max_drawdown) || 0,
-          sharpeRatio: parseFloat(d.sharpe_ratio) || 0,
-          winRate: parseFloat(d.win_rate) || 0,
-          profitLossRatio: parseFloat(d.profit_loss_ratio) || 0,
-          totalTrades: parseInt(d.total_trades) || 0,
-          avgHoldingDays: parseFloat(d.avg_holding_days) || 0,
-          calmarRatio: parseFloat(d.calmar_ratio) || 0,
-          sortinoRatio: parseFloat(d.sortino_ratio) || 0,
-          trades: d.trades || [],
-          equityCurve: d.equity_curve || d.equityCurve || [],
-          drawdownCurve: d.drawdown_curve || d.drawdownCurve || [],
-          runTime: d.run_time || d.runTime || null,
-          createdAt: d.created_at || d.createdAt || new Date().toISOString(),
-        }))
-        newData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        return { backtestResults: newData }
-      }),
-
-      // 添加回测配置
-      addBacktestConfig: async (data) => {
-        const now = new Date().toISOString()
-        const dbData = {
-          name: data.name,
-          description: data.description || '',
-          stock_codes: data.stockCodes || [],
-          start_date: data.startDate,
-          end_date: data.endDate,
-          indicators: JSON.stringify(data.indicators || []),
-          buy_conditions: JSON.stringify(data.buyConditions || { conditions: [] }),
-          sell_conditions: JSON.stringify(data.sellConditions || { conditions: [] }),
-          stop_loss: data.stopLoss ? JSON.stringify(data.stopLoss) : null,
-          take_profit: data.takeProfit ? JSON.stringify(data.takeProfit) : null,
-          position_sizing: JSON.stringify(data.positionSizing || { mode: 'FIXED_AMOUNT', params: { amount: 10000 } }),
-          initial_capital: data.initialCapital || 100000,
-          commission_rate: data.commissionRate || 0.0003,
-          deleted: false,
-          deleted_at: null,
-          created_at: now,
-          updated_at: now
-        }
-        try {
-          const res = await apiCall('/api/backtest_configs', 'POST', dbData)
-          if (res.success && res.data) {
-            const syncResponse = await apiCall('/api/sync/all')
-            if (syncResponse.success && syncResponse.data) {
-              set((state) => {
-                state.importBacktestConfigs(syncResponse.data.backtest_configs)
-                return {}
-              })
-            }
-          }
-          return res
-        } catch (error) {
-          console.error('[Store] 保存回测配置失败:', error)
-          throw error
-        }
-      },
-
-      // 更新回测配置
-      updateBacktestConfig: async (id, data) => {
-        const dbData = {
-          name: data.name,
-          description: data.description || '',
-          stock_codes: data.stockCodes || [],
-          start_date: data.startDate,
-          end_date: data.endDate,
-          indicators: JSON.stringify(data.indicators || []),
-          buy_conditions: JSON.stringify(data.buyConditions || { conditions: [] }),
-          sell_conditions: JSON.stringify(data.sellConditions || { conditions: [] }),
-          stop_loss: data.stopLoss ? JSON.stringify(data.stopLoss) : null,
-          take_profit: data.takeProfit ? JSON.stringify(data.takeProfit) : null,
-          position_sizing: JSON.stringify(data.positionSizing || { mode: 'FIXED_AMOUNT', params: { amount: 10000 } }),
-          initial_capital: data.initialCapital || 100000,
-          commission_rate: data.commissionRate || 0.0003,
-          updated_at: new Date().toISOString()
-        }
-        try {
-          await apiCall(`/api/backtest_configs/${id}`, 'PUT', dbData)
-          const syncResponse = await apiCall('/api/sync/all')
-          if (syncResponse.success && syncResponse.data) {
-            set((state) => {
-              state.importBacktestConfigs(syncResponse.data.backtest_configs)
-              return {}
-            })
-          }
-        } catch (error) {
-          console.error('[Store] 更新回测配置失败:', error)
-          throw error
-        }
-      },
-
-      // 删除回测配置
-      deleteBacktestConfig: async (id) => {
-        try {
-          await apiCall(`/api/backtest_configs/${id}`, 'DELETE')
-          const syncResponse = await apiCall('/api/sync/all')
-          if (syncResponse.success && syncResponse.data) {
-            set((state) => {
-              state.importBacktestConfigs(syncResponse.data.backtest_configs)
-              return {}
-            })
-          }
-          return { success: true }
-        } catch (error) {
-          console.error('[Store] 删除回测配置失败:', error)
-          return { success: false, error: error.message }
-        }
-      },
-
-      // 设置当前回测配置
-      setCurrentBacktestConfig: (config) => set({ currentBacktestConfig: config }),
-
-      // 运行回测
-      runBacktest: async (klineData, config) => {
-        set({ backtestStatus: 'running', backtestProgress: 0 })
-        try {
-          const { BacktestEngine } = await import('../utils/backtest')
-          const engine = new BacktestEngine()
-          const result = await engine.run(klineData, config)
-
-          if (result.success) {
-            set({
-              backtestStatus: 'completed',
-              backtestProgress: 100,
-              currentBacktestResult: result
-            })
-            return result
-          } else {
-            set({ backtestStatus: 'error', backtestProgress: 0 })
-            return { success: false, error: result.error }
-          }
-        } catch (error) {
-          set({ backtestStatus: 'error', backtestProgress: 0 })
-          return { success: false, error: error.message }
-        }
-      },
-
-      // 设置回测状态
-      setBacktestStatus: (status) => set({ backtestStatus: status }),
-
-      // 设置回测进度
-      setBacktestProgress: (progress) => set({ backtestProgress: progress }),
-
-      // 设置当前回测结果
-      setCurrentBacktestResult: (result) => set({ currentBacktestResult: result }),
-
-      // 添加回测结果
-      addBacktestResult: async (result) => {
-        const dbData = {
-          config_id: result.configId,
-          total_return: result.performance?.totalReturn || 0,
-          annual_return: result.performance?.annualReturn || 0,
-          max_drawdown: result.performance?.maxDrawdown || 0,
-          sharpe_ratio: result.performance?.sharpeRatio || 0,
-          win_rate: result.performance?.winRate || 0,
-          profit_loss_ratio: result.performance?.profitLossRatio || 0,
-          total_trades: result.performance?.totalTrades || 0,
-          avg_holding_days: result.performance?.avgHoldingDays || 0,
-          calmar_ratio: result.performance?.calmarRatio || 0,
-          sortino_ratio: result.performance?.sortinoRatio || 0,
-          trades: JSON.stringify(result.trades || []),
-          equity_curve: JSON.stringify(result.equityCurve || []),
-          drawdown_curve: JSON.stringify(result.drawdownCurve || []),
-          run_time: result.runTime ? `${result.runTime} seconds` : null,
-        }
-        try {
-          const res = await apiCall('/api/backtest_results', 'POST', dbData)
-          if (res.success && res.data) {
-            const syncResponse = await apiCall('/api/sync/all')
-            if (syncResponse.success && syncResponse.data) {
-              set((state) => {
-                state.importBacktestResults(syncResponse.data.backtest_results)
-                return {}
-              })
-            }
-          }
-          return res
-        } catch (error) {
-          console.error('[Store] 保存回测结果失败:', error)
-          return { success: false, error: error.message }
-        }
-      },
-
-      // 运行参数优化
-      runOptimization: async (klineData, config, paramRanges, targetMetric) => {
-        set({ backtestStatus: 'running', backtestProgress: 0 })
-        try {
-          const { BacktestEngine } = await import('../utils/backtest')
-          const engine = new BacktestEngine()
-          const optimizer = engine.createOptimizer((progress) => {
-            set({ backtestProgress: progress })
-          })
-          const result = await optimizer.optimize({ ...config, klineData }, paramRanges, targetMetric)
-
-          set((state) => ({
-            backtestStatus: 'completed',
-            backtestProgress: 100,
-            optimizationResults: [...state.optimizationResults, result]
-          }))
-          return result
-        } catch (error) {
-          set({ backtestStatus: 'error', backtestProgress: 0 })
-          return { success: false, error: error.message }
-        }
-      },
-
       // ====== 完整交易记录相关 ======
 
       // 添加完整交易记录（买入和卖出都完成后自动生成）
@@ -3047,70 +2567,13 @@ const useStore = create(
         const sellTime = new Date(sellOrder.executedAt || sellOrder.createdAt)
         const holdDuration = Math.ceil((sellTime - buyTime) / (1000 * 60 * 60 * 24))
 
-        // 获取K线数据用于计算评分
-        const buyKline = state.stockKlineData[buyOrder.symbol] || []
-        const sellKline = state.stockKlineData[sellOrder.symbol] || []
-
-        // 获取买入当天的价格通道数据
-        const buyDateKline = buyKline.find(k => {
-          const kDate = new Date(k.timestamp)
-          const buyDate = new Date(buyOrder.executedAt || buyOrder.createdAt)
-          return kDate.toDateString() === buyDate.toDateString()
-        })
-
-        // 获取卖出当天的价格通道数据
-        const sellDateKline = sellKline.find(k => {
-          const kDate = new Date(k.timestamp)
-          const sellDate = new Date(sellOrder.executedAt || sellOrder.createdAt)
-          return kDate.toDateString() === sellDate.toDateString()
-        })
-
-        // 计算买入评分
-        let buyGrade = 'C'
-        let buyChannel = null
-        if (buyDateKline) {
-          const high = buyDateKline.bb_upper || buyDateKline.high
-          const low = buyDateKline.bb_lower || buyDateKline.low
-          buyGrade = calculateTradeGrade(buyOrder.price, high, low, 'buy')
-          buyChannel = {
-            high: buyDateKline.high,
-            low: buyDateKline.low,
-            upperBand: buyDateKline.bb_upper,
-            lowerBand: buyDateKline.bb_lower,
-            type: 'bollinger'
-          }
-        }
-
-        // 计算卖出评分
-        let sellGrade = 'C'
-        let sellChannel = null
-        if (sellDateKline) {
-          const high = sellDateKline.bb_upper || sellDateKline.high
-          const low = sellDateKline.bb_lower || sellDateKline.low
-          sellGrade = calculateTradeGrade(sellOrder.price, high, low, 'sell')
-          sellChannel = {
-            high: sellDateKline.high,
-            low: sellDateKline.low,
-            upperBand: sellDateKline.bb_upper,
-            lowerBand: sellDateKline.bb_lower,
-            type: 'bollinger'
-          }
-        }
-
         // 计算盈亏
         const profit = (sellOrder.price - buyOrder.price) * sellOrder.quantity
         const profitPercent = (((sellOrder.price - buyOrder.price) / buyOrder.price) * 100).toFixed(2)
 
-        // 计算整体评分
-        let overallScore = 0
-        if (buyChannel && sellChannel) {
-          overallScore = calculateOverallScore(
-            buyOrder.price,
-            sellOrder.price,
-            buyChannel.upperBand,
-            buyChannel.lowerBand
-          )
-        }
+        // 计算买入卖出金额
+        const buyAmount = buyOrder.price * buyOrder.quantity
+        const sellAmount = sellOrder.price * sellOrder.quantity
 
         const tradeRecord = {
           symbol: buyOrder.symbol,
@@ -3134,10 +2597,6 @@ const useStore = create(
           sellStrategyScore: sellOrder.strategyScore,
           sellStrategyId: sellOrder.strategyId,
 
-          // 价格通道数据
-          buyChannel,
-          sellChannel,
-
           // 交易明细
           totalBuyQuantity: buyOrder.quantity,
           totalSellQuantity: sellOrder.quantity,
@@ -3146,11 +2605,6 @@ const useStore = create(
           profit: profit.toFixed(2),
           profitPercent: profitPercent,
           holdDuration: holdDuration,
-
-          // 评分
-          buyGrade,
-          sellGrade,
-          overallScore: parseFloat((overallScore * 100).toFixed(2)),
 
           // 交易字段关联：使用卖出类型
           tradePrice: sellOrder.price,
@@ -3621,9 +3075,8 @@ const useStore = create(
         return {
           ...currentState,
           ...persistedState,
-          // 始终使用从数据库同步的 orders（currentState），而不是本地存储的 orders
-          // 这样可以确保删除后，其他浏览器能立即看到更新
-          orders: cleanedCurrentOrders
+          // 优先使用持久化的订单数据（localStorage），如果持久化为空则使用当前状态
+          orders: cleanedPersistedOrders.length > 0 ? cleanedPersistedOrders : cleanedCurrentOrders
         }
       }
     }

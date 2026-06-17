@@ -1,14 +1,15 @@
 # 依赖
 node_modules/
-package-lock.json
 
 # 环境变量（包含敏感信息）
 .env
+.env.docker
+.env.local
+.env.production
 
 # 备份文件（包含用户数据）
 backend/backups/
 *.backup
-*.sql
 *.dump
 
 # 日志
@@ -42,3 +43,6 @@ coverage/
 # 临时文件
 tmp/
 temp/
+
+# Docker override
+docker-compose.override.yml

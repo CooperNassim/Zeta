@@ -9,10 +9,12 @@ class ApiClient {
   }
 
   async request(url, options = {}) {
+    const token = localStorage.getItem('auth_token')
     const config = {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         ...options.headers
       },
       ...options
@@ -25,11 +27,18 @@ class ApiClient {
 
     try {
       const response = await fetch(`${this.baseURL}${url}`, config)
-      
+
+      if (response.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        throw new Error('认证已过期，请重新登录')
+      }
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
-      
+
       const data = await response.json()
       return { data, status: response.status }
     } catch (error) {

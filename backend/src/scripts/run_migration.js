@@ -189,12 +189,9 @@ async function verifyMigration() {
       'psychological_test_indicators',
       'trading_strategies',
       'risk_config',
-      'technical_indicators',
       'orders',
       'transactions',
       'trade_records',
-      'stock_pool',
-      'stock_kline_data',
       'strategy_records',
       'risk_models',
       'schema_migrations'

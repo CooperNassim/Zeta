@@ -4,11 +4,14 @@ const { pool } = require('../config/database');
 // 允许的表名白名单
 const ALLOWED_TABLES = [
   'account', 'account_risk_data', 'daily_work_data', 'orders', 'transactions',
-  'trading_strategies', 'strategy_records', 'trade_records', 'trade_orders', 'technical_indicators',
-  'stock_pool', 'stock_kline_data', 'scheduled_orders', 'risk_config', 'risk_models',
+  'trading_strategies', 'strategy_records', 'trade_records', 'trade_orders',
+  'scheduled_orders', 'risk_config', 'risk_models',
   'psychological_indicators', 'psychological_test_results', 'psychological_test_indicators',
-  'data_sources', 'llm_configs'
+  'users', 'user_sessions', 'login_logs'
 ];
+
+// 受保护字段 - 不允许客户端通过 insert/update 修改
+const PROTECTED_FIELDS = ['id', 'created_at', 'updated_at', 'deleted', 'deleted_at', 'password_hash', 'role'];
 
 // 允许的排序字段（简单验证）
 const ALLOWED_SORT_DIRECTIONS = ['ASC', 'DESC'];
@@ -120,26 +123,43 @@ const findById = async (table, id) => {
   return result.rows[0] || null;
 };
 
+/**
+ * 根据用户名查找用户
+ * @param {string} username - 用户名
+ * @returns {Promise<Object|null>} 用户对象或 null
+ */
+const findByUsername = async (username) => {
+  const result = await pool.query(
+    'SELECT * FROM users WHERE username = $1 AND deleted = false',
+    [username]
+  );
+  return result.rows[0] || null;
+};
+
 // 插入数据（智能处理已删除数据）
 const insert = async (table, data) => {
   const safeTable = validateTableName(table);
-  const columns = Object.keys(data).map(key => key.replace(/[^a-zA-Z0-9_]/g, ''));
-  const values = Object.values(data);
+  // 过滤受保护字段
+  const filteredData = Object.fromEntries(
+    Object.entries(data).filter(([key]) => !PROTECTED_FIELDS.includes(key))
+  );
+  const columns = Object.keys(filteredData).map(key => key.replace(/[^a-zA-Z0-9_]/g, ''));
+  const values = Object.values(filteredData);
   const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
 
   // 对于 daily_work_data 表，检查是否有相同日期的已删除数据
-  if (safeTable === 'daily_work_data' && data.date) {
+  if (safeTable === 'daily_work_data' && filteredData.date) {
     try {
       const checkResult = await pool.query(
         `SELECT * FROM ${safeTable} WHERE date = $1 AND deleted = true`,
-        [data.date]
+        [filteredData.date]
       );
 
       if (checkResult.rows.length > 0) {
         // 找到已删除的数据，恢复它
         const deletedRecord = checkResult.rows[0];
         const updateColumns = columns.filter(key => key !== 'deleted' && key !== 'deleted_at' && key !== 'created_at');
-        const updateValues = updateColumns.map(key => data[key]);
+        const updateValues = updateColumns.map(key => filteredData[key]);
 
         const updateQuery = `
           UPDATE ${safeTable}
@@ -176,12 +196,18 @@ const bulkInsert = async (table, dataArray) => {
   if (!dataArray || dataArray.length === 0) return [];
 
   const safeTable = validateTableName(table);
-  const columns = Object.keys(dataArray[0]).map(key => key.replace(/[^a-zA-Z0-9_]/g, ''));
-  const placeholders = dataArray.map((_, i) =>
+  // 过滤受保护字段
+  const filteredArray = dataArray.map(data =>
+    Object.fromEntries(
+      Object.entries(data).filter(([key]) => !PROTECTED_FIELDS.includes(key))
+    )
+  );
+  const columns = Object.keys(filteredArray[0]).map(key => key.replace(/[^a-zA-Z0-9_]/g, ''));
+  const placeholders = filteredArray.map((_, i) =>
     `(${columns.map((_, j) => `$${i * columns.length + j + 1}`).join(', ')})`
   ).join(', ');
 
-  const values = dataArray.flatMap(data => Object.values(data));
+  const values = filteredArray.flatMap(data => Object.values(data));
 
   const query = `
     INSERT INTO ${safeTable} (${columns.join(', ')})
@@ -196,7 +222,11 @@ const bulkInsert = async (table, dataArray) => {
 // 更新数据
 const update = async (table, id, data) => {
   const safeTable = validateTableName(table);
-  const updates = Object.entries(data)
+  // 过滤受保护字段
+  const filteredData = Object.fromEntries(
+    Object.entries(data).filter(([key]) => !PROTECTED_FIELDS.includes(key))
+  );
+  const updates = Object.entries(filteredData)
     .map(([key, value], index) => {
       const safeKey = key.replace(/[^a-zA-Z0-9_]/g, '');
       return `${safeKey} = $${index + 2}`;
@@ -210,7 +240,7 @@ const update = async (table, id, data) => {
     RETURNING *
   `;
 
-  const result = await pool.query(query, [id, ...Object.values(data)]);
+  const result = await pool.query(query, [id, ...Object.values(filteredData)]);
   return result.rows[0] || null;
 };
 
@@ -322,11 +352,16 @@ module.exports = {
   findAll,
   findOne,
   findById,
+  findByUsername,
   insert,
   bulkInsert,
   update,
   remove,
   bulkDelete,
+  permanentDelete,
+  bulkPermanentDelete,
+  restore,
+  bulkRestore,
   query,
   transaction
 };

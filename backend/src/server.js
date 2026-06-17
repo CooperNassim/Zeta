@@ -31,7 +31,7 @@ const allowedOrigins = process.env.CORS_ORIGIN
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (NODE_ENV === 'development' || !origin || allowedOrigins.includes(origin)) {
+    if (NODE_ENV === 'development' || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -45,8 +45,17 @@ app.use(cors(corsOptions));
 // 速率限制 - 防止 DoS 攻击
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 分钟
-  max: NODE_ENV === 'production' ? 1000 : 20000, // 开发环境放宽到20000次
+  max: NODE_ENV === 'production' ? 1000 : 5000, // 开发环境限制为5000次
   message: { error: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 登录接口独立速率限制 - 防止暴力破解
+const loginLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 分钟
+  max: 15, // 5 分钟内最多 15 次登录尝试
+  message: { error: '登录尝试次数过多，请 5 分钟后再试' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -55,8 +64,8 @@ app.use('/api', apiLimiter);
 app.use('/health', apiLimiter);
 
 // 解析请求体
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // 请求日志
 if (NODE_ENV !== 'test') {
@@ -67,15 +76,24 @@ if (NODE_ENV !== 'test') {
 // 如果需要备份功能，请添加认证中间件
 
 // API路由
+// 注意：用户管理路由必须在通用CRUD路由之前注册，否则 /api/users 会被 /api/:table 匹配
+const userRoutes = require('./routes/users');
+app.use('/api/users', userRoutes);
+
 app.use('/api', require('./routes/api'));
+
+// 认证路由（应用登录速率限制）
+const authRoutes = require('./routes/auth');
+app.use('/api/auth', loginLimiter, authRoutes);
 
 // 健康检查
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// 数据库连接检查
-app.get('/health/db', async (req, res) => {
+// 数据库连接检查（需要认证）
+const { authenticateToken } = require('./middleware/auth');
+app.get('/health/db', authenticateToken, async (req, res) => {
   const connected = await testConnection();
   if (connected) {
     res.json({ status: 'ok', database: 'connected' });
@@ -115,15 +133,6 @@ app.listen(PORT, async () => {
   const connected = await testConnection();
   if (connected) {
     console.log('✅ Backend is ready to accept requests!');
-
-    // 初始化定时任务调度器
-    try {
-      const { initScheduler } = require('./utils/scheduler')
-      await initScheduler()
-      console.log('✅ Scheduler initialized successfully');
-    } catch (err) {
-      console.error('⚠️  Scheduler initialization failed:', err.message);
-    }
   } else {
     console.log('⚠️  Warning: Database connection failed. Check your .env configuration.');
   }

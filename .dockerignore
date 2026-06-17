@@ -1,9 +1,13 @@
 node_modules
 dist
+.env
+.env.local
+.env.production
 .git
 .gitignore
-README.md
-.DS_Store
-*.log
+*.md
 .vscode
 .idea
+docker-compose*.yml
+Dockerfile
+backend

@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS data_sync_history CASCADE;
+DROP TABLE IF EXISTS scheduled_task_logs CASCADE;
+DROP TABLE IF EXISTS scheduled_tasks CASCADE;
+DROP TABLE IF EXISTS llm_configs CASCADE;

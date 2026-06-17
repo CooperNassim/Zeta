@@ -1,25 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { BrowserRouter, Routes, Route, Link, useLocation, NavLink } from 'react-router-dom'
-import { TrendingUp, Brain, Target, Shield, Clock, Receipt, Activity, Home as HomeIcon, ChevronDown, Wallet2, Database } from 'lucide-react'
+import { BrowserRouter, Routes, Route, Link, useLocation, NavLink, Navigate } from 'react-router-dom'
+import { TrendingUp, Brain, Target, Shield, Clock, Receipt, Activity, Home as HomeIcon, ChevronDown, Wallet2, Database, Users, LogOut } from 'lucide-react'
 import Home from './pages/Home'
 import DailyWork from './pages/DailyWork'
 import PsychologicalTest from './pages/PsychologicalTest'
 import TradingStrategy from './pages/TradingStrategy'
-import TechnicalIndicators from './pages/TechnicalIndicators'
 import RiskModel from './pages/RiskModel'
 import OrderManagement from './pages/OrderManagement'
 import TransactionHistory from './pages/TransactionHistory'
 import TradeRecords from './pages/TradeRecords'
-import StockPool from './pages/StockPool'
 import DatabaseManagement from './pages/DatabaseManagement'
-import DataSyncPage from './pages/DataSync'
-import LLModelConfig from './pages/LLModelConfig'
-import ScheduledTask from './pages/ScheduledTask'
-import StockChart from './pages/StockChart'
-import BacktestSystem from './pages/BacktestSystem'
-import TradeAnalysis from './pages/TradeAnalysis'
-import StockScreener from './pages/StockScreener'
+import Login from './pages/Login'
+import AccountManagement from './pages/AccountManagement'
 import useStore from './store/useStore'
+import useAuthStore from './store/authStore'
+import ProtectedRoute from './components/ProtectedRoute'
 import { ToastProvider } from './contexts/ToastContext'
 
 // 缓存版本控制 - 只在版本变化时清除过期数据，不影响用户数据
@@ -40,194 +35,10 @@ if (typeof window !== 'undefined') {
 // 使用相对路径，通过 Vite 代理到后端
 const API_BASE_URL = ''
 
-// 数据同步组件 - 只在首次加载和页面可见时同步
-function DataSync() {
-  const syncedRef = useRef(false)
-  const isReadyRef = useRef(false)
-  // 防抖：记录上次同步时间，防止过于频繁的同步（10秒内最多同步一次）
-  const lastFullSyncTimeRef = useRef(0)
-  const store = useStore()
-
-  // 检查后端是否就绪
-  const checkBackendReady = async () => {
-    try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000)
-      const response = await fetch(`${API_BASE_URL}/health`, {
-        method: 'GET',
-        cache: 'no-store',
-        signal: controller.signal
-      })
-      clearTimeout(timeoutId)
-      return response.ok
-    } catch (e) {
-      // ERR_ABORTED 表示请求被取消，不是真正的错误，视为后端未就绪
-      if (e.name === 'AbortError' || (e instanceof TypeError && e.message.includes('ERR_ABORTED'))) {
-        console.log('[DataSync] 健康检查请求被取消，后端可能未就绪')
-        return false
-      }
-      return false
-    }
-  }
-
-  const syncData = useCallback(async () => {
-    // 检查是否正在同步中（避免并发请求）- 尽早设置锁
-    if (syncedRef.current) {
-      console.log('[DataSync] 正在同步中，跳过本次请求')
-      return
-    }
-    // 防抖：10秒内最多同步一次
-    const now = Date.now()
-    if (now - lastFullSyncTimeRef.current < 10000) {
-      console.log('[DataSync] 距离上次同步不足10秒，跳过')
-      return
-    }
-    syncedRef.current = true // 立即设置锁，防止并发请求
-
-    // 检查是否在删除操作过程中，如果是则跳过同步
-    const isDeleting = localStorage.getItem('is_deleting_orders') === 'true'
-    if (isDeleting) {
-      console.log('[DataSync] ⚠️ 检测到删除操作，跳过同步以防止数据不一致')
-      localStorage.removeItem('is_deleting_orders')
-      syncedRef.current = false
-      return
-    }
-
-    // 等待后端就绪（最多等待5秒）
-    let backendReady = await checkBackendReady()
-    let readyAttempts = 0
-    while (!backendReady && readyAttempts < 5) {
-      readyAttempts++
-      console.log(`[DataSync] 等待后端就绪 (${readyAttempts}/5)...`)
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      backendReady = await checkBackendReady()
-    }
-
-    if (!backendReady) {
-      console.warn('[DataSync] 后端未就绪，跳过本次同步')
-      isReadyRef.current = false
-      syncedRef.current = false
-      return
-    }
-
-    isReadyRef.current = true
-
-    console.log('[DataSync] 从数据库同步数据...')
-
-    let retryCount = 0
-    const maxRetries = 2
-    const retryDelay = 1000
-
-    const attemptSync = async () => {
-      try {
-        console.log('[DataSync] 正在请求 /api/sync/all...')
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 10000)
-        const response = await fetch(`${API_BASE_URL}/api/sync/all`, {
-          cache: 'no-store',
-          headers: {
-            'Cache-Control': 'no-cache'
-          },
-          signal: controller.signal
-        })
-        clearTimeout(timeoutId)
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-        }
-
-        const result = await response.json()
-        console.log('[DataSync] 原始响应:', result)
-
-        if (result.success && result.data) {
-          const { trade_orders, transactions, trade_records, stock_pool, daily_work_data, psychological_test_results, psychological_indicators, trading_strategies, risk_config, backtest_configs, backtest_results } = result.data
-
-          console.log('[DataSync] 数据库返回数据:', {
-            trade_orders: trade_orders?.length || 0,
-            transactions: transactions?.length || 0,
-            trade_records: trade_records?.length || 0,
-            stock_pool: stock_pool?.length || 0,
-            daily_work_data: daily_work_data?.length || 0,
-            psychological_test_results: psychological_test_results?.length || 0,
-            psychological_indicators: psychological_indicators?.length || 0,
-            trading_strategies: trading_strategies?.length || 0,
-            risk_config: risk_config?.length || 0,
-            backtest_configs: backtest_configs?.length || 0,
-            backtest_results: backtest_results?.length || 0
-          })
-
-          // 总是导入数据，即使数据为空也会清空本地旧数据
-          try { if (trade_orders) store.importOrders(trade_orders); } catch(e) { console.error('[DataSync] importOrders 失败:', e) }
-          try { if (transactions) store.importTransactions(transactions); } catch(e) { console.error('[DataSync] importTransactions 失败:', e) }
-          try { if (trade_records) store.importTradeRecords(trade_records, trade_orders); } catch(e) { console.error('[DataSync] importTradeRecords 失败:', e) }
-          try { if (stock_pool !== null) store.importStocks(stock_pool); } catch(e) { console.error('[DataSync] importStocks 失败:', e) }
-          try { if (daily_work_data !== null && daily_work_data !== undefined) store.importDailyWorkData(daily_work_data); } catch(e) { console.error('[DataSync] importDailyWorkData 失败:', e) }
-          try { store.importPsychologicalTestResults(psychological_test_results); } catch(e) { console.error('[DataSync] importPsychologicalTestResults 失败:', e) }
-          try { if (psychological_indicators !== null && psychological_indicators !== undefined) store.importPsychologicalIndicators(psychological_indicators); } catch(e) { console.error('[DataSync] importPsychologicalIndicators 失败:', e) }
-          try { if (trading_strategies !== null && trading_strategies !== undefined) store.importTradingStrategies(trading_strategies); } catch(e) { console.error('[DataSync] importTradingStrategies 失败:', e) }
-          try { if (risk_config !== null && risk_config !== undefined) store.importRiskConfig(risk_config); } catch(e) { console.error('[DataSync] importRiskConfig 失败:', e) }
-          try { if (backtest_configs !== null && backtest_configs !== undefined) store.importBacktestConfigs(backtest_configs); } catch(e) { console.error('[DataSync] importBacktestConfigs 失败:', e) }
-          try { if (backtest_results !== null && backtest_results !== undefined) store.importBacktestResults(backtest_results); } catch(e) { console.error('[DataSync] importBacktestResults 失败:', e) }
-
-          // 初始化交易编号计数器
-          await store.initializeTradeNumberCounter()
-
-          // 更新上次同步时间
-          lastFullSyncTimeRef.current = Date.now()
-          console.log('[DataSync] 同步完成')
-        } else {
-          throw new Error(result.error || '同步响应格式错误')
-        }
-      } catch (error) {
-        // 无论成功、失败还是取消，都更新防抖时间戳
-        lastFullSyncTimeRef.current = Date.now()
-        if (error.name === 'AbortError' || error.name === 'TypeError') {
-          console.log('[DataSync] 请求已取消或超时')
-          return
-        }
-        console.error('[DataSync] 数据同步失败:', error.message || error)
-        retryCount++
-        if (retryCount < maxRetries) {
-          console.log(`[DataSync] ${retryDelay / 1000}秒后重试 (${retryCount}/${maxRetries})...`)
-          await new Promise(resolve => setTimeout(resolve, retryDelay))
-          return attemptSync()
-        } else {
-          console.warn('[DataSync] 同步失败，将使用本地数据或等待下次同步')
-        }
-      } finally {
-        // 同步完成或失败后，重置锁
-        syncedRef.current = false
-      }
-    }
-
-    await attemptSync()
-  }, [store])
-
-  useEffect(() => {
-    // 首次加载时同步
-    syncData()
-
-    // 监听页面可见性变化，切换回来时同步（2秒内最多同步一次）
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        console.log('[DataSync] 页面可见，重新同步...')
-        syncData()
-      }
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [syncData])
-
-  return null
-}
-
 function Navigation() {
   const location = useLocation()
   const account = useStore(state => state.account)
+  const { user, logout, hasPermission } = useAuthStore()
 
   const tradingMenuItems = [
     { id: 'daily', icon: TrendingUp, label: '每日功课', path: '/daily-work', customIcon: 'daily' },
@@ -239,24 +50,13 @@ function Navigation() {
     { id: 'transaction', icon: Receipt, label: '账单明细', path: '/transaction-history', customIcon: 'transaction' },
   ]
 
-  const researchMenuItems = [
-    { id: 'stockpool', icon: Database, label: '股票行情', path: '/stock-pool', customIcon: 'stockpool' },
-    { id: 'technical', icon: Target, label: '技术指标', path: '/technical-indicators', customIcon: 'technical' },
-    { id: 'screener', icon: TrendingUp, label: '筛选股票', path: '/research/screener', customIcon: 'screener' },
-    { id: 'backtest', icon: TrendingUp, label: '股票回测', path: '/research/backtest', customIcon: 'backtest' },
-    { id: 'analysis', icon: Brain, label: '交易分析', path: '/research/analysis', customIcon: 'analysis' },
-  ]
-
+  // 根据角色过滤设置菜单项
   const settingsMenuItems = [
-    { id: 'datasync', icon: Database, label: '数据同步', path: '/data-sync', customIcon: 'datasource' },
-    { id: 'scheduled-task', icon: Clock, label: '定时任务', path: '/scheduled-task', customIcon: 'clock' },
-    { id: 'llm', icon: Database, label: '大模型配置', path: '/llm-config', customIcon: 'llm' },
-    { id: 'database', icon: Database, label: '数据库', path: '/database-management', customIcon: 'database' },
-  ]
+    { id: 'database', icon: Database, label: '数据管理', path: '/database-management', customIcon: 'database' },
+    { id: 'account', icon: Users, label: '账号管理', path: '/account-management', customIcon: 'account', requiredRole: 'admin' },
+  ].filter(item => !item.requiredRole || hasPermission(item.requiredRole))
 
   const isTradingPage = tradingMenuItems.some(item => item.path === location.pathname)
-  const isResearchPage = researchMenuItems.some(item => item.path === location.pathname)
-  const isBacktestPage = location.pathname === '/research/backtest'
   const isSettingsPage = settingsMenuItems.some(item => item.path === location.pathname)
 
   return (
@@ -334,34 +134,6 @@ function Navigation() {
 
               <div>
                 <NavLink
-                  to="/stock-pool"
-                  className={({ isActive }) =>
-                    `flex items-center py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900 relative ${isActive || isResearchPage ? 'text-gray-900' : ''}`
-                  }
-                  style={{ fontSize: 'clamp(14px, 1.5vw, 16px)', paddingLeft: 'clamp(8px, 1vw, 12px)', paddingRight: 'clamp(8px, 1vw, 12px)' }}
-                >
-                  {({ isActive }) => (
-                    <>
-                      研究院
-                      {(isActive || isResearchPage) && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            bottom: '-4px',
-                            left: 'clamp(8px, 1vw, 12px)',
-                            right: 'clamp(8px, 1vw, 12px)',
-                            height: '2px',
-                            backgroundColor: '#0F1419',
-                          }}
-                        />
-                      )}
-                    </>
-                  )}
-                </NavLink>
-              </div>
-
-              <div>
-                <NavLink
                   to="/database-management"
                   className={({ isActive }) =>
                     `flex items-center py-2 text-base font-medium transition-all duration-300 text-gray-600 hover:text-gray-900 relative ${isActive || isSettingsPage ? 'text-gray-900' : ''}`
@@ -387,6 +159,29 @@ function Navigation() {
                   )}
                 </NavLink>
               </div>
+            </div>
+
+            {/* 用户信息和登出按钮 */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
+                  {user?.username?.charAt(0).toUpperCase()}
+                </div>
+                <div className="text-sm">
+                  <div className="font-medium text-gray-900">{user?.username}</div>
+                  <div className="text-xs text-gray-500">
+                    {user?.role === 'admin' ? '管理员' : user?.role === 'trader' ? '交易员' : '观察者'}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => logout()}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                title="登出"
+              >
+                <LogOut className="w-4 h-4" />
+                登出
+              </button>
             </div>
           </div>
         </div>
@@ -506,77 +301,6 @@ function Navigation() {
         </aside>
       )}
 
-      {/* 左侧边栏 - 仅在研究室页面显示 */}
-      {isResearchPage && (
-        <aside
-          className="fixed left-0 top-[52px] bottom-0 w-[166px] bg-white border-r border-gray-200 overflow-y-auto z-40 pt-0"
-          style={{ width: 'clamp(140px, 15vw, 166px)' }}
-        >
-          <div className="px-3 pt-2.5 space-y-2.5">
-            {researchMenuItems.map((item) => {
-              const isActive = location.pathname === item.path
-              return (
-                <Link
-                  key={item.id}
-                  to={item.path}
-                  className={`flex items-center h-[42px] px-3 rounded-full text-sm font-medium transition-all duration-200 ${
-                    item.id === 'stockpool' ? 'mt-2.5' : ''
-                  } ${
-                    isActive
-                      ? 'bg-gray-100 text-[#0F1419]'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  {item.customIcon === 'stockpool' ? (
-                    <svg
-                      viewBox="0 0 1024 1024"
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="w-6 h-6 mr-2"
-                      fill="#0F1419"
-                    >
-                      {isActive ? (
-                        <path d="M682.666667 804.571429v73.142857H341.333333v-73.142857h341.333334z m170.666666-658.285715a73.142857 73.142857 0 0 1 73.142857 73.142857v463.238096a73.142857 73.142857 0 0 1-73.142857 73.142857H170.666667a73.142857 73.142857 0 0 1-73.142857-73.142857V219.428571a73.142857 73.142857 0 0 1 73.142857-73.142857h682.666666z m-170.666666 268.190476H341.333333v73.142858h341.333334v-73.142858z"></path>
-                      ) : (
-                        <path d="M853.333333 146.285714a73.142857 73.142857 0 0 1 73.142857 73.142857v463.238096a73.142857 73.142857 0 0 1-73.142857 73.142857H170.666667a73.142857 73.142857 0 0 1-73.142857-73.142857V219.428571a73.142857 73.142857 0 0 1 73.142857-73.142857h682.666666z m0 73.142857H170.666667v463.238096h682.666666V219.428571z m-170.666666 195.047619v73.142858H341.333333v-73.142858h341.333334zM341.333333 804.571429h341.333334v73.142857H341.333333z"></path>
-                      )}
-                    </svg>
-                  ) : item.customIcon === 'technical' ? (
-                    <svg
-                      viewBox="0 0 1024 1024"
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="w-6 h-6 mr-2"
-                      fill="#0F1419"
-                    >
-                      {isActive ? (
-                        <path d="M772.437333 90.136381l51.712 51.712-136.094476 136.094476h132.973714a71.094857 71.094857 0 0 1 71.314286 70.89981v472.600381a71.094857 71.094857 0 0 1-71.314286 70.899809H202.971429A71.094857 71.094857 0 0 1 131.657143 821.443048V348.842667A71.094857 71.094857 0 0 1 202.971429 277.942857h132.949333L199.850667 141.848381l51.712-51.712 187.806476 187.806476h145.237333L772.437333 90.136381zM548.571429 414.47619h-73.142858v341.333334h73.142858V414.47619zM414.47619 487.619048h-73.142857v195.047619h73.142857v-195.047619z m268.190477 24.380952h-73.142857v146.285714h73.142857v-146.285714z"></path>
-                      ) : (
-                        <path d="M772.437333 97.52381l51.712 51.712-126.342095 126.342095H828.952381a73.142857 73.142857 0 0 1 73.142857 73.142857v487.619048a73.142857 73.142857 0 0 1-73.142857 73.142857H195.047619a73.142857 73.142857 0 0 1-73.142857-73.142857v-487.619048a73.142857 73.142857 0 0 1 73.142857-73.142857h131.120762L199.850667 149.23581 251.562667 97.52381l178.054095 178.054095h164.742095L772.437333 97.52381zM828.952381 348.720762H195.047619v487.619048h633.904762v-487.619048z m-280.380952 73.142857v341.333333h-73.142858v-341.333333h73.142858z m-134.095239 73.142857v195.047619h-73.142857v-195.047619h73.142857z m268.190477 24.380953v146.285714h-73.142857v-146.285714h73.142857z"></path>
-                      )}
-                    </svg>
-                  ) : item.customIcon === 'screener' ? (
-                    <svg
-                      viewBox="0 0 1024 1024"
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="w-6 h-6 mr-2"
-                      fill="#0F1419"
-                    >
-                      {isActive ? (
-                        <path d="M853.333333 146.285714a73.142857 73.142857 0 0 1 73.142857 73.142857v585.142857a73.142857 73.142857 0 0 1-73.142857 73.142857H170.666667a73.142857 73.142857 0 0 1-73.142857-73.142857V219.428571a73.142857 73.142857 0 0 1 73.142857-73.142857h682.666666zM780.190476 487.619048H243.809524v73.142857h536.380952v-73.142857z m0-146.285715H243.809524v73.142858h536.380952v-73.142858z m0 292.571429H243.809524v73.142857h536.380952v-73.142857z"></path>
-                      ) : (
-                        <path d="M853.333333 170.666667a48.761905 48.761905 0 0 1 48.761905 48.761904v585.142858a48.761905 48.761905 0 0 1-48.761905 48.761904H170.666667a48.761905 48.761905 0 0 1-48.761905-48.761904V219.428571a48.761905 48.761905 0 0 1 48.761905-48.761904h682.666666z m0 48.761904H170.666667v585.142858h682.666666V219.428571z m-73.142857 195.047619v73.142858H243.809524v-73.142858h536.380952z m0-146.285714v73.142857H243.809524v-73.142857h536.380952z m0 292.571428v73.142857H243.809524v-73.142857h536.380952z"></path>
-                      )}
-                    </svg>
-                  ) : (
-                    <item.icon className="w-6 h-6 mr-2" style={{ color: isActive ? '#0F1419' : '#9CA3AF' }} />
-                  )}
-                  {item.label}
-                </Link>
-              )
-            })}
-          </div>
-        </aside>
-      )}
-
       {/* 左侧边栏 - 仅在设置页面显示 */}
       {isSettingsPage && (
         <aside
@@ -590,14 +314,14 @@ function Navigation() {
                 <Link
                   key={item.id}
                   to={item.path}
-                  className={`flex items-center h-[42px] px-3 rounded-full text-sm font-medium transition-all duration-200 ${(item.customIcon === 'database' || item.customIcon === 'datasource' || item.customIcon === 'llm' || item.customIcon === 'clock') ? 'mt-2.5' : ''
+                  className={`flex items-center h-[42px] px-3 rounded-full text-sm font-medium transition-all duration-200 ${item.customIcon === 'database' ? 'mt-2.5' : ''
                   } ${
                     isActive
                       ? 'bg-gray-100 text-[#0F1419]'
                       : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
-                  {(item.customIcon === 'database' || item.customIcon === 'datasource' || item.customIcon === 'llm') ? (
+                  {item.customIcon === 'database' ? (
                     <svg
                       viewBox="0 0 1024 1024"
                       xmlns="http://www.w3.org/2000/svg"
@@ -645,6 +369,53 @@ function App() {
 
 function AppContent() {
   const location = useLocation()
+  const { isAuthenticated } = useAuthStore()
+  const syncCalled = useRef(false)
+
+  // 应用启动时自动从数据库同步数据
+  useEffect(() => {
+    if (!isAuthenticated || syncCalled.current) return
+    syncCalled.current = true
+
+    const syncData = async () => {
+      try {
+        const token = localStorage.getItem('auth_token')
+        const res = await fetch('/api/sync/all', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        const result = await res.json()
+        if (result.success && result.data) {
+          const state = useStore.getState()
+          if (result.data.trade_orders !== undefined) {
+            state.importOrders(result.data.trade_orders)
+          }
+          if (result.data.trade_records !== undefined) {
+            state.importTradeRecords(result.data.trade_records, result.data.trade_orders || [])
+          }
+          if (result.data.transactions !== undefined) {
+            state.importTransactions(result.data.transactions)
+          }
+          if (result.data.daily_work_data !== undefined) {
+            state.importDailyWorkData(result.data.daily_work_data)
+          }
+          if (result.data.psychological_test_results !== undefined) {
+            state.importPsychologicalTestResults(result.data.psychological_test_results)
+          }
+          if (result.data.trading_strategies !== undefined) {
+            state.importTradingStrategies(result.data.trading_strategies)
+          }
+          if (result.data.risk_config !== undefined) {
+            state.importRiskConfig(result.data.risk_config)
+          }
+          console.log('[App] 启动同步完成')
+        }
+      } catch (e) {
+        console.error('[App] 启动同步失败:', e)
+      }
+    }
+    syncData()
+  }, [isAuthenticated])
+  
   const tradingMenuItems = [
     { path: '/daily-work' },
     { path: '/psychological-test' },
@@ -654,30 +425,21 @@ function AppContent() {
     { path: '/trade-records' },
     { path: '/transaction-history' },
   ]
-  const researchMenuItems = [
-    { path: '/stock-pool' },
-    { path: '/technical-indicators' },
-    { path: '/research/screener' },
-    { path: '/research/backtest' },
-    { path: '/research/analysis' },
-  ]
   const settingsMenuItems = [
-    { path: '/data-sync' },
-    { path: '/scheduled-task' },
-    { path: '/llm-config' },
     { path: '/database-management' },
+    { path: '/account-management' },
   ]
 
   const isTradingPage = tradingMenuItems.some(item => item.path === location.pathname)
-  const isResearchPage = researchMenuItems.some(item => item.path === location.pathname)
-  const isBacktestPage = location.pathname === '/research/backtest'
-  const isAnalysisPage = location.pathname === '/research/analysis'
-  const isScreenerPage = location.pathname === '/research/screener'
   const isSettingsPage = settingsMenuItems.some(item => item.path === location.pathname)
+
+  // 如果未登录且不在登录页，显示登录页
+  if (!isAuthenticated && location.pathname !== '/login') {
+    return <Login />
+  }
 
   return (
     <div className="h-screen bg-gray-50 overflow-hidden" style={{ margin: '0', padding: '0' }}>
-          <DataSync />
           <Navigation />
           <main
             className="w-full"
@@ -686,28 +448,21 @@ function AppContent() {
               margin: '0',
               height: 'calc(100vh)',
               position: 'relative',
-              marginLeft: isBacktestPage || isAnalysisPage ? '180px' : (isTradingPage || isResearchPage || isSettingsPage) ? '10px' : '0'
+              marginLeft: isTradingPage || isSettingsPage ? '10px' : '0'
             }}
           >
             <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/daily-work" element={<DailyWork />} />
-              <Route path="/psychological-test" element={<PsychologicalTest />} />
-              <Route path="/trading-strategy" element={<TradingStrategy />} />
-              <Route path="/technical-indicators" element={<TechnicalIndicators />} />
-              <Route path="/risk-model" element={<RiskModel />} />
-              <Route path="/stock-pool" element={<StockPool />} />
-              <Route path="/stock-chart" element={<StockChart />} />
-              <Route path="/order-management" element={<OrderManagement />} />
-              <Route path="/transaction-history" element={<TransactionHistory />} />
-              <Route path="/trade-records" element={<TradeRecords />} />
-              <Route path="/database-management" element={<DatabaseManagement />} />
-              <Route path="/data-sync" element={<DataSyncPage />} />
-              <Route path="/scheduled-task" element={<ScheduledTask />} />
-              <Route path="/llm-config" element={<LLModelConfig />} />
-              <Route path="/research/screener" element={<StockScreener />} />
-              <Route path="/research/backtest" element={<BacktestSystem />} />
-              <Route path="/research/analysis" element={<TradeAnalysis />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
+              <Route path="/daily-work" element={<ProtectedRoute><DailyWork /></ProtectedRoute>} />
+              <Route path="/psychological-test" element={<ProtectedRoute><PsychologicalTest /></ProtectedRoute>} />
+              <Route path="/trading-strategy" element={<ProtectedRoute><TradingStrategy /></ProtectedRoute>} />
+              <Route path="/risk-model" element={<ProtectedRoute><RiskModel /></ProtectedRoute>} />
+              <Route path="/order-management" element={<ProtectedRoute><OrderManagement /></ProtectedRoute>} />
+              <Route path="/transaction-history" element={<ProtectedRoute><TransactionHistory /></ProtectedRoute>} />
+              <Route path="/trade-records" element={<ProtectedRoute><TradeRecords /></ProtectedRoute>} />
+              <Route path="/database-management" element={<ProtectedRoute requiredRole="admin"><DatabaseManagement /></ProtectedRoute>} />
+              <Route path="/account-management" element={<ProtectedRoute requiredRole="admin"><AccountManagement /></ProtectedRoute>} />
             </Routes>
           </main>
         </div>

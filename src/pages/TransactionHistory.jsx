@@ -68,39 +68,18 @@ const sortedTransactions = currentTransactions
     if (timeDiff !== 0) return timeDiff
     return String(a.id).localeCompare(String(b.id))
   })
-
-console.log('🕒 [时间排序验证] 交易记录排序结果:')
-sortedTransactions.forEach((t, idx) => {
-  console.log(`   交易${idx+1}: ${t.createdAt} - ${t.type} - ${t.amount}`)
-})
     
   // 纯金额累积计算：忽略任何历史balance字段
   let balance = 0
-  console.log('🔍 [余额调试] 开始逐笔交易分析:')
   sortedTransactions.forEach((transaction, index) => {
     const transactionAmount = parseFloat(transaction.amount) || 0
-    const oldBalance = balance
     balance += transactionAmount
-    
-    console.log(`   交易${index+1}: amount=${transactionAmount}, ` +
-               `余额变化: ${oldBalance} -> ${balance}, ` +
-               `类型: ${transaction.type}, ` +
-               `时间: ${transaction.createdAt}`)
   })
-  
-  console.log('💡 [余额调试] 分析结果:')
-  console.log(`   - 交易总数: ${sortedTransactions.length}`)
-  console.log(`   - 累计金额: ${balance}`)
-  console.log(`   - 累计差额判断: 如果余额异常大，请检查数据源`)
     
     return balance
   }
 
   const currentBalance = calculateCurrentBalance()
-
-  console.log('🔧 [TransactionHistory] 余额累积计算:')
-  console.log('   - 交易记录数量:', currentTransactions.length)
-  console.log('   - 当前累积余额:', currentBalance)
   
   // 强制覆盖任何可能错误的store余额，使用我们正确的累计计算值
   const currentAccount = { 
@@ -183,14 +162,7 @@ sortedTransactions.forEach((t, idx) => {
       }
     }
 
-    console.log('确认删除, selectedIds:', selectedIds)
-    console.log('当前交易数:', transactions.length)
-
     deleteMultipleTransactions(selectedIds)
-
-    setTimeout(() => {
-      console.log('删除后 - 交易数:', transactions.length)
-    }, 100)
 
     setSelectedIds([])
     setShowDeleteModal(false)
@@ -220,17 +192,6 @@ sortedTransactions.forEach((t, idx) => {
     
     // 在现有余额基础上累积计算新余额
     const newBalance = currentBalance + transactionAmount
-    
-    console.log('🔧 [手动入账] 余额累积计算:')
-    console.log('   - 历史余额:', currentBalance)
-    console.log('   - 交易金额:', transactionAmount)
-    console.log('   - 新余额 (累计):', newBalance)
-    
-    console.log('💰 [手动入账] 余额计算调试（最终修复）:')
-    console.log('   - 当前计算余额:', currentBalance)
-    console.log('   - 当前交易金额:', transactionAmount)
-    console.log('   - 新余额:', newBalance)
-    console.log('   - 交易记录数量:', transactions.length)
     
     addTransaction({
       type: transactionForm.type === 'income' ? '手动入账' : '手动出账',
@@ -414,12 +375,6 @@ sortedTransactions.forEach((t, idx) => {
       return balance + (parseFloat(t.amount) || 0)
     }, 0)
   }
-  
-  console.log('📊 [上月数据计算] 结果:')
-  console.log('   - 上月总资产:', lastMonthAssets)
-  console.log('   - 上月收入:', lastMonthIncome)
-  console.log('   - 上月支出:', lastMonthExpense)
-  console.log('   - 上月收支:', lastMonthBalance)
   
   // 计算总资产差值和百分比（对比上月总资产）
   const balanceDiff = currentTotalAssets - lastMonthAssets

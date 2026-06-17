@@ -18,7 +18,8 @@
     "migrate": "node src/scripts/run_migration.js",
     "migrate:status": "node src/scripts/run_migration.js --status",
     "migrate:skip-backup": "node src/scripts/run_migration.js --skip-backup",
-    "migrate:file": "node src/scripts/run_migration.js"
+    "migrate:file": "node src/scripts/run_migration.js",
+    "init-admin": "node scripts/init-admin.js"
   },
   "keywords": [
     "trading",
@@ -28,6 +29,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
@@ -35,8 +37,8 @@
     "express-rate-limit": "^7.2.0",
     "helmet": "^7.1.0",
     "iconv-lite": "^0.7.2",
+    "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.0",
-    "node-cron": "^4.2.1",
     "pg": "^8.11.3"
   },
   "devDependencies": {

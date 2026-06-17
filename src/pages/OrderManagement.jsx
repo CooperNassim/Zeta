@@ -348,8 +348,8 @@ const OrderManagement = () => {
         .sort((a, b) => new Date(b.createdAt || b.created_at || b.buyDate || b.buyTime) - new Date(a.createdAt || a.created_at || a.buyDate || a.buyTime))
       
       const startMonthTotal = lastMonthTransactions.length > 0 
-        ? (lastMonthTransactions[0].balance || 1072680.52)
-        : 1072680.52
+        ? (lastMonthTransactions[0].balance || 0)
+        : 0
 
       // 风险额度百分比
       const totalRiskPercent = riskConfig?.real?.totalRiskPercent || 5
@@ -433,8 +433,8 @@ const OrderManagement = () => {
         .sort((a, b) => new Date(b.createdAt || b.created_at || b.buyDate || b.buyTime) - new Date(a.createdAt || a.created_at || a.buyDate || a.buyTime))
       
       const startMonthTotal = lastMonthTransactions.length > 0 
-        ? (lastMonthTransactions[0].balance || 1072680.52)
-        : 1072680.52
+        ? (lastMonthTransactions[0].balance || 0)
+        : 0
       
       // 获取可用比例：用户输入的值或自动计算值（注意：getMinAvailablePercent返回的是百分比值如2，不是0.02）
       const availablePercentValue = parseFloat(orderForm.availablePercent)
@@ -642,21 +642,9 @@ const OrderManagement = () => {
     let buyQuantity = 0
     let soldQuantity = 0
 
-    console.log('[calculateAvailableQuantity] DEBUG - 开始计算可卖出数量')
-    console.log('[calculateAvailableQuantity] orderForm:', { 
-      buyOrderId: orderForm.buyOrderId, 
-      tradeNumber: orderForm.tradeNumber,
-      symbol: orderForm.symbol,
-      type: orderType
-    })
-    console.log('[calculateAvailableQuantity] 订单总数:', orders.length)
-    console.log('[calculateAvailableQuantity] 买入订单数量:', orders.filter(o => !o.deleted && o.type === 'buy').length)
-    console.log('[calculateAvailableQuantity] 卖出订单数量:', orders.filter(o => !o.deleted && o.type === 'sell').length)
-
     if (orderForm.buyOrderId) {
       // 方式1：通过 buyOrderId 关联（精确匹配某个买入订单）
       const buyOrder = orders.find(order => order.id === orderForm.buyOrderId && !order.deleted && order.type === 'buy')
-      console.log('[calculateAvailableQuantity] 找到买入订单:', buyOrder)
       if (buyOrder) {
         buyQuantity = buyOrder.quantity || 0
         const sellOrders = orders.filter(o =>
@@ -664,7 +652,6 @@ const OrderManagement = () => {
           o.type === 'sell' &&
           o.buyOrderId === orderForm.buyOrderId
         )
-        console.log('[calculateAvailableQuantity] 关联的卖出订单:', sellOrders)
         soldQuantity = sellOrders.reduce((sum, o) => sum + (o.quantity || 0), 0)
       }
     } else if (orderForm.tradeNumber) {
@@ -674,13 +661,11 @@ const OrderManagement = () => {
         !o.deleted &&
         o.tradeNumber === orderForm.tradeNumber
       )
-      console.log('[calculateAvailableQuantity] 通过tradeNumber关联的订单:', sameTradeOrders)
 
       // 买入数量：只统计未删除的买入订单
       buyQuantity = sameTradeOrders
         .filter(o => o.type === 'buy')
         .reduce((sum, o) => sum + (o.quantity || 0), 0)
-      console.log('[calculateAvailableQuantity] 买入数量:', buyQuantity)
 
       // 卖出数量：只统计关联到未删除买入订单的卖出订单
       // 修复：如果卖出订单关联的买入订单已被删除,则不计入
@@ -699,7 +684,6 @@ const OrderManagement = () => {
     }
 
     const result = Math.max(0, buyQuantity - soldQuantity)
-    console.log('[calculateAvailableQuantity] 最终计算结果:', { buyQuantity, soldQuantity, result })
     return result
   }
 

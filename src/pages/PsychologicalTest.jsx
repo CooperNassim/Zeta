@@ -20,8 +20,6 @@ const PsychologicalTest = () => {
   const importPsychologicalTestResults = useStore(state => state.importPsychologicalTestResults)
   const importPsychologicalIndicators = useStore(state => state.importPsychologicalIndicators)
 
-  console.log('[PsychologicalTest] RENDERING', { indicators, psychologicalTests, testScores })
-
   const getTestResultForDate = (date) => {
     try {
       const dateStr = format(date, 'yyyy-MM-dd')
@@ -30,7 +28,6 @@ const PsychologicalTest = () => {
         if (!test || !test.date) return false
         return test.date === dateStr
       })
-      console.log('[PsychologicalTest] getTestResultForDate:', { date: dateStr, result })
       return result
     } catch (e) {
       console.error('[PsychologicalTest] getTestResultForDate error:', e)
@@ -43,10 +40,8 @@ const PsychologicalTest = () => {
       const today = new Date()
       const testResult = getTestResultForDate(today)
       if (testResult) {
-        console.log('[PsychologicalTest] 初始化: 设置今天的分数', testResult.scores)
         setTestScores(testResult.scores || {})
       } else {
-        console.log('[PsychologicalTest] 初始化: 没有今天的测试记录')
         setTestScores({})
       }
     } catch (e) {
@@ -57,20 +52,14 @@ const PsychologicalTest = () => {
 
   useEffect(() => {
     try {
-      console.log('[PsychologicalTest] selectedDate 发生变化')
-      console.log('[PsychologicalTest] selectedDate:', format(selectedDate, 'yyyy-MM-dd'))
-      
       const currentTestResult = getTestResultForDate(selectedDate)
-      console.log('[PsychologicalTest] 当前选中日期的测试结果:', currentTestResult)
       
       const isToday = isTodaySelected()
       const hasScores = Object.keys(testScores || {}).length > 0
       
       if (currentTestResult && (!isToday || !hasScores)) {
-        console.log('[PsychologicalTest] 同步数据:', currentTestResult.scores)
         setTestScores(currentTestResult.scores || {})
       } else if (!currentTestResult && !isToday) {
-        console.log('[PsychologicalTest] 无数据，清空分数')
         setTestScores({})
       }
     } catch (e) {
@@ -80,14 +69,11 @@ const PsychologicalTest = () => {
 
   const handleDateClick = (date) => {
     try {
-      console.log('[PsychologicalTest] 切换日期:', date)
       setSelectedDate(date)
       const testResult = getTestResultForDate(date)
       if (testResult) {
-        console.log('[PsychologicalTest] 切换日期: 找到测试记录', testResult.scores)
         setTestScores(testResult.scores || {})
       } else {
-        console.log('[PsychologicalTest] 切换日期: 没有测试记录')
         setTestScores({})
       }
     } catch (e) {
@@ -118,11 +104,8 @@ const PsychologicalTest = () => {
 
   const calculateOverallScore = (scores) => {
     try {
-      console.log('[PsychologicalTest] calculateOverallScore called with:', { scores, testScores, indicators })
-      
       // 如果 indicators 无效，直接返回 0
       if (!indicators || !Array.isArray(indicators) || indicators.length === 0) {
-        console.log('[PsychologicalTest] calculateOverallScore: indicators is not a valid array')
         return 0
       }
       
@@ -132,11 +115,9 @@ const PsychologicalTest = () => {
       
       for (let i = 0; i < indicators.length; i++) {
         const indicator = indicators[i]
-        console.log('[PsychologicalTest] calculateOverallScore: processing indicator', i, indicator)
         
         // 彻底检查每个 indicator
         if (!indicator || typeof indicator !== 'object' || indicator === null) {
-          console.log('[PsychologicalTest] calculateOverallScore: skipping invalid indicator', i)
           continue
         }
         
@@ -159,7 +140,6 @@ const PsychologicalTest = () => {
       }
       
       const result = totalScore.toFixed(2)
-      console.log('[PsychologicalTest] calculateOverallScore result:', result)
       return parseFloat(result)
     } catch (e) {
       console.error('[PsychologicalTest] calculateOverallScore ERROR:', e)

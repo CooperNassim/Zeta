@@ -460,62 +460,73 @@ export default function DatabaseManagement() {
 
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '0px', paddingRight: '10px', paddingTop: '10px', position: 'relative', paddingBottom: '10px', overflow: 'auto' }}>
       <div className="pr-2.5 pb-2.5">
-        {/* 操作按钮 */}
-        <div className="bg-white rounded-xl border border-gray-100 p-3 mb-2.5 flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-400 mr-1 font-medium">快捷操作</span>
-          {/* 数据库开关 */}
-          <div className="flex items-center gap-2 mr-2">
-            <span className="text-xs text-gray-500">{dbEnabled ? '开启' : '关闭'}</span>
-            <button
-              onClick={() => setDbEnabled(!dbEnabled)}
-              className={`w-10 h-5 rounded-full transition-colors duration-200 relative ${dbEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
-            >
-              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${dbEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
-            </button>
-          </div>
-          {/* 刷新按钮 */}
-          <button
-            onClick={refreshAll}
-            className="px-3.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            刷新
-          </button>
-          {actionButtons.map(btn => (
-            <button
-              key={btn.label}
-              onClick={btn.onClick}
-              className={`px-3.5 py-1.5 ${btn.color} ${btn.textColor} text-xs font-medium rounded-lg transition-all flex items-center gap-1.5`}
-            >
-              <btn.icon className="w-3.5 h-3.5" />
-              {btn.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab 导航 */}
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="flex border-b border-gray-100 px-2.5 pt-2.5">
+        {/* 顶部行：左侧Tab卡片 + 右侧快捷操作 */}
+        <div className="flex items-start gap-2.5 mb-2.5">
+          {/* 左侧：四个Tab卡片导航 */}
+          <div className="flex gap-2.5 flex-1">
             {tabs.map(tab => {
               const isActive = activeTab === tab.id
               return (
-                <button
+                <div
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-all ${
-                    isActive
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200'
-                  }`}
+                  style={{
+                    background: '#ffffff',
+                    border: isActive ? '1px solid #0F1419' : '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    padding: '10px 25px',
+                    minHeight: '55px',
+                    width: '180px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
                 >
-                  <tab.icon className="w-4 h-4" />
-                  {tab.label}
-                </button>
+                  <div>
+                    <p className="text-sm mb-0" style={{ color: '#666' }}>{tab.label}</p>
+                  </div>
+                </div>
               )
             })}
           </div>
+          {/* 右侧：快捷操作 */}
+          <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2 flex-wrap shrink-0">
+            <span className="text-xs text-gray-400 mr-1 font-medium">快捷操作</span>
+            {/* 数据库开关 */}
+            <div className="flex items-center gap-2 mr-2">
+              <span className="text-xs text-gray-500">{dbEnabled ? '开启' : '关闭'}</span>
+              <button
+                onClick={() => setDbEnabled(!dbEnabled)}
+                className={`w-10 h-5 rounded-full transition-colors duration-200 relative ${dbEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${dbEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+            {/* 刷新按钮 */}
+            <button
+              onClick={refreshAll}
+              className="px-3.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              刷新
+            </button>
+            {actionButtons.map(btn => (
+              <button
+                key={btn.label}
+                onClick={btn.onClick}
+                className={`px-3.5 py-1.5 ${btn.color} ${btn.textColor} text-xs font-medium rounded-lg transition-all flex items-center gap-1.5`}
+              >
+                <btn.icon className="w-3.5 h-3.5" />
+                {btn.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-          {/* Tab 内容 */}
+        {/* Tab 内容 */}
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
           <div className="p-2.5">
             {/* ===== 概览 Tab ===== */}
             {activeTab === 'overview' && (

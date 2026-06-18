@@ -4,6 +4,14 @@ import {
   UserCheck, UserX, Shield, ShieldCheck, Eye, X, Check, AlertCircle
 } from 'lucide-react'
 import useAuthStore from '../store/authStore'
+import { useToast } from '../contexts/ToastContext'
+import FilterSelect from '../components/FilterSelect'
+import CustomInput from '../components/CustomInput'
+import Toolbar from '../components/Toolbar'
+import DataTable from '../components/DataTable'
+import Pagination from '../components/Pagination'
+import EmptyState from '../components/EmptyState'
+import FormModal from '../components/FormModal'
 
 const API_BASE_URL = ''
 
@@ -33,28 +41,27 @@ const statusMap = {
   inactive: { label: '停用', color: 'bg-red-100 text-red-700' }
 }
 
-// Toast 提示组件
-const Toast = ({ message, type = 'success', onClose }) => {
-  useEffect(() => {
-    const timer = setTimeout(onClose, 3000)
-    return () => clearTimeout(timer)
-  }, [onClose])
+// 表格字段定义
+const TABLE_FIELDS = [
+  { key: 'username', label: '用户名', width: '200px' },
+  { key: 'role', label: '角色', width: '120px' },
+  { key: 'status', label: '状态', width: '100px' },
+  { key: 'created_at', label: '创建时间', width: '180px' },
+  { key: 'actions', label: '操作', width: '160px' }
+]
 
-  const styles = {
-    success: 'bg-green-50 text-green-800 border-green-200',
-    error: 'bg-red-50 text-red-800 border-red-200',
-    warning: 'bg-yellow-50 text-yellow-800 border-yellow-200'
-  }
+// 角色选项
+const roleOptions = [
+  { value: 'admin', label: '管理员' },
+  { value: 'trader', label: '交易员' },
+  { value: 'viewer', label: '观察者' }
+]
 
-  return (
-    <div className={`fixed top-4 right-4 px-4 py-3 rounded-lg border ${styles[type]} shadow-lg z-50 flex items-center gap-2`}>
-      {type === 'success' && <Check className="w-4 h-4" />}
-      {type === 'error' && <X className="w-4 h-4" />}
-      {type === 'warning' && <AlertCircle className="w-4 h-4" />}
-      <span>{message}</span>
-    </div>
-  )
-}
+// 状态选项
+const statusOptions = [
+  { value: 'active', label: '活跃' },
+  { value: 'inactive', label: '停用' }
+]
 
 // 模态框组件
 const Modal = ({ isOpen, onClose, title, children, maxWidth = 'max-w-2xl' }) => {
@@ -82,12 +89,18 @@ const Modal = ({ isOpen, onClose, title, children, maxWidth = 'max-w-2xl' }) => 
 
 const AccountManagement = () => {
   const { user: currentUser, token } = useAuthStore()
+  const { showToast } = useToast()
 
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [roleFilter, setRoleFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [roleFilter, setRoleFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+
+  // 分页状态
+  const [currentPage, setCurrentPage] = useState(1)
+  const [selectedIds, setSelectedIds] = useState([])
+  const pageSize = 20
 
   // 模态框状态
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -109,8 +122,6 @@ const AccountManagement = () => {
     confirmPassword: ''
   })
 
-  const [toast, setToast] = useState(null)
-
   // 获取用户列表
   const fetchUsers = async () => {
     try {
@@ -124,7 +135,6 @@ const AccountManagement = () => {
 
       if (!response.ok) {
         if (response.status === 401) {
-          // token 过期，跳转到登录页
           localStorage.removeItem('auth_token')
           localStorage.removeItem('auth_user')
           window.location.href = '/login'
@@ -138,7 +148,6 @@ const AccountManagement = () => {
     } catch (error) {
       console.error('获取用户列表错误:', error)
       setUsers([])
-      setToast({ message: '获取用户列表失败', type: 'error' })
     } finally {
       setLoading(false)
     }
@@ -167,13 +176,13 @@ const AccountManagement = () => {
         throw new Error(error.error || '创建用户失败')
       }
 
-      setToast({ message: '用户创建成功', type: 'success' })
+      showToast('用户创建成功', 'success')
       setShowCreateModal(false)
       setFormData({ username: '', password: '', role: 'viewer', status: 'active' })
       fetchUsers()
     } catch (error) {
       console.error('创建用户错误:', error)
-      setToast({ message: error.message, type: 'error' })
+      showToast(error.message, 'error')
     }
   }
 
@@ -199,23 +208,19 @@ const AccountManagement = () => {
         throw new Error(error.error || '更新用户失败')
       }
 
-      setToast({ message: '用户更新成功', type: 'success' })
+      showToast('用户更新成功', 'success')
       setShowEditModal(false)
       fetchUsers()
     } catch (error) {
       console.error('更新用户错误:', error)
-      setToast({ message: error.message, type: 'error' })
+      showToast(error.message, 'error')
     }
   }
 
   // 删除用户
-  const handleDeleteUser = async (user) => {
-    if (!confirm(`确定要删除用户 "${user.username}" 吗？`)) {
-      return
-    }
-
+  const handleDeleteUser = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/${selectedIds[0]}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -228,11 +233,12 @@ const AccountManagement = () => {
         throw new Error(error.error || '删除用户失败')
       }
 
-      setToast({ message: '用户删除成功', type: 'success' })
+      showToast('用户删除成功', 'success')
+      setSelectedIds([])
       fetchUsers()
     } catch (error) {
       console.error('删除用户错误:', error)
-      setToast({ message: error.message, type: 'error' })
+      showToast(error.message, 'error')
     }
   }
 
@@ -241,7 +247,7 @@ const AccountManagement = () => {
     e.preventDefault()
 
     if (resetPasswordData.password !== resetPasswordData.confirmPassword) {
-      setToast({ message: '两次输入的密码不一致', type: 'error' })
+      showToast('两次输入的密码不一致', 'error')
       return
     }
 
@@ -260,12 +266,12 @@ const AccountManagement = () => {
         throw new Error(error.error || '重置密码失败')
       }
 
-      setToast({ message: '密码重置成功', type: 'success' })
+      showToast('密码重置成功', 'success')
       setShowResetPasswordModal(false)
       setResetPasswordData({ password: '', confirmPassword: '' })
     } catch (error) {
       console.error('重置密码错误:', error)
-      setToast({ message: error.message, type: 'error' })
+      showToast(error.message, 'error')
     }
   }
 
@@ -288,12 +294,15 @@ const AccountManagement = () => {
       setShowLoginLogsModal(true)
     } catch (error) {
       console.error('获取登录日志错误:', error)
-      setToast({ message: '获取登录日志失败', type: 'error' })
+      showToast('获取登录日志失败', 'error')
     }
   }
 
   // 打开编辑模态框
-  const openEditModal = (user) => {
+  const openEditModal = () => {
+    if (selectedIds.length !== 1) return
+    const user = users.find(u => u.id === selectedIds[0])
+    if (!user) return
     setSelectedUser(user)
     setFormData({
       username: user.username,
@@ -313,10 +322,85 @@ const AccountManagement = () => {
   // 过滤用户列表
   const filteredUsers = users.filter(user => {
     const matchSearch = user.username.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchRole = roleFilter === 'all' || user.role === roleFilter
-    const matchStatus = statusFilter === 'all' || user.status === statusFilter
+    const matchRole = !roleFilter || user.role === roleFilter
+    const matchStatus = !statusFilter || user.status === statusFilter
     return matchSearch && matchRole && matchStatus
   })
+
+  // 分页
+  const totalPages = Math.ceil(filteredUsers.length / pageSize)
+  const paginatedUsers = filteredUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  // 全选/单选
+  const handleSelectAll = (ids) => setSelectedIds(ids)
+  const handleSelectOne = (id, checked) => {
+    if (checked) {
+      setSelectedIds(prev => prev.includes(id) ? prev : [...prev, id])
+    } else {
+      setSelectedIds(prev => prev.filter(i => i !== id))
+    }
+  }
+
+  // 自定义单元格渲染
+  const renderCell = (field, item) => {
+    if (field.key === 'username') {
+      return (
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
+            {item.username.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <div className="text-sm font-medium text-gray-900">{item.username}</div>
+            {item.id === currentUser?.id && (
+              <div className="text-xs text-gray-500">当前用户</div>
+            )}
+          </div>
+        </div>
+      )
+    }
+    if (field.key === 'role') {
+      const role = roleMap[item.role]
+      const RoleIcon = role?.icon || Users
+      return (
+        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${role?.color || 'bg-gray-100 text-gray-700'}`}>
+          <RoleIcon className="w-3 h-3" />
+          {role?.label || item.role}
+        </span>
+      )
+    }
+    if (field.key === 'status') {
+      const status = statusMap[item.status]
+      return (
+        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${status?.color || 'bg-gray-100 text-gray-700'}`}>
+          {status?.label || item.status}
+        </span>
+      )
+    }
+    if (field.key === 'created_at') {
+      return <span className="text-sm text-gray-500">{formatDateTime(item.created_at)}</span>
+    }
+    if (field.key === 'actions') {
+      return (
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={() => fetchLoginLogs(item.id)}
+            className="text-blue-600 hover:text-blue-900 transition-colors p-1.5 hover:bg-blue-50 rounded"
+            title="查看登录记录"
+          >
+            <History className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => openResetPasswordModal(item)}
+            className="text-yellow-600 hover:text-yellow-900 transition-colors p-1.5 hover:bg-yellow-50 rounded"
+            title="重置密码"
+          >
+            <Key className="w-4 h-4" />
+          </button>
+        </div>
+      )
+    }
+    return item[field.key]
+  }
 
   if (loading) {
     return (
@@ -330,178 +414,93 @@ const AccountManagement = () => {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
-      {/* 页面标题 */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <Users className="w-7 h-7" />
-          账号管理
-        </h1>
-        <p className="text-gray-600 mt-1">管理系统用户账号、权限和登录记录</p>
-      </div>
-
-      {/* 工具栏 */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* 搜索框 */}
-          <div className="flex-1 min-w-[200px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="搜索用户名..."
+    <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '0px', paddingRight: '10px', position: 'relative' }}>
+        {/* 筛选条件 */}
+        <div style={{ flexShrink: 0, marginTop: '10px' }}>
+          <div className="flex items-center" style={{ gap: '10px' }}>
+            <div style={{ position: 'relative', width: '240px' }}>
+              <CustomInput
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onChange={(value) => {
+                  setSearchTerm(value)
+                  setCurrentPage(1)
+                }}
+                placeholder="搜索用户名..."
+              />
+            </div>
+            <div style={{ position: 'relative', width: '160px' }}>
+              <FilterSelect
+                value={roleFilter}
+                onChange={(value) => {
+                  setRoleFilter(value)
+                  setCurrentPage(1)
+                }}
+                options={roleOptions}
+                placeholder="所有角色"
+              />
+            </div>
+            <div style={{ position: 'relative', width: '160px' }}>
+              <FilterSelect
+                value={statusFilter}
+                onChange={(value) => {
+                  setStatusFilter(value)
+                  setCurrentPage(1)
+                }}
+                options={statusOptions}
+                placeholder="所有状态"
               />
             </div>
           </div>
-
-          {/* 角色筛选 */}
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-gray-400" />
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">所有角色</option>
-              <option value="admin">管理员</option>
-              <option value="trader">交易员</option>
-              <option value="viewer">观察者</option>
-            </select>
-          </div>
-
-          {/* 状态筛选 */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="all">所有状态</option>
-            <option value="active">活跃</option>
-            <option value="inactive">停用</option>
-          </select>
-
-          {/* 创建用户按钮 */}
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            创建用户
-          </button>
         </div>
-      </div>
 
-      {/* 用户列表 */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                用户名
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                角色
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                状态
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                创建时间
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                操作
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredUsers.length === 0 ? (
-              <tr>
-                <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
-                  {searchTerm || roleFilter !== 'all' || statusFilter !== 'all'
-                    ? '没有找到匹配的用户'
-                    : '暂无用户数据'}
-                </td>
-              </tr>
-            ) : (
-              filteredUsers.map((user) => {
-                const role = roleMap[user.role]
-                const status = statusMap[user.status]
-                const RoleIcon = role?.icon || Users
+        {/* 工具栏 */}
+        <Toolbar
+          onAdd={() => {
+            setFormData({ username: '', password: '', role: 'viewer', status: 'active' })
+            setShowCreateModal(true)
+          }}
+          onEdit={openEditModal}
+          onDelete={selectedIds.length === 1 ? handleDeleteUser : null}
+          canEdit={selectedIds.length === 1}
+          canDelete={selectedIds.length === 1}
+          totalCount={filteredUsers.length}
+          hideImport={true}
+          hideDelete={false}
+          editLabel="编辑"
+        />
 
-                return (
-                  <tr key={user.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
-                          {user.username.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{user.username}</div>
-                          {user.id === currentUser?.id && (
-                            <div className="text-xs text-gray-500">当前用户</div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${role?.color || 'bg-gray-100 text-gray-700'}`}>
-                        <RoleIcon className="w-3 h-3" />
-                        {role?.label || user.role}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${status?.color || 'bg-gray-100 text-gray-700'}`}>
-                        {status?.label || user.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDateTime(user.created_at)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => fetchLoginLogs(user.id)}
-                          className="text-blue-600 hover:text-blue-900 transition-colors p-1.5 hover:bg-blue-50 rounded"
-                          title="查看登录记录"
-                        >
-                          <History className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => openResetPasswordModal(user)}
-                          className="text-yellow-600 hover:text-yellow-900 transition-colors p-1.5 hover:bg-yellow-50 rounded"
-                          title="重置密码"
-                        >
-                          <Key className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => openEditModal(user)}
-                          className="text-green-600 hover:text-green-900 transition-colors p-1.5 hover:bg-green-50 rounded"
-                          title="编辑用户"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        {user.id !== currentUser?.id && (
-                          <button
-                            onClick={() => handleDeleteUser(user)}
-                            className="text-red-600 hover:text-red-900 transition-colors p-1.5 hover:bg-red-50 rounded"
-                            title="删除用户"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
+        {/* 数据表格 */}
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', paddingBottom: '50px', zIndex: '1', background: 'rgb(249, 250, 251)' }}>
+          <div className="overflow-y-auto overflow-x-auto" style={{ flex: 1, minHeight: 0, position: 'relative', zIndex: '1' }}>
+            <DataTable
+              fields={TABLE_FIELDS}
+              data={paginatedUsers}
+              selectedIds={selectedIds}
+              onSelectAll={handleSelectAll}
+              onSelectOne={handleSelectOne}
+              renderCell={renderCell}
+              emptyStateProps={{
+                Component: EmptyState,
+                props: { message: '暂无数据' }
+              }}
+            />
+          </div>
+        </div>
+
+        {/* 分页器 */}
+        <div style={{ position: 'absolute', right: '0', bottom: '0', height: '50px', zIndex: '10', width: '100%' }}>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={(page) => {
+              setCurrentPage(page)
+              setSelectedIds([])
+            }}
+            selectedCount={selectedIds.length}
+            totalCount={filteredUsers.length}
+          />
+        </div>
       </div>
 
       {/* 创建用户模态框 */}

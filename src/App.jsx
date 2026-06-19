@@ -167,7 +167,7 @@ function Navigation() {
 
   // 根据角色过滤设置菜单项
   const settingsMenuItems = [
-    { id: 'database', icon: Database, label: '数据管理', path: '/database-management', customIcon: 'database' },
+    { id: 'database', icon: Database, label: '数据仓库', path: '/database-management', customIcon: 'database' },
     { id: 'account', icon: Users, label: '账号管理', path: '/account-management', customIcon: 'account', requiredRole: 'admin' },
   ].filter(item => !item.requiredRole || hasPermission(item.requiredRole))
 

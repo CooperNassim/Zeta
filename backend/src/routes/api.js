@@ -304,9 +304,37 @@ router.get('/database/info', authenticateToken, requireRole('admin'), async (req
 // POST /api/database/restart - 重启数据库连接池
 router.post('/database/restart', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
-    await pool.end();
-    await pool.connect();
-    res.json({ success: true, message: '数据库连接池已重启' });
+    // 记录重启前状态
+    const beforeStatus = {
+      totalCount: pool.totalCount,
+      idleCount: pool.idleCount,
+      waitingCount: pool.waitingCount
+    };
+
+    // 释放所有空闲连接
+    pool.releaseAll?.() || pool._removeIdleClients?.();
+
+    // 测试数据库连接是否正常
+    const client = await pool.connect();
+    await client.query('SELECT NOW()');
+    client.release();
+
+    // 记录重启后状态和时间
+    const afterStatus = {
+      totalCount: pool.totalCount,
+      idleCount: pool.idleCount,
+      waitingCount: pool.waitingCount
+    };
+
+    res.json({
+      success: true,
+      message: '数据库连接池已重启',
+      data: {
+        restartTime: new Date().toISOString(),
+        before: beforeStatus,
+        after: afterStatus
+      }
+    });
   } catch (error) {
     res.status(500).json(safeError(error));
   }

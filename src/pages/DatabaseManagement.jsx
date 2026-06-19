@@ -5,6 +5,7 @@ import {
   FolderOpen, FileText, Calendar, BarChart3, Layers, Zap,
   ChevronDown, ChevronRight, Search, Wifi, WifiOff, Eye, EyeOff, Copy
 } from 'lucide-react'
+import { useToast } from '../contexts/ToastContext'
 
 // 格式化运行时间
 const formatUptime = (uptime) => {
@@ -155,12 +156,12 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, type = 'warn
 }
 
 export default function DatabaseManagement() {
+  const { showToast } = useToast()
   const [activeTab, setActiveTab] = useState('overview')
   const [dbInfo, setDbInfo] = useState(null)
   const [dbStatus, setDbStatus] = useState(null)
   const [backups, setBackups] = useState([])
   const [loading, setLoading] = useState(true)
-  const [toast, setToast] = useState(null)
   const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', type: 'warning', onConfirm: null })
   const [expandedTable, setExpandedTable] = useState(null)
   const [dbEnabled, setDbEnabled] = useState(true)
@@ -173,10 +174,6 @@ export default function DatabaseManagement() {
       'Authorization': `Bearer ${token}`
     }
   }
-
-  const showToast = useCallback((message, type = 'success') => {
-    setToast({ message, type })
-  }, [])
 
   const fetchDbInfo = useCallback(async () => {
     try {
@@ -239,7 +236,7 @@ export default function DatabaseManagement() {
   // 数据库操作
   const handleTest = async () => {
     await fetchDbStatus()
-    showToast(`连接测试完成，延迟 ${dbStatus?.latency || '?'}ms`, 'success')
+    showToast(`测试完成，延迟 ${dbStatus?.latency || '?'}ms`, 'success')
   }
 
   const handleRestart = async () => {
@@ -253,8 +250,10 @@ export default function DatabaseManagement() {
       }
       const result = await res.json()
       if (result.success) {
-        showToast('数据库连接池已重启', 'success')
+        showToast('重启成功', 'success')
         await refreshAll()
+      } else {
+        showToast(`重启失败: ${result.error || '未知错误'}`, 'error')
       }
     } catch (e) {
       showToast('重启失败', 'error')
@@ -448,7 +447,6 @@ export default function DatabaseManagement() {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px', background: '#f7f8fa' }}>
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <ConfirmModal
         isOpen={confirmModal.open}
         onClose={() => setConfirmModal(prev => ({ ...prev, open: false }))}
@@ -484,8 +482,9 @@ export default function DatabaseManagement() {
                     transition: 'all 0.2s'
                   }}
                 >
-                  <div>
-                    <p className="text-sm mb-0" style={{ color: '#666' }}>{tab.label}</p>
+                  <div className="flex items-center gap-2">
+                    <tab.icon className="w-4 h-4" style={{ color: '#0F1419' }} />
+                    <p className="text-sm mb-0" style={{ color: '#0F1419' }}>{tab.label}</p>
                   </div>
                 </div>
               )
@@ -526,136 +525,97 @@ export default function DatabaseManagement() {
         </div>
 
         {/* Tab 内容 */}
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="p-2.5">
+        <div>
+          <div>
             {/* ===== 概览 Tab ===== */}
             {activeTab === 'overview' && (
               <div className="space-y-2.5">
                 {/* 连接信息 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                      <Server className="w-4 h-4" />
+                  <div className="bg-white rounded-xl p-4">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3">
                       连接信息
                     </h3>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-gray-400">服务器时间</span>
-                        <span className="text-gray-700 font-mono">{dbStatus?.serverTime ? formatDateTime(dbStatus.serverTime) : '—'}</span>
+                        <span className="text-gray-700 text-sm">服务器时间</span>
+                        <span className="text-gray-700 text-sm">{dbStatus?.serverTime ? formatDateTime(dbStatus.serverTime) : '—'}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">连接池大小</span>
-                        <span className="text-gray-700">{dbStatus?.poolSize ?? '—'}</span>
+                        <span className="text-gray-700 text-sm">连接池大小</span>
+                        <span className="text-gray-700 text-sm">{dbStatus?.poolSize ?? '—'}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">空闲连接</span>
-                        <span className="text-gray-700">{dbStatus?.idleCount ?? '—'}</span>
+                        <span className="text-gray-700 text-sm">空闲连接</span>
+                        <span className="text-gray-700 text-sm">{dbStatus?.idleCount ?? '—'}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">等待队列</span>
-                        <span className={`font-medium ${dbStatus?.waitingCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                        <span className="text-gray-700 text-sm">等待队列</span>
+                        <span className={`font-medium text-sm text-gray-700`}>
                           {dbStatus?.waitingCount ?? 0}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">活跃连接</span>
-                        <span className="text-gray-700">{dbInfo?.activeConnections ?? '—'}</span>
+                        <span className="text-gray-700 text-sm">活跃连接</span>
+                        <span className="text-gray-700 text-sm">{dbInfo?.activeConnections ?? '—'}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                      <Database className="w-4 h-4" />
+                  <div className="bg-white rounded-xl p-4">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3">
                       数据概览
                     </h3>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-gray-400">总记录数</span>
-                        <span className="text-gray-700 font-medium">{totalRows.toLocaleString()}</span>
+                        <span className="text-gray-700 text-sm">总记录数</span>
+                        <span className="text-gray-700 font-medium text-sm">{totalRows.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">软删除数</span>
-                        <span className="text-amber-600 font-medium">{totalDeleted.toLocaleString()}</span>
+                        <span className="text-gray-700 text-sm">软删除数</span>
+                        <span className="font-medium text-sm text-gray-700">{totalDeleted.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">数据库版本</span>
-                        <span className="text-gray-700 font-mono text-xs">{extractPgVersion(dbInfo?.version)}</span>
+                        <span className="text-gray-700 text-sm">数据库版本</span>
+                        <span className="text-gray-700 text-sm">{extractPgVersion(dbInfo?.version)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">数据库大小</span>
-                        <span className="text-gray-700">{dbInfo?.size || '—'}</span>
+                        <span className="text-gray-700 text-sm">数据库大小</span>
+                        <span className="text-gray-700 text-sm">{dbInfo?.size || '—'}</span>
                       </div>
                       <div className="flex justify-between">
-                      <span className="text-gray-400">运行时间</span>
-                      <span className="text-gray-700">{formatUptime(dbInfo?.uptime)}</span>
+                      <span className="text-gray-700 text-sm">运行时间</span>
+                      <span className="text-gray-700 text-sm">{formatUptime(dbInfo?.uptime)}</span>
                     </div>
                     </div>
                   </div>
                 </div>
 
                 {/* 表详情列表 */}
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                    <Layers className="w-4 h-4" />
-                    表详情 ({dbInfo?.tables?.length || 0} 个表)
-                  </h3>
-                  <div className="border border-gray-100 rounded-xl overflow-hidden">
+                <div className="bg-white rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-gray-700">
+                      数据表结构
+                    </h3>
+                    <span className="text-sm text-gray-900">
+                      共 {dbInfo?.tables?.length || 0} 个表
+                    </span>
+                  </div>
+                  <div className="border border-gray-100 rounded-xl overflow-hidden bg-white">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-gray-50">
-                          <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">表名</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">总记录</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">已删除</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500 w-12"></th>
+                          <th className="text-left px-4 py-2.5 text-sm font-medium text-gray-500">表名</th>
+                          <th className="text-right px-4 py-2.5 text-sm font-medium text-gray-500">总记录</th>
+                          <th className="text-right px-4 py-2.5 text-sm font-medium text-gray-500">已删除</th>
                         </tr>
                       </thead>
                       <tbody>
                         {dbInfo?.tables?.map((table, idx) => (
-                          <React.Fragment key={table.name}>
-                            <tr
-                              className={`border-t border-gray-50 hover:bg-blue-50/50 cursor-pointer transition-colors ${expandedTable === table.name ? 'bg-blue-50/30' : ''}`}
-                              onClick={() => setExpandedTable(expandedTable === table.name ? null : table.name)}
-                            >
-                              <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{table.name}</td>
-                              <td className="px-4 py-2.5 text-right font-medium text-gray-900">{table.totalRows.toLocaleString()}</td>
-                              <td className="px-4 py-2.5 text-right">
-                                {table.deletedRows > 0 ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-600">
-                                    {table.deletedRows}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-300">0</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-2.5 text-right">
-                                {expandedTable === table.name ? (
-                                  <ChevronDown className="w-4 h-4 text-gray-400 inline" />
-                                ) : (
-                                  <ChevronRight className="w-4 h-4 text-gray-300 inline" />
-                                )}
-                              </td>
-                            </tr>
-                            {expandedTable === table.name && (
-                              <tr className="bg-gray-50/50">
-                                <td colSpan="4" className="px-4 py-3">
-                                  <div className="text-xs text-gray-500 space-y-1">
-                                    <div className="flex gap-4">
-                                      <span>活跃数据: <span className="text-emerald-600 font-medium">{(table.totalRows - table.deletedRows).toLocaleString()}</span></span>
-                                      <span>删除占比: <span className={table.deletedRows > 0 ? 'text-amber-600 font-medium' : 'text-gray-400'}>
-                                        {table.totalRows > 0 ? ((table.deletedRows / table.totalRows) * 100).toFixed(1) : 0}%
-                                      </span></span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1.5">
-                                      <div
-                                        className="bg-emerald-500 h-1.5 rounded-full transition-all"
-                                        style={{ width: `${table.totalRows > 0 ? ((table.totalRows - table.deletedRows) / table.totalRows) * 100 : 0}%` }}
-                                      />
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
+                          <tr key={table.name} className="border-t border-gray-50">
+                            <td className="px-4 py-2.5 font-mono text-sm text-gray-700">{table.name}</td>
+                            <td className="px-4 py-2.5 text-right font-medium text-gray-900">{table.totalRows.toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-right font-medium text-gray-900">{table.deletedRows.toLocaleString()}</td>
+                          </tr>
                         ))}
                       </tbody>
                     </table>

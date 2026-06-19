@@ -72,7 +72,7 @@ const buildQuery = (table, options = {}) => {
   }
 
   // 自动过滤已删除的记录（除非明确指定 includeDeleted）
-  const tablesWithDeleted = ['orders', 'transactions', 'daily_work_data', 'trade_records', 'stock_pool', 'trading_strategies', 'strategy_records'];
+  const tablesWithDeleted = ['orders', 'transactions', 'daily_work_data', 'trade_records', 'stock_pool', 'trading_strategies', 'strategy_records', 'users'];
   if (!options.includeDeleted && tablesWithDeleted.includes(safeTable)) {
     conditions.push(`deleted = false`);
   }

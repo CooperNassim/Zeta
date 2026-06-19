@@ -10,6 +10,9 @@ const { findAll, findById, insert, update, remove, findByUsername } = require('.
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { hashPassword } = require('../utils/password');
 const { pool } = require('../config/database');
+const { upload } = require('../middleware/upload');
+const path = require('path');
+const fs = require('fs');
 
 // 所有路由都需要认证和管理员权限
 router.use(authenticateToken);
@@ -30,6 +33,85 @@ const validatePassword = (password) => {
 const VALID_ROLES = ['admin', 'trader', 'viewer'];
 
 /**
+ * POST /api/users/:id/avatar
+ * 上传用户头像
+ */
+router.post('/:id/avatar', upload.single('avatar'), async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    
+    if (!req.file) {
+      return res.status(400).json({ error: '请上传头像文件' });
+    }
+    
+    // 检查用户是否存在
+    const existingUser = await findById('users', userId);
+    if (!existingUser) {
+      // 删除上传的文件
+      fs.unlinkSync(req.file.path);
+      return res.status(404).json({ error: '用户不存在' });
+    }
+    
+    // 如果用户已有头像，删除旧文件
+    if (existingUser.avatar) {
+      const oldAvatarPath = path.join(__dirname, '..', '..', existingUser.avatar);
+      if (fs.existsSync(oldAvatarPath)) {
+        fs.unlinkSync(oldAvatarPath);
+      }
+    }
+    
+    // 保存相对路径（相对于后端根目录）
+    const avatarPath = 'uploads/avatars/' + req.file.filename;
+    
+    // 更新数据库
+    await update('users', userId, { avatar: avatarPath });
+    
+    res.json({ 
+      message: '头像上传成功', 
+      avatar: avatarPath 
+    });
+  } catch (error) {
+    console.error('上传头像错误:', error);
+    if (req.file) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+/**
+ * DELETE /api/users/:id/avatar
+ * 删除用户头像
+ */
+router.delete('/:id/avatar', async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    
+    // 检查用户是否存在
+    const existingUser = await findById('users', userId);
+    if (!existingUser) {
+      return res.status(404).json({ error: '用户不存在' });
+    }
+    
+    // 删除文件
+    if (existingUser.avatar) {
+      const avatarPath = path.join(__dirname, '..', '..', existingUser.avatar);
+      if (fs.existsSync(avatarPath)) {
+        fs.unlinkSync(avatarPath);
+      }
+    }
+    
+    // 更新数据库
+    await update('users', userId, { avatar: null });
+    
+    res.json({ message: '头像已删除' });
+  } catch (error) {
+    console.error('删除头像错误:', error);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+/**
  * GET /api/users
  * 获取所有用户列表
  */
@@ -37,10 +119,29 @@ router.get('/', async (req, res) => {
   try {
     const users = await findAll('users');
     
-    // 移除密码哈希字段
+    // 查询每个用户最新的登录时间
+    const userIds = users.map(u => u.id);
+    let lastLoginMap = {};
+    if (userIds.length > 0) {
+      const result = await pool.query(
+        `SELECT user_id, MAX(created_at) as last_login_at 
+         FROM login_logs 
+         WHERE user_id = ANY($1) AND action = 'login' AND result = 'success' AND deleted = false
+         GROUP BY user_id`,
+        [userIds]
+      );
+      result.rows.forEach(row => {
+        lastLoginMap[row.user_id] = row.last_login_at;
+      });
+    }
+    
+    // 移除密码哈希字段，附加最近登录时间
     const usersWithoutPassword = users.map(user => {
       const { password_hash, ...userWithoutPassword } = user;
-      return userWithoutPassword;
+      return {
+        ...userWithoutPassword,
+        last_login_at: lastLoginMap[user.id] || null
+      };
     });
     
     res.json(usersWithoutPassword);
@@ -78,7 +179,7 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { username, password, role, status } = req.body;
+    const { username, password, role, status, avatar } = req.body;
     
     // 验证必填字段
     if (!username || !password) {
@@ -107,10 +208,10 @@ router.post('/', async (req, res) => {
     
     // 创建用户（直接使用 SQL，避免通用 insert 过滤受保护字段）
     const result = await pool.query(
-      `INSERT INTO users (username, password_hash, role, status) 
-       VALUES ($1, $2, $3, $4) 
-       RETURNING id, username, role, status, created_at, updated_at`,
-      [username, password_hash, role || 'viewer', status || 'active']
+      `INSERT INTO users (username, password_hash, role, status, avatar) 
+       VALUES ($1, $2, $3, $4, $5) 
+       RETURNING id, username, role, status, avatar, created_at, updated_at`,
+      [username, password_hash, role || 'viewer', status || 'active', avatar || null]
     );
     
     const newUser = result.rows[0];
@@ -129,7 +230,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
-    const { username, role, status } = req.body;
+    const { username, role, status, avatar } = req.body;
     
     // 检查用户是否存在
     const existingUser = await findById('users', userId);
@@ -155,6 +256,7 @@ router.put('/:id', async (req, res) => {
       updateData.role = role;
     }
     if (status) updateData.status = status;
+    if (avatar !== undefined) updateData.avatar = avatar;
     
     // 更新用户
     const updatedUser = await update('users', userId, updateData);
@@ -204,6 +306,57 @@ router.delete('/:id', async (req, res) => {
     res.json({ message: '用户已删除' });
   } catch (error) {
     console.error('删除用户错误:', error);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+/**
+ * POST /api/users/batch-delete
+ * 批量删除用户（软删除）
+ */
+router.post('/batch-delete', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: '请选择要删除的用户' });
+    }
+
+    const currentUserId = req.user.id;
+    
+    // 不能删除自己
+    if (ids.includes(currentUserId)) {
+      return res.status(400).json({ error: '不能删除当前登录的用户' });
+    }
+
+    // 检查是否包含最后一个管理员
+    const adminIds = await pool.query(
+      "SELECT id FROM users WHERE id = ANY($1) AND role = 'admin' AND deleted = false",
+      [ids]
+    );
+    
+    if (adminIds.rows.length > 0) {
+      const totalAdminCount = await pool.query(
+        "SELECT COUNT(*) FROM users WHERE role = 'admin' AND deleted = false"
+      );
+      const totalAdmins = parseInt(totalAdminCount.rows[0].count);
+      const adminToDelete = adminIds.rows.length;
+      
+      if (totalAdmins - adminToDelete < 1) {
+        return res.status(400).json({ error: '不能删除所有管理员账号，至少保留一个管理员' });
+      }
+    }
+
+    // 批量软删除
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+    await pool.query(
+      `UPDATE users SET deleted = true, deleted_at = NOW() WHERE id IN (${placeholders}) AND deleted = false`,
+      ids
+    );
+    
+    res.json({ message: `成功删除 ${ids.length} 个用户` });
+  } catch (error) {
+    console.error('批量删除用户错误:', error);
     res.status(500).json({ error: '服务器内部错误' });
   }
 });

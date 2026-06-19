@@ -10,6 +10,7 @@ const { findByUsername, findById, insert, update } = require('../database/querie
 const { authenticateToken } = require('../middleware/auth');
 const { generateToken } = require('../utils/jwt');
 const { verifyPassword } = require('../utils/password');
+const { pool } = require('../config/database');
 
 /**
  * POST /api/auth/login
@@ -25,7 +26,11 @@ router.post('/login', async (req, res) => {
     }
 
     // 获取客户端信息
-    const ipAddress = req.ip || req.connection.remoteAddress;
+    let ipAddress = req.ip || req.connection.remoteAddress;
+    // 将 IPv6 本地回环地址转换为 IPv4 格式
+    if (ipAddress === '::1') {
+      ipAddress = '127.0.0.1';
+    }
     const userAgent = req.get('user-agent');
 
     // 查找用户
@@ -100,13 +105,17 @@ router.post('/login', async (req, res) => {
       result: 'success'
     });
 
+    // 更新用户最近登录时间
+    await pool.query('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
+
     // 返回 token 和用户信息
     res.json({
       token,
       user: {
         id: user.id,
         username: user.username,
-        role: user.role
+        role: user.role,
+        avatar: user.avatar || null
       }
     });
   } catch (error) {
@@ -126,7 +135,11 @@ router.post('/logout', authenticateToken, async (req, res) => {
     const token = authHeader && authHeader.split(' ')[1];
 
     // 获取客户端信息
-    const ipAddress = req.ip || req.connection.remoteAddress;
+    let ipAddress = req.ip || req.connection.remoteAddress;
+    // 将 IPv6 本地回环地址转换为 IPv4 格式
+    if (ipAddress === '::1') {
+      ipAddress = '127.0.0.1';
+    }
     const userAgent = req.get('user-agent');
 
     // 从 token 中获取 sessionId（需要解码 token）
@@ -174,7 +187,8 @@ router.get('/me', authenticateToken, async (req, res) => {
       id: user.id,
       username: user.username,
       role: user.role,
-      status: user.status
+      status: user.status,
+      avatar: user.avatar || null
     });
   } catch (error) {
     console.error('获取用户信息错误:', error);

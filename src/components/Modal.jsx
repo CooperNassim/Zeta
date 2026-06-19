@@ -43,7 +43,7 @@ const Modal = ({
         </div>
 
         {/* 内容区域 */}
-        <div className="mb-4 overflow-auto flex-1" style={{ maxHeight }}>
+        <div className="mb-4 flex-1 overflow-auto" style={{ maxHeight }}>
           {children}
         </div>
 

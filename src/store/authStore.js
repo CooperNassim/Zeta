@@ -60,6 +60,12 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
+  // 更新用户信息
+  setUser: (user) => {
+    localStorage.setItem('auth_user', JSON.stringify(user));
+    set({ user });
+  },
+
   // 清除错误
   clearError: () => set({ error: null }),
 

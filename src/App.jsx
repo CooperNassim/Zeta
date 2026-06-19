@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation, NavLink, Navigate } from 'react-router-dom'
-import { TrendingUp, Brain, Target, Shield, Clock, Receipt, Activity, Home as HomeIcon, ChevronDown, Wallet2, Database, Users, LogOut } from 'lucide-react'
+import { TrendingUp, Brain, Target, Shield, Clock, Receipt, Activity, Home as HomeIcon, ChevronDown, Wallet2, Database, Users, LogOut, Camera } from 'lucide-react'
 import Home from './pages/Home'
 import DailyWork from './pages/DailyWork'
 import PsychologicalTest from './pages/PsychologicalTest'
@@ -13,9 +13,11 @@ import DatabaseManagement from './pages/DatabaseManagement'
 import Login from './pages/Login'
 import AccountManagement from './pages/AccountManagement'
 import useStore from './store/useStore'
+import Modal from './components/Modal'
+import AvatarUpload from './components/AvatarUpload'
 import useAuthStore from './store/authStore'
 import ProtectedRoute from './components/ProtectedRoute'
-import { ToastProvider } from './contexts/ToastContext'
+import { ToastProvider, useToast } from './contexts/ToastContext'
 
 // 缓存版本控制 - 只在版本变化时清除过期数据，不影响用户数据
 const CACHE_VERSION_KEY = 'zeta_cache_version'
@@ -38,7 +40,120 @@ const API_BASE_URL = ''
 function Navigation() {
   const location = useLocation()
   const account = useStore(state => state.account)
-  const { user, logout, hasPermission } = useAuthStore()
+  const { user, logout, hasPermission, setUser } = useAuthStore()
+  const { showToast } = useToast()
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showAvatarModal, setShowAvatarModal] = useState(false)
+  const [avatarPreview, setAvatarPreview] = useState(null)
+  const [selectedAvatarFile, setSelectedAvatarFile] = useState(null)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const userMenuRef = useRef(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setShowUserMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // 打开修改头像弹窗
+  const openAvatarModal = () => {
+    setAvatarPreview(user?.avatar ? `${API_BASE_URL}/${user.avatar}` : null)
+    setShowAvatarModal(true)
+    setShowUserMenu(false)
+  }
+
+  // 选择头像文件（仅预览，不上传）
+  const handleAvatarSelect = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      alert('请选择图片文件')
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('图片大小不能超过 5MB')
+      return
+    }
+
+    // 预览
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      setAvatarPreview(reader.result)
+    }
+    reader.readAsDataURL(file)
+    setSelectedAvatarFile(file)
+  }
+
+  // 保存头像（点击保存按钮时上传）
+  const handleSaveAvatar = async () => {
+    if (!selectedAvatarFile) return
+
+    setUploadingAvatar(true)
+    const formData = new FormData()
+    formData.append('avatar', selectedAvatarFile)
+
+    try {
+      const token = localStorage.getItem('auth_token')
+      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}/avatar`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || '上传头像失败')
+      }
+
+      const result = await response.json()
+      // 更新用户信息
+      const updatedUser = { ...user, avatar: result.avatar }
+      localStorage.setItem('auth_user', JSON.stringify(updatedUser))
+      setUser(updatedUser)
+      setShowAvatarModal(false)
+      setSelectedAvatarFile(null)
+      showToast('更新成功', 'success')
+    } catch (error) {
+      console.error('上传头像错误:', error)
+      showToast(error.message, 'error')
+    } finally {
+      setUploadingAvatar(false)
+    }
+  }
+
+  // 删除头像
+  const handleDeleteAvatar = async () => {
+    try {
+      const token = localStorage.getItem('auth_token')
+      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}/avatar`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || '删除头像失败')
+      }
+
+      const updatedUser = { ...user, avatar: null }
+      localStorage.setItem('auth_user', JSON.stringify(updatedUser))
+      setUser(updatedUser)
+      setAvatarPreview(null)
+    } catch (error) {
+      console.error('删除头像错误:', error)
+      alert(error.message)
+    }
+  }
 
   const tradingMenuItems = [
     { id: 'daily', icon: TrendingUp, label: '每日功课', path: '/daily-work', customIcon: 'daily' },
@@ -162,11 +277,22 @@ function Navigation() {
             </div>
 
             {/* 用户信息和登出按钮 */}
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
-                  {user?.username?.charAt(0).toUpperCase()}
-                </div>
+            <div className="relative" ref={userMenuRef}>
+              <div
+                className={`flex items-center gap-2 px-2 py-1 transition-colors cursor-pointer ${showUserMenu ? 'bg-gray-100 rounded-t-lg' : 'hover:bg-gray-100 rounded-lg'}`}
+                onClick={() => setShowUserMenu(!showUserMenu)}
+              >
+                {user?.avatar ? (
+                  <img
+                    src={`/${user.avatar}`}
+                    alt={user?.username}
+                    className="w-8 h-8 rounded-full object-cover border border-gray-200"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
+                    {user?.username?.charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div className="text-sm">
                   <div className="font-medium text-gray-900">{user?.username}</div>
                   <div className="text-xs text-gray-500">
@@ -174,18 +300,67 @@ function Navigation() {
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => logout()}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                title="登出"
-              >
-                <LogOut className="w-4 h-4" />
-                登出
-              </button>
+              {showUserMenu && (
+                <div className="absolute right-0 top-full bg-white border border-gray-200 border-t-0 rounded-b-lg shadow-lg py-1 z-50 min-w-[100px]">
+                  <button
+                    onClick={openAvatarModal}
+                    className="w-full flex items-center px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    修改头像
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false)
+                      logout()
+                    }}
+                    className="w-full flex items-center px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    退出
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </nav>
+
+      {/* 修改头像弹窗 */}
+      <Modal
+        isOpen={showAvatarModal}
+        onClose={() => setShowAvatarModal(false)}
+        title="修改头像"
+        width="max-w-md"
+        footer={
+          <>
+            <button
+              onClick={() => {
+                setShowAvatarModal(false)
+                setAvatarPreview(user?.avatar ? `${API_BASE_URL}/${user.avatar}` : null)
+              }}
+              className="px-4 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSaveAvatar}
+              disabled={!selectedAvatarFile || uploadingAvatar}
+              className="px-4 py-2 rounded text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#0F1419' }}
+            >
+              保存
+            </button>
+          </>
+        }
+      >
+        <div className="flex justify-center">
+          <AvatarUpload
+            preview={avatarPreview}
+            onUpload={handleAvatarSelect}
+            uploading={uploadingAvatar}
+            size="lg"
+          />
+        </div>
+      </Modal>
 
       {/* 左侧边栏 - 仅在交易页面显示 */}
       {isTradingPage && (
@@ -343,6 +518,14 @@ function Navigation() {
                         <path d="M512 170.666667a341.333333 341.333333 0 1 0 0 682.666666 341.333333 341.333333 0 0 0 0-682.666666zM97.52381 512a414.47619 414.47619 0 1 1 828.95238 0 414.47619 414.47619 0 0 1-828.95238 0z m365.714285-170.666667v219.428572h243.809524v-73.142857H536.380952V341.333333h-73.142857z"></path>
                       )}
                     </svg>
+                  ) : item.customIcon === 'account' ? (
+                    <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 mr-2" fill="#0F1419">
+                      {isActive ? (
+                        <path d="M632.246857 121.904762c130.56 0 236.422095 105.837714 236.422095 236.422095 0 82.895238-42.666667 155.794286-107.203047 198.022095l192.853333 225.01181A73.142857 73.142857 0 0 1 898.779429 902.095238l-116.443429 0.024381c12.824381-22.186667 16.335238-48.566857 9.99619-73.142857L898.779429 828.952381 651.702857 540.696381l69.705143-45.568a163.279238 163.279238 0 0 0-86.381714-300.056381 287.158857 287.158857 0 0 0-63.341715-65.340952A236.544 236.544 0 0 1 632.246857 121.904762z m-69.90019 471.722667l160.914285 187.733333A73.142857 73.142857 0 0 1 667.672381 902.095238H134.656a73.142857 73.142857 0 0 1-55.53981-120.734476l160.914286-187.733333a283.867429 283.867429 0 0 0 161.158095 49.883428c59.806476 0 115.321905-18.407619 161.158096-49.883428zM401.188571 121.904762c130.56 0 236.422095 105.837714 236.422096 236.422095 0 130.56-105.862095 236.422095-236.422096 236.422095-130.584381 0-236.422095-105.862095-236.422095-236.422095C164.766476 227.742476 270.60419 121.904762 401.188571 121.904762z"></path>
+                      ) : (
+                        <path d="M632.246857 121.904762c130.56 0 236.422095 105.837714 236.422095 236.422095 0 82.895238-42.666667 155.794286-107.203047 198.022095l192.853333 225.01181A73.142857 73.142857 0 0 1 898.779429 902.095238l-116.443429 0.024381c12.824381-22.186667 16.335238-48.566857 9.99619-73.142857L898.779429 828.952381 651.702857 540.696381l69.705143-45.568a163.279238 163.279238 0 0 0-86.381714-300.056381 287.158857 287.158857 0 0 0-63.341715-65.340952A236.544 236.544 0 0 1 632.246857 121.904762z m-69.90019 471.722667l160.914285 187.733333A73.142857 73.142857 0 0 1 667.672381 902.095238H134.656a73.142857 73.142857 0 0 1-55.53981-120.734476l160.914286-187.733333c20.601905 14.140952 43.154286 25.648762 67.169524 34.035809L134.656 828.952381h533.040762l-172.568381-201.289143c24.039619-8.387048 46.592-19.870476 67.218286-34.035809zM401.188571 121.904762c130.56 0 236.422095 105.837714 236.422096 236.422095 0 130.56-105.862095 236.422095-236.422096 236.422095-130.584381 0-236.422095-105.862095-236.422095-236.422095C164.766476 227.742476 270.60419 121.904762 401.188571 121.904762z m0 73.142857a163.279238 163.279238 0 1 0 0 326.558476 163.279238 163.279238 0 0 0 0-326.558476z"></path>
+                      )}
+                    </svg>
                   ) : (
                     <item.icon className="w-6 h-6 mr-2" style={{ color: isActive ? '#0F1419' : '#9CA3AF' }} />
                   )}
@@ -370,6 +553,7 @@ function App() {
 function AppContent() {
   const location = useLocation()
   const { isAuthenticated } = useAuthStore()
+  const { showToast } = useToast()
   const syncCalled = useRef(false)
 
   // 应用启动时自动从数据库同步数据
@@ -438,9 +622,11 @@ function AppContent() {
     return <Login />
   }
 
+  const isLoginPage = location.pathname === '/login'
+
   return (
     <div className="h-screen bg-gray-50 overflow-hidden" style={{ margin: '0', padding: '0' }}>
-          <Navigation />
+          {!isLoginPage && <Navigation />}
           <main
             className="w-full"
             style={{

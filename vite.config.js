@@ -17,6 +17,10 @@ export default defineConfig({
       '/health': {
         target: `http://${dockerHost}:3001`,
         changeOrigin: true
+      },
+      '/uploads': {
+        target: `http://${dockerHost}:3001`,
+        changeOrigin: true
       }
     }
   }

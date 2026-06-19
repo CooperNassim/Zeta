@@ -20,6 +20,12 @@ if (!fs.existsSync(backupDir)) {
   fs.mkdirSync(backupDir, { recursive: true });
 }
 
+// 确保上传目录存在
+const uploadDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 // 安全中间件
 app.use(helmet());
 app.use(compression());
@@ -74,6 +80,9 @@ if (NODE_ENV !== 'test') {
 
 // 注意：已移除 /backups 静态文件服务，防止备份文件泄露
 // 如果需要备份功能，请添加认证中间件
+
+// 头像静态文件服务
+app.use('/uploads/avatars', express.static(path.join(__dirname, '..', 'uploads', 'avatars')));
 
 // API路由
 // 注意：用户管理路由必须在通用CRUD路由之前注册，否则 /api/users 会被 /api/:table 匹配

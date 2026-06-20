@@ -605,6 +605,7 @@ export default function DatabaseManagement() {
                       <thead>
                         <tr className="bg-gray-50">
                           <th className="text-left px-4 py-2.5 text-sm font-medium text-gray-500">表名</th>
+                          <th className="text-left px-4 py-2.5 text-sm font-medium text-gray-500">中文注释</th>
                           <th className="text-right px-4 py-2.5 text-sm font-medium text-gray-500">总记录</th>
                           <th className="text-right px-4 py-2.5 text-sm font-medium text-gray-500">已删除</th>
                         </tr>
@@ -613,6 +614,7 @@ export default function DatabaseManagement() {
                         {dbInfo?.tables?.map((table, idx) => (
                           <tr key={table.name} className="border-t border-gray-50">
                             <td className="px-4 py-2.5 font-mono text-sm text-gray-700">{table.name}</td>
+                            <td className="px-4 py-2.5 text-sm text-gray-600">{table.comment || '-'}</td>
                             <td className="px-4 py-2.5 text-right font-medium text-gray-900">{table.totalRows.toLocaleString()}</td>
                             <td className="px-4 py-2.5 text-right font-medium text-gray-900">{table.deletedRows.toLocaleString()}</td>
                           </tr>

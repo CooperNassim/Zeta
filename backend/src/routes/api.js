@@ -273,8 +273,15 @@ router.get('/database/info', authenticateToken, requireRole('admin'), async (req
       const deletedCount = await pool.query(
         `SELECT count(*) FROM "${t.table_name}" WHERE deleted = true`
       ).catch(() => ({ rows: [{ count: '0' }] }));
+      
+      // 获取表的中文注释
+      const commentResult = await pool.query(`
+        SELECT obj_description((quote_ident($1))::regclass, 'pg_class') as table_comment
+      `, [t.table_name]);
+      
       tableDetails.push({
         name: t.table_name,
+        comment: commentResult.rows[0]?.table_comment || '',
         totalRows: parseInt(count.rows[0].count),
         deletedRows: parseInt(deletedCount.rows[0].count)
       });

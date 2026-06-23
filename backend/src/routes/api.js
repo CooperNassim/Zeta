@@ -1,8 +1,31 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 const router = express.Router();
 const { pool } = require('../config/database');
+
+// 数据库开关状态（持久化到文件）
+const DB_STATE_FILE = path.join(__dirname, '..', '..', 'db_state.json');
+let dbEnabled = true;
+try {
+  if (fs.existsSync(DB_STATE_FILE)) {
+    const state = JSON.parse(fs.readFileSync(DB_STATE_FILE, 'utf-8'));
+    dbEnabled = state.enabled !== false;
+  }
+} catch (e) { dbEnabled = true; }
+
+const saveDbState = () => {
+  fs.writeFileSync(DB_STATE_FILE, JSON.stringify({ enabled: dbEnabled }));
+};
+
+// 数据库开关中间件
+const requireDbEnabled = (req, res, next) => {
+  if (!dbEnabled) {
+    return res.status(503).json({ success: false, message: '数据库已关闭，请先开启数据库' });
+  }
+  next();
+};
 const {
   findAll,
   findOne,
@@ -49,7 +72,7 @@ router.get('/test', (req, res) => {
 });
 
 // GET /api/sync/all - 同步数据（从数据库获取所有数据）
-router.get('/sync/all', authenticateToken, async (req, res) => {
+router.get('/sync/all', authenticateToken, requireDbEnabled, async (req, res) => {
   try {
     const tables = [
       'account',
@@ -129,7 +152,7 @@ router.get('/sync/all', authenticateToken, async (req, res) => {
 });
 
 // 心理测试结果专用路由 - 必须在通用 /:table 路由之前
-router.get('/psychological_test_results/by-date/:date', authenticateToken, async (req, res) => {
+router.get('/psychological_test_results/by-date/:date', authenticateToken, requireDbEnabled, async (req, res) => {
   try {
     const { date } = req.params;
     const result = await pool.query(
@@ -145,7 +168,7 @@ router.get('/psychological_test_results/by-date/:date', authenticateToken, async
   }
 });
 
-router.post('/psychological_test_results', authenticateToken, async (req, res) => {
+router.post('/psychological_test_results', authenticateToken, requireDbEnabled, async (req, res) => {
   try {
     const { test_date, scores, overall_score } = req.body;
 
@@ -165,7 +188,7 @@ router.post('/psychological_test_results', authenticateToken, async (req, res) =
   }
 });
 
-router.put('/psychological_test_results/by-date/:date', authenticateToken, async (req, res) => {
+router.put('/psychological_test_results/by-date/:date', authenticateToken, requireDbEnabled, async (req, res) => {
   try {
     const { date } = req.params;
     const { scores, overall_score } = req.body;
@@ -191,7 +214,7 @@ router.put('/psychological_test_results/by-date/:date', authenticateToken, async
 
 // POST /api/:table/bulk/delete - 批量删除（支持 id 或 date）
 // 注意：这个路由必须在 /:table/bulk 之前，否则会被错误匹配
-router.post('/:table/bulk/delete', authenticateToken, async (req, res) => {
+router.post('/:table/bulk/delete', authenticateToken, requireDbEnabled, async (req, res) => {
   try {
     const { table } = req.params;
     const { ids, dates } = req.body;
@@ -223,7 +246,7 @@ router.post('/:table/bulk/delete', authenticateToken, async (req, res) => {
 });
 
 // POST /api/:table/bulk - 批量创建
-router.post('/:table/bulk', authenticateToken, async (req, res, next) => {
+router.post('/:table/bulk', authenticateToken, requireDbEnabled, async (req, res, next) => {
   // 如果路径是 /:table/bulk/delete，跳过这个路由
   if (req.path.endsWith('/delete')) {
     return next('route');
@@ -247,7 +270,7 @@ router.post('/:table/bulk', authenticateToken, async (req, res, next) => {
 // ===================== 数据库管理专用路由 =====================
 
 // GET /api/database/info - 获取数据库基础信息
-router.get('/database/info', authenticateToken, requireRole('admin'), async (req, res) => {
+router.get('/database/info', authenticateToken, requireRole('admin'), requireDbEnabled, async (req, res) => {
   try {
     const dbInfo = {};
     
@@ -309,7 +332,7 @@ router.get('/database/info', authenticateToken, requireRole('admin'), async (req
 });
 
 // POST /api/database/restart - 重启数据库连接池
-router.post('/database/restart', authenticateToken, requireRole('admin'), async (req, res) => {
+router.post('/database/restart', authenticateToken, requireRole('admin'), requireDbEnabled, async (req, res) => {
   try {
     // 记录重启前状态
     const beforeStatus = {
@@ -348,7 +371,7 @@ router.post('/database/restart', authenticateToken, requireRole('admin'), async 
 });
 
 // GET /api/database/backups - 获取备份列表
-router.get('/database/backups', authenticateToken, requireRole('admin'), async (req, res) => {
+router.get('/database/backups', authenticateToken, requireRole('admin'), requireDbEnabled, async (req, res) => {
   try {
     const backupDir = path.join(__dirname, '..', 'backups');
     if (!fs.existsSync(backupDir)) {
@@ -372,7 +395,7 @@ router.get('/database/backups', authenticateToken, requireRole('admin'), async (
 });
 
 // POST /api/database/backup - 创建备份
-router.post('/database/backup', authenticateToken, requireRole('admin'), async (req, res) => {
+router.post('/database/backup', authenticateToken, requireRole('admin'), requireDbEnabled, async (req, res) => {
   try {
     const backupDir = path.join(__dirname, '..', 'backups');
     if (!fs.existsSync(backupDir)) {
@@ -419,7 +442,7 @@ router.post('/database/backup', authenticateToken, requireRole('admin'), async (
 });
 
 // DELETE /api/database/backup/:filename - 删除备份文件
-router.delete('/database/backup/:filename', authenticateToken, requireRole('admin'), async (req, res) => {
+router.delete('/database/backup/:filename', authenticateToken, requireRole('admin'), requireDbEnabled, async (req, res) => {
   try {
     const { filename } = req.params;
 
@@ -448,7 +471,7 @@ router.delete('/database/backup/:filename', authenticateToken, requireRole('admi
 });
 
 // POST /api/database/restore - 从备份恢复
-router.post('/database/restore', authenticateToken, requireRole('admin'), async (req, res) => {
+router.post('/database/restore', authenticateToken, requireRole('admin'), requireDbEnabled, async (req, res) => {
   try {
     const { filename } = req.body;
     if (!filename) {
@@ -513,7 +536,7 @@ router.post('/database/restore', authenticateToken, requireRole('admin'), async 
 });
 
 // POST /api/database/cleanup - 清理数据库
-router.post('/database/cleanup', authenticateToken, requireRole('admin'), async (req, res) => {
+router.post('/database/cleanup', authenticateToken, requireRole('admin'), requireDbEnabled, async (req, res) => {
   try {
     const { type } = req.body;
 
@@ -568,7 +591,7 @@ router.post('/database/cleanup', authenticateToken, requireRole('admin'), async 
 });
 
 // POST /api/database/export - 导出数据库
-router.post('/database/export', authenticateToken, requireRole('admin'), async (req, res) => {
+router.post('/database/export', authenticateToken, requireRole('admin'), requireDbEnabled, async (req, res) => {
   try {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const fileName = `export_${timestamp}.sql`;
@@ -611,7 +634,7 @@ router.post('/database/export', authenticateToken, requireRole('admin'), async (
 });
 
 // POST /api/database/import - 导入数据库
-router.post('/database/import', authenticateToken, requireRole('admin'), async (req, res) => {
+router.post('/database/import', authenticateToken, requireRole('admin'), requireDbEnabled, async (req, res) => {
   try {
     const { filename } = req.body;
     if (!filename) {
@@ -680,6 +703,82 @@ router.post('/database/import', authenticateToken, requireRole('admin'), async (
   }
 });
 
+// POST /api/database/upload-import - 上传并导入 SQL 文件
+const upload = multer({
+  dest: path.resolve(path.join(__dirname, '..', 'backups', 'temp')),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'text/plain' || file.originalname.endsWith('.sql')) {
+      cb(null, true);
+    } else {
+      cb(new Error('只允许上传 SQL 文件'));
+    }
+  }
+});
+
+router.post('/database/upload-import', authenticateToken, requireRole('admin'), requireDbEnabled, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: '请上传文件' });
+    }
+
+    const sql = fs.readFileSync(req.file.path, 'utf8');
+    const statements = sql.split(';').filter(s => s.trim() && !s.trim().startsWith('--'));
+
+    // 验证语句类型，只允许 INSERT 和 UPDATE
+    const ALLOWED_STATEMENT_PREFIXES = ['INSERT', 'UPDATE'];
+    const DANGEROUS_PREFIXES = ['DROP', 'DELETE', 'ALTER', 'CREATE', 'TRUNCATE'];
+
+    for (const stmt of statements) {
+      const trimmed = stmt.trim().toUpperCase();
+      const firstWord = trimmed.split(/\s+/)[0];
+
+      if (DANGEROUS_PREFIXES.includes(firstWord)) {
+        // 清理临时文件
+        fs.unlinkSync(req.file.path);
+        return res.status(403).json({ success: false, error: `不允许执行危险语句: ${firstWord}` });
+      }
+
+      if (!ALLOWED_STATEMENT_PREFIXES.includes(firstWord)) {
+        fs.unlinkSync(req.file.path);
+        return res.status(403).json({ success: false, error: `不允许执行的语句类型: ${firstWord}` });
+      }
+    }
+
+    // 使用事务包裹整个导入过程
+    let importedCount = 0;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const stmt of statements) {
+        const trimmed = stmt.trim();
+        await client.query(trimmed);
+        if (trimmed.toUpperCase().startsWith('INSERT')) {
+          importedCount++;
+        }
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+      // 清理临时文件
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+    }
+
+    res.json({ success: true, message: `导入成功，共 ${importedCount} 条记录`, data: { importedCount } });
+  } catch (error) {
+    // 清理临时文件
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json(safeError(error));
+  }
+});
+
 // GET /api/database/status - 获取数据库连接状态
 router.get('/database/status', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
@@ -693,6 +792,7 @@ router.get('/database/status', authenticateToken, requireRole('admin'), async (r
       success: true, 
       data: { 
         connected: true, 
+        enabled: dbEnabled,
         latency,
         serverTime: now.rows[0].server_time,
         poolSize: pool.totalCount,
@@ -705,9 +805,22 @@ router.get('/database/status', authenticateToken, requireRole('admin'), async (r
       success: true, 
       data: { 
         connected: false, 
+        enabled: dbEnabled,
         error: error.message 
       } 
     });
+  }
+});
+
+// POST /api/database/toggle - 切换数据库开关
+router.post('/database/toggle', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    dbEnabled = enabled !== false;
+    saveDbState();
+    res.json({ success: true, enabled: dbEnabled });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -873,7 +986,7 @@ router.get('/market/kline', authenticateToken, async (req, res) => {
 // ========================================
 
 // GET /api/:table - 获取列表
-router.get('/:table', authenticateToken, async (req, res) => {
+router.get('/:table', authenticateToken, requireDbEnabled, async (req, res) => {
   try {
     const { table } = req.params;
     const { where, orderBy, limit, offset, includeDeleted } = req.query;
@@ -908,7 +1021,7 @@ router.get('/:table', authenticateToken, async (req, res) => {
 });
 
 // GET /api/:table/:id - 获取单条
-router.get('/:table/:id', authenticateToken, async (req, res) => {
+router.get('/:table/:id', authenticateToken, requireDbEnabled, async (req, res) => {
   try {
     const { table, id } = req.params;
     let data = await findById(table, id);

@@ -110,6 +110,42 @@ const Home = () => {
     <div style={{ margin: '0', padding: '0', overflowY: 'auto', height: '100vh' }}>
       <style>
         {`
+          /* 响应式布局 - 工作流卡片 */
+          .workflow-grid {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+            gap: 16px !important;
+          }
+          @media (min-width: 600px) {
+            .workflow-grid {
+              grid-template-columns: repeat(2, 1fr) !important;
+              gap: 16px !important;
+            }
+          }
+          @media (min-width: 900px) {
+            .workflow-grid {
+              grid-template-columns: repeat(3, 1fr) !important;
+              gap: 20px !important;
+            }
+          }
+          @media (min-width: 1200px) {
+            .workflow-grid {
+              grid-template-columns: repeat(4, 1fr) !important;
+              gap: 24px !important;
+            }
+          }
+          @media (min-width: 1600px) {
+            .workflow-grid {
+              grid-template-columns: repeat(5, 1fr) !important;
+              gap: 24px !important;
+            }
+          }
+          /* 响应式布局 - 核心功能模块 */
+          @media (max-width: 1100px) {
+            .features-grid {
+              grid-template-columns: 1fr !important;
+            }
+          }
           @keyframes float {
             0%, 100% {
               transform: translateY(0px);
@@ -491,308 +527,395 @@ const Home = () => {
         </div>
       </section>
 
-      {/* 业务模块概览 */}
-      <section style={{ padding: '60px 20px', background: '#ffffff' }}>
-        <ScrollAnimation className="mb-12">
-          <h2 style={{ fontSize: '32px', fontWeight: '700', color: '#111827', marginBottom: '16px', textAlign: 'center' }}>
-            业务模块
-          </h2>
-          <p style={{ fontSize: '18px', color: '#6B7280', textAlign: 'center', marginBottom: '60px' }}>
-            全面覆盖交易全流程，助力决策与执行
-          </p>
-        </ScrollAnimation>
+      {/* ========== 模块展示区域 - HuggingFace 风格 ========== */}
+      <style>
+        {`
+          .module-screenshot {
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+            border: 1px solid #E5E7EB;
+            overflow: hidden;
+            transition: all 0.4s ease;
+            background: #ffffff;
+          }
+          .module-screenshot:hover {
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
+            transform: translateY(-4px);
+          }
+          .module-screenshot img {
+            width: 100%;
+            height: auto;
+            display: block;
+          }
+          .module-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 16px;
+          }
+          .module-title {
+            font-size: clamp(28px, 3.5vw, 40px);
+            font-weight: 800;
+            color: #111827;
+            margin-bottom: 16px;
+            line-height: 1.2;
+          }
+          .module-desc {
+            font-size: 16px;
+            color: #6B7280;
+            line-height: 1.8;
+            margin-bottom: 24px;
+          }
+          .module-features {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 28px;
+          }
+          .module-feature-tag {
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            background: #F3F4F6;
+            color: #4B5563;
+          }
+          .module-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+          }
+          .module-link:hover {
+            gap: 12px;
+          }
+          .module-divider {
+            width: 100%;
+            max-width: 1400px;
+            margin: 0 auto;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #E5E7EB, transparent);
+          }
+          .module-section {
+            padding: 80px 20px;
+          }
+          .module-section:nth-child(odd) {
+            background: #ffffff;
+          }
+          .module-section:nth-child(even) {
+            background: #FAFBFC;
+          }
+          .module-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 60px;
+          }
+          .module-inner.reverse {
+            flex-direction: row-reverse;
+          }
+          .module-text {
+            flex: 1;
+            min-width: 0;
+          }
+          .module-image {
+            flex: 1.2;
+            min-width: 0;
+          }
+          @media (max-width: 1024px) {
+            .module-inner, .module-inner.reverse {
+              flex-direction: column;
+              gap: 40px;
+            }
+            .module-image {
+              width: 100%;
+            }
+          }
+        `}
+      </style>
 
-        {/* 每日功课模块 */}
-        <ScrollAnimation>
-          <div style={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            borderRadius: '24px',
-            padding: '48px',
-            marginBottom: '40px',
-            color: '#ffffff',
-            boxShadow: '0 20px 60px rgba(102, 126, 234, 0.3)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
-              <TrendingUp style={{ width: '48px', height: '48px', color: '#ffffff' }} />
-              <h3 style={{ fontSize: '28px', fontWeight: '700', margin: '0' }}>每日功课</h3>
-            </div>
-            <p style={{ fontSize: '18px', lineHeight: '1.6', marginBottom: '32px', opacity: 0.95 }}>
-              记录每日市场数据，追踪全球指数、大宗商品及汇率走势，通过情绪评估和预测模型辅助交易决策
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
-              <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '20px', borderRadius: '12px', backdropFilter: 'blur(10px)' }}>
-                <div style={{ fontSize: '14px', marginBottom: '8px', opacity: 0.9 }}>市场指数</div>
-                <div style={{ fontSize: '24px', fontWeight: '700' }}>9+</div>
+      {/* 模块1: 每日功课 - 截图在右 */}
+      <section className="module-section">
+        <div className="module-inner">
+          <div className="module-text">
+            <ScrollAnimation>
+              <div className="module-tag" style={{ background: '#EEF2FF', color: '#4F46E5' }}>
+                <TrendingUp style={{ width: '16px', height: '16px' }} />
+                数据驱动
               </div>
-              <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '20px', borderRadius: '12px', backdropFilter: 'blur(10px)' }}>
-                <div style={{ fontSize: '14px', marginBottom: '8px', opacity: 0.9 }}>情绪评估</div>
-                <div style={{ fontSize: '24px', fontWeight: '700' }}>冰点~沸点</div>
-              </div>
-              <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '20px', borderRadius: '12px', backdropFilter: 'blur(10px)' }}>
-                <div style={{ fontSize: '14px', marginBottom: '8px', opacity: 0.9 }}>数据维度</div>
-                <div style={{ fontSize: '24px', fontWeight: '700' }}>20+</div>
-              </div>
-            </div>
-          </div>
-        </ScrollAnimation>
-
-        {/* 四大核心功能 */}
-        <ScrollAnimation>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '40px' }}>
-            {/* 心理测试 */}
-            <div
-              className="feature-card"
-              style={{
-                background: '#ffffff',
-                borderRadius: '20px',
-                padding: '40px',
-                boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
-                border: '1px solid #E5E7EB',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              <div style={{
-                width: '64px',
-                height: '64px',
-                background: 'linear-gradient(135deg, #F472B6 0%, #DB2777 100%)',
-                borderRadius: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '24px'
-              }}>
-                <Brain style={{ width: '32px', height: '32px', color: '#ffffff' }} />
-              </div>
-              <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', marginBottom: '12px' }}>心理测试</h3>
-              <p style={{ fontSize: '16px', lineHeight: '1.6', color: '#6B7280', marginBottom: '24px' }}>
-                通过标准心理量表评估交易情绪，生成心理指标报告，帮助识别决策中的情绪偏差
+              <h2 className="module-title">每日功课</h2>
+              <p className="module-desc">
+                记录每日全球市场数据，追踪纳斯达克、英国富时、德国DAX、恒生指数等主要指数走势，
+                结合大宗商品、外汇汇率等多维度数据，通过情绪评估和预测模型辅助交易决策。
               </p>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                <span style={{ padding: '6px 14px', background: '#FCE7F3', borderRadius: '20px', fontSize: '14px', color: '#DB2777' }}>情绪稳定性</span>
-                <span style={{ padding: '6px 14px', background: '#FCE7F3', borderRadius: '20px', fontSize: '14px', color: '#DB2777' }}>决策质量</span>
-                <span style={{ padding: '6px 14px', background: '#FCE7F3', borderRadius: '20px', fontSize: '14px', color: '#DB2777' }}>风险偏好</span>
+              <div className="module-features">
+                <span className="module-feature-tag">全球指数追踪</span>
+                <span className="module-feature-tag">大宗商品监控</span>
+                <span className="module-feature-tag">外汇汇率</span>
+                <span className="module-feature-tag">情绪评估</span>
+                <span className="module-feature-tag">数据导入导出</span>
               </div>
-            </div>
-
-            {/* 交易策略 */}
-            <div
-              className="feature-card"
-              style={{
-                background: '#ffffff',
-                borderRadius: '20px',
-                padding: '40px',
-                boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
-                border: '1px solid #E5E7EB',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              <div style={{
-                width: '64px',
-                height: '64px',
-                background: 'linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%)',
-                borderRadius: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '24px'
-              }}>
-                <Target style={{ width: '32px', height: '32px', color: '#ffffff' }} />
-              </div>
-              <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', marginBottom: '12px' }}>交易策略</h3>
-              <p style={{ fontSize: '16px', lineHeight: '1.6', color: '#6B7280', marginBottom: '24px' }}>
-                自定义买入卖出策略，多维度评估标准配置，支持策略启用/停用，智能匹配交易机会
-              </p>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                <span style={{ padding: '6px 14px', background: '#DBEAFE', borderRadius: '20px', fontSize: '14px', color: '#3B82F6' }}>策略配置</span>
-                <span style={{ padding: '6px 14px', background: '#DBEAFE', borderRadius: '20px', fontSize: '14px', color: '#3B82F6' }}>评估标准</span>
-                <span style={{ padding: '6px 14px', background: '#DBEAFE', borderRadius: '20px', fontSize: '14px', color: '#3B82F6' }}>启用/停用</span>
-              </div>
-            </div>
-
-            {/* 技术指标 */}
-            <div
-              className="feature-card"
-              style={{
-                background: '#ffffff',
-                borderRadius: '20px',
-                padding: '40px',
-                boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
-                border: '1px solid #E5E7EB',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              <div style={{
-                width: '64px',
-                height: '64px',
-                background: 'linear-gradient(135deg, #34D399 0%, #10B981 100%)',
-                borderRadius: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '24px'
-              }}>
-                <LineChart style={{ width: '32px', height: '32px', color: '#ffffff' }} />
-              </div>
-              <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', marginBottom: '12px' }}>技术指标</h3>
-              <p style={{ fontSize: '16px', lineHeight: '1.6', color: '#6B7280', marginBottom: '24px' }}>
-                股票K线数据管理与多维度技术指标计算，支持趋势、均线、震荡等多种分析工具
-              </p>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                <span style={{ padding: '6px 14px', background: '#D1FAE5', borderRadius: '20px', fontSize: '14px', color: '#10B981' }}>K线数据</span>
-                <span style={{ padding: '6px 14px', background: '#D1FAE5', borderRadius: '20px', fontSize: '14px', color: '#10B981' }}>技术分析</span>
-                <span style={{ padding: '6px 14px', background: '#D1FAE5', borderRadius: '20px', fontSize: '14px', color: '#10B981' }}>指标计算</span>
-              </div>
-            </div>
-
-            {/* 风险模型 */}
-            <div
-              className="feature-card"
-              style={{
-                background: '#ffffff',
-                borderRadius: '20px',
-                padding: '40px',
-                boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
-                border: '1px solid #E5E7EB',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              <div style={{
-                width: '64px',
-                height: '64px',
-                background: 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 100%)',
-                borderRadius: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '24px'
-              }}>
-                <Shield style={{ width: '32px', height: '32px', color: '#ffffff' }} />
-              </div>
-              <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', marginBottom: '12px' }}>风险模型</h3>
-              <p style={{ fontSize: '16px', lineHeight: '1.6', color: '#6B7280', marginBottom: '24px' }}>
-                动态账户风险计算，最大亏损额度控制，支持多风险模型配置与启用，量化风险管理
-              </p>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                <span style={{ padding: '6px 14px', background: '#FEF3C7', borderRadius: '20px', fontSize: '14px', color: '#D97706' }}>风险计算</span>
-                <span style={{ padding: '6px 14px', background: '#FEF3C7', borderRadius: '20px', fontSize: '14px', color: '#D97706' }}>亏损控制</span>
-                <span style={{ padding: '6px 14px', background: '#FEF3C7', borderRadius: '20px', fontSize: '14px', color: '#D97706' }}>模型配置</span>
-              </div>
-            </div>
+              <Link to="/daily-work" className="module-link" style={{ color: '#4F46E5' }}>
+                进入每日功课
+                <ArrowRight style={{ width: '18px', height: '18px' }} />
+              </Link>
+            </ScrollAnimation>
           </div>
-        </ScrollAnimation>
-
-        {/* 交易管理 */}
-        <ScrollAnimation>
-          <div style={{
-            background: 'linear-gradient(135deg, #0F1419 0%, #1F2937 100%)',
-            borderRadius: '24px',
-            padding: '48px',
-            marginTop: '60px',
-            color: '#ffffff'
-          }}>
-            <h3 style={{ fontSize: '28px', fontWeight: '700', marginBottom: '24px', textAlign: 'center' }}>交易管理</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '30px' }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{
-                  width: '56px',
-                  height: '56px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 16px'
-                }}>
-                  <Activity style={{ width: '28px', height: '28px', color: '#ffffff' }} />
-                </div>
-                <h4 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>股票交易</h4>
-                <p style={{ fontSize: '14px', color: '#9CA3AF', lineHeight: '1.6' }}>
-                  买入/卖出交易，智能关联订单，操作评级与交易评分
-                </p>
+          <div className="module-image">
+            <ScrollAnimation>
+              <div className="module-screenshot">
+                <img src="/images/home/daily-work.png" alt="每日功课界面" loading="lazy" />
               </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{
-                  width: '56px',
-                  height: '56px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 16px'
-                }}>
-                  <ClipboardCheck style={{ width: '28px', height: '28px', color: '#ffffff' }} />
-                </div>
-                <h4 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>交易记录</h4>
-                <p style={{ fontSize: '14px', color: '#9CA3AF', lineHeight: '1.6' }}>
-                  完整交易历史，支持筛选与统计，多维度数据导出
-                </p>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{
-                  width: '56px',
-                  height: '56px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 16px'
-                }}>
-                  <DollarSign style={{ width: '28px', height: '28px', color: '#ffffff' }} />
-                </div>
-                <h4 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>账单明细</h4>
-                <p style={{ fontSize: '14px', color: '#9CA3AF', lineHeight: '1.6' }}>
-                  资金流水记录，分类统计汇总，支持多格式导出
-                </p>
-              </div>
-            </div>
+            </ScrollAnimation>
           </div>
-        </ScrollAnimation>
+        </div>
+      </section>
 
-        {/* 股票行情 */}
-        <ScrollAnimation>
-          <div style={{
-            background: '#ffffff',
-            borderRadius: '24px',
-            padding: '48px',
-            marginTop: '60px',
-            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
-            border: '1px solid #E5E7EB'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
-              <div style={{
-                width: '56px',
-                height: '56px',
-                background: 'linear-gradient(135deg, #EC4899 0%, #BE185D 100%)',
-                borderRadius: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <TrendingUp style={{ width: '28px', height: '28px', color: '#ffffff' }} />
+      <div className="module-divider" />
+
+      {/* 模块2: 心理测试 - 截图在左 */}
+      <section className="module-section">
+        <div className="module-inner reverse">
+          <div className="module-text">
+            <ScrollAnimation>
+              <div className="module-tag" style={{ background: '#FDF2F8', color: '#DB2777' }}>
+                <Brain style={{ width: '16px', height: '16px' }} />
+                情绪管理
               </div>
-              <div>
-                <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', marginBottom: '4px' }}>股票行情</h3>
-                <p style={{ fontSize: '14px', color: '#6B7280', margin: '0' }}>实时监控自选股票，快速查看行情数据</p>
+              <h2 className="module-title">心理测试</h2>
+              <p className="module-desc">
+                通过标准心理量表评估每日交易情绪状态，涵盖身体感觉、情绪状态、精力水平、
+                睡眠质量等核心指标，生成心理指标报告，帮助识别决策中的情绪偏差，提升交易纪律性。
+              </p>
+              <div className="module-features">
+                <span className="module-feature-tag">身体状态评估</span>
+                <span className="module-feature-tag">情绪稳定性</span>
+                <span className="module-feature-tag">精力水平</span>
+                <span className="module-feature-tag">睡眠质量</span>
+                <span className="module-feature-tag">指标趋势</span>
               </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-              <div style={{ padding: '24px', background: '#F9FAFB', borderRadius: '16px', textAlign: 'center' }}>
-                <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>股票代码</div>
-                <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>快速查询</div>
-              </div>
-              <div style={{ padding: '24px', background: '#F9FAFB', borderRadius: '16px', textAlign: 'center' }}>
-                <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>价格数据</div>
-                <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>实时更新</div>
-              </div>
-              <div style={{ padding: '24px', background: '#F9FAFB', borderRadius: '16px', textAlign: 'center' }}>
-                <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>自选管理</div>
-                <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>灵活配置</div>
-              </div>
-            </div>
+              <Link to="/psychological-test" className="module-link" style={{ color: '#DB2777' }}>
+                开始心理测试
+                <ArrowRight style={{ width: '18px', height: '18px' }} />
+              </Link>
+            </ScrollAnimation>
           </div>
-        </ScrollAnimation>
+          <div className="module-image">
+            <ScrollAnimation>
+              <div className="module-screenshot">
+                <img src="/images/home/psychological-test.png" alt="心理测试界面" loading="lazy" />
+              </div>
+            </ScrollAnimation>
+          </div>
+        </div>
+      </section>
+
+      <div className="module-divider" />
+
+      {/* 模块3: 交易策略 - 截图在右 */}
+      <section className="module-section">
+        <div className="module-inner">
+          <div className="module-text">
+            <ScrollAnimation>
+              <div className="module-tag" style={{ background: '#DBEAFE', color: '#2563EB' }}>
+                <Target style={{ width: '16px', height: '16px' }} />
+                策略管理
+              </div>
+              <h2 className="module-title">交易策略</h2>
+              <p className="module-desc">
+                自定义买入卖出策略，多维度评估标准配置，支持策略启用/停用管理。
+                智能匹配交易机会，自动关联心理测试与风险模型，让每一笔交易都有策略依据，
+                提升决策效率与一致性。
+              </p>
+              <div className="module-features">
+                <span className="module-feature-tag">策略配置</span>
+                <span className="module-feature-tag">评估标准</span>
+                <span className="module-feature-tag">智能匹配</span>
+                <span className="module-feature-tag">启用/停用</span>
+                <span className="module-feature-tag">策略评分</span>
+              </div>
+              <Link to="/trading-strategy" className="module-link" style={{ color: '#2563EB' }}>
+                查看交易策略
+                <ArrowRight style={{ width: '18px', height: '18px' }} />
+              </Link>
+            </ScrollAnimation>
+          </div>
+          <div className="module-image">
+            <ScrollAnimation>
+              <div className="module-screenshot">
+                <img src="/images/home/trading-strategy.png" alt="交易策略界面" loading="lazy" />
+              </div>
+            </ScrollAnimation>
+          </div>
+        </div>
+      </section>
+
+      <div className="module-divider" />
+
+      {/* 模块4: 风险模型 - 截图在左 */}
+      <section className="module-section">
+        <div className="module-inner reverse">
+          <div className="module-text">
+            <ScrollAnimation>
+              <div className="module-tag" style={{ background: '#FFFBEB', color: '#D97706' }}>
+                <Shield style={{ width: '16px', height: '16px' }} />
+                风险控制
+              </div>
+              <h2 className="module-title">风险模型</h2>
+              <p className="module-desc">
+                动态账户风险计算与仓位管理，实时展示账户风险使用率、已用额度、
+                本月亏损等关键指标。支持保守、均衡、激进三种风险模型，量化风险管理，
+                让每一笔交易都在可控范围内。
+              </p>
+              <div className="module-features">
+                <span className="module-feature-tag">账户风险监控</span>
+                <span className="module-feature-tag">仓位计算</span>
+                <span className="module-feature-tag">亏损控制</span>
+                <span className="module-feature-tag">多模型配置</span>
+                <span className="module-feature-tag">持仓追踪</span>
+              </div>
+              <Link to="/risk-model" className="module-link" style={{ color: '#D97706' }}>
+                查看风险模型
+                <ArrowRight style={{ width: '18px', height: '18px' }} />
+              </Link>
+            </ScrollAnimation>
+          </div>
+          <div className="module-image">
+            <ScrollAnimation>
+              <div className="module-screenshot">
+                <img src="/images/home/risk-model.png" alt="风险模型界面" loading="lazy" />
+              </div>
+            </ScrollAnimation>
+          </div>
+        </div>
+      </section>
+
+      <div className="module-divider" />
+
+      {/* 模块5: 股票交易 - 截图在右 */}
+      <section className="module-section">
+        <div className="module-inner">
+          <div className="module-text">
+            <ScrollAnimation>
+              <div className="module-tag" style={{ background: '#ECFDF5', color: '#059669' }}>
+                <Activity style={{ width: '16px', height: '16px' }} />
+                交易执行
+              </div>
+              <h2 className="module-title">股票交易</h2>
+              <p className="module-desc">
+                完整的买入/卖出交易执行系统，智能关联心理测试、交易策略与风险模型，
+                自动计算操作评级与交易评分。支持交易分类筛选、数据导出，
+                让每一笔交易都有据可查。
+              </p>
+              <div className="module-features">
+                <span className="module-feature-tag">买入/卖出管理</span>
+                <span className="module-feature-tag">操作评级</span>
+                <span className="module-feature-tag">策略关联</span>
+                <span className="module-feature-tag">交易评分</span>
+                <span className="module-feature-tag">数据导出</span>
+              </div>
+              <Link to="/order-management" className="module-link" style={{ color: '#059669' }}>
+                进入股票交易
+                <ArrowRight style={{ width: '18px', height: '18px' }} />
+              </Link>
+            </ScrollAnimation>
+          </div>
+          <div className="module-image">
+            <ScrollAnimation>
+              <div className="module-screenshot">
+                <img src="/images/home/order-management.png" alt="股票交易界面" loading="lazy" />
+              </div>
+            </ScrollAnimation>
+          </div>
+        </div>
+      </section>
+
+      <div className="module-divider" />
+
+      {/* 模块6: 交易记录 - 截图在左 */}
+      <section className="module-section">
+        <div className="module-inner reverse">
+          <div className="module-text">
+            <ScrollAnimation>
+              <div className="module-tag" style={{ background: '#F5F3FF', color: '#7C3AED' }}>
+                <ClipboardCheck style={{ width: '16px', height: '16px' }} />
+                历史分析
+              </div>
+              <h2 className="module-title">交易记录</h2>
+              <p className="module-desc">
+                完整的交易历史管理系统，支持多维度筛选与统计分析。
+                可视化盈亏分析，策略效果回溯，让每一次交易经验都成为未来决策的参考，
+                持续优化交易体系。
+              </p>
+              <div className="module-features">
+                <span className="module-feature-tag">交易历史</span>
+                <span className="module-feature-tag">盈亏分析</span>
+                <span className="module-feature-tag">策略回溯</span>
+                <span className="module-feature-tag">多维筛选</span>
+                <span className="module-feature-tag">数据导出</span>
+              </div>
+              <Link to="/trade-records" className="module-link" style={{ color: '#7C3AED' }}>
+                查看交易记录
+                <ArrowRight style={{ width: '18px', height: '18px' }} />
+              </Link>
+            </ScrollAnimation>
+          </div>
+          <div className="module-image">
+            <ScrollAnimation>
+              <div className="module-screenshot">
+                <img src="/images/home/trade-records.png" alt="交易记录界面" loading="lazy" />
+              </div>
+            </ScrollAnimation>
+          </div>
+        </div>
+      </section>
+
+      <div className="module-divider" />
+
+      {/* 模块7: 账单明细 - 截图在右 */}
+      <section className="module-section">
+        <div className="module-inner">
+          <div className="module-text">
+            <ScrollAnimation>
+              <div className="module-tag" style={{ background: '#F0F9FF', color: '#0284C7' }}>
+                <DollarSign style={{ width: '16px', height: '16px' }} />
+                资金管理
+              </div>
+              <h2 className="module-title">账单明细</h2>
+              <p className="module-desc">
+                完整的账户资金流水记录，实时展示总资产、本月收支等关键财务指标。
+                支持股票买卖、佣金、其他费用等多种记账类型分类统计，
+                支持手动记账与数据导出，让资金管理一目了然。
+              </p>
+              <div className="module-features">
+                <span className="module-feature-tag">资金流水</span>
+                <span className="module-feature-tag">收支统计</span>
+                <span className="module-feature-tag">手动记账</span>
+                <span className="module-feature-tag">分类汇总</span>
+                <span className="module-feature-tag">数据导出</span>
+              </div>
+              <Link to="/transaction-history" className="module-link" style={{ color: '#0284C7' }}>
+                查看账单明细
+                <ArrowRight style={{ width: '18px', height: '18px' }} />
+              </Link>
+            </ScrollAnimation>
+          </div>
+          <div className="module-image">
+            <ScrollAnimation>
+              <div className="module-screenshot">
+                <img src="/images/home/transaction-history.png" alt="账单明细界面" loading="lazy" />
+              </div>
+            </ScrollAnimation>
+          </div>
+        </div>
       </section>
       </div>
     </div>

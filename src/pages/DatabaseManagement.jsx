@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { motion } from 'framer-motion'
 import {
   Database, Server, HardDrive, Activity, Clock, Power, RotateCcw, Play,
   Download, Upload, Trash2, AlertTriangle, CheckCircle, X, RefreshCw,
@@ -157,7 +158,7 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, type = 'warn
 
 export default function DatabaseManagement() {
   const { showToast } = useToast()
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('db_active_tab') || 'overview')
   const [dbInfo, setDbInfo] = useState(null)
   const [dbStatus, setDbStatus] = useState(null)
   const [backups, setBackups] = useState([])
@@ -165,6 +166,7 @@ export default function DatabaseManagement() {
   const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', type: 'warning', onConfirm: null })
   const [expandedTable, setExpandedTable] = useState(null)
   const [dbEnabled, setDbEnabled] = useState(true)
+  const fileInputRef = React.useRef(null)
 
   // 获取认证头
   const getAuthHeaders = () => {
@@ -201,7 +203,10 @@ export default function DatabaseManagement() {
         return
       }
       const result = await res.json()
-      if (result.success) setDbStatus(result.data)
+      if (result.success) {
+        setDbStatus(result.data)
+        if (result.data.enabled !== undefined) setDbEnabled(result.data.enabled)
+      }
     } catch (e) {
       setDbStatus({ connected: false, error: '连接失败' })
     }
@@ -257,6 +262,32 @@ export default function DatabaseManagement() {
       }
     } catch (e) {
       showToast('重启失败', 'error')
+    }
+  }
+
+  const handleToggle = async () => {
+    try {
+      const res = await fetch('/api/database/toggle', { 
+        method: 'POST', 
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ enabled: !dbEnabled })
+      })
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
+      }
+      const result = await res.json()
+      if (result.success) {
+        setDbEnabled(result.enabled)
+        showToast(result.enabled ? '数据库已开启' : '数据库已关闭', 'success')
+        await refreshAll()
+      } else {
+        showToast(`切换失败: ${result.message || '未知错误'}`, 'error')
+      }
+    } catch (e) {
+      showToast('切换失败', 'error')
     }
   }
 
@@ -424,13 +455,63 @@ export default function DatabaseManagement() {
     })
   }
 
-  const handleImport = async () => {
-    showToast('请先将 SQL 文件放入 backend/backups 目录，然后从下方列表选择导入', 'info')
+  // 触发文件选择器
+  const handleImport = () => {
+    fileInputRef.current?.click()
+  }
+
+  // 处理文件选择并上传导入
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // 验证文件类型
+    if (!file.name.endsWith('.sql') && file.type !== 'text/plain') {
+      showToast('请选择 SQL 文件', 'error')
+      e.target.value = ''
+      return
+    }
+
+    setLoading(true)
+    try {
+      const token = localStorage.getItem('auth_token')
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch('/api/database/upload-import', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      })
+
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
+      }
+
+      const result = await res.json()
+      if (result.success) {
+        showToast(result.message || '导入成功', 'success')
+        await refreshAll()
+      } else {
+        showToast(`导入失败: ${result.error || '未知错误'}`, 'error')
+      }
+    } catch (err) {
+      console.error('导入失败:', err)
+      showToast('导入失败，请重试', 'error')
+    } finally {
+      setLoading(false)
+      e.target.value = '' // 重置文件输入，允许重复选择同一文件
+    }
   }
 
   // Tab 定义
   const tabs = [
-    { id: 'overview', label: '概览', icon: BarChart3 },
+    { id: 'overview', label: '数据概览', icon: BarChart3 },
     { id: 'backup', label: '备份管理', icon: FolderOpen },
     { id: 'cleanup', label: '数据清理', icon: Trash2 },
     { id: 'import-export', label: '导入导出', icon: Download },
@@ -438,8 +519,8 @@ export default function DatabaseManagement() {
 
   // 操作按钮
   const actionButtons = [
-    { label: '测试连接', icon: Play, onClick: handleTest, color: 'bg-emerald-600 hover:bg-emerald-700', textColor: 'text-white' },
-    { label: '重启连接', icon: RotateCcw, onClick: handleRestart, color: 'bg-amber-600 hover:bg-amber-700', textColor: 'text-white' },
+    { label: '测试连接', icon: Play, onClick: handleTest },
+    { label: '重启连接', icon: RotateCcw, onClick: handleRestart },
   ]
 
   const totalRows = dbInfo?.tables?.reduce((sum, t) => sum + t.totalRows, 0) || 0
@@ -458,68 +539,64 @@ export default function DatabaseManagement() {
 
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '0px', paddingRight: '10px', paddingTop: '10px', position: 'relative', paddingBottom: '10px', overflow: 'auto' }}>
       <div className="pr-2.5 pb-2.5">
-        {/* 顶部行：左侧Tab卡片 + 右侧快捷操作 */}
-        <div className="flex items-start gap-2.5 mb-2.5">
-          {/* 左侧：四个Tab卡片导航 */}
-          <div className="flex gap-2.5 flex-1">
+        {/* 顶部行：Tab导航 + 右侧操作 */}
+        <div className="flex items-center justify-between mb-2.5">
+          {/* Tab 导航 */}
+          <div className="flex items-center gap-[10px] bg-white rounded-lg border border-gray-200 p-1">
             {tabs.map(tab => {
               const isActive = activeTab === tab.id
               return (
-                <div
+                <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  style={{
-                    background: '#ffffff',
-                    border: isActive ? '1px solid #0F1419' : '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    padding: '10px 25px',
-                    minHeight: '55px',
-                    width: '180px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
+                  onClick={() => {
+                    setActiveTab(tab.id)
+                    localStorage.setItem('db_active_tab', tab.id)
                   }}
+                  className={`px-4 py-2 rounded-md text-sm flex items-center gap-2 transition-all duration-200 ${
+                    isActive
+                      ? 'bg-[#0F1419] text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                  }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <tab.icon className="w-4 h-4" style={{ color: '#0F1419' }} />
-                    <p className="text-sm mb-0" style={{ color: '#0F1419' }}>{tab.label}</p>
-                  </div>
-                </div>
+                  <tab.icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
               )
             })}
           </div>
-          {/* 右侧：快捷操作 */}
-          <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2 flex-wrap shrink-0">
-            <span className="text-xs text-gray-400 mr-1 font-medium">快捷操作</span>
+          {/* 右侧操作区 */}
+          <div className="flex items-center gap-2 shrink-0">
             {/* 数据库开关 */}
-            <div className="flex items-center gap-2 mr-2">
-              <span className="text-xs text-gray-500">{dbEnabled ? '开启' : '关闭'}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">{dbEnabled ? '开启' : '关闭'}</span>
               <button
-                onClick={() => setDbEnabled(!dbEnabled)}
-                className={`w-10 h-5 rounded-full transition-colors duration-200 relative ${dbEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                onClick={handleToggle}
+                className={`w-10 h-5 rounded-full transition-colors duration-200 relative overflow-hidden ${dbEnabled ? 'bg-[#0F1419]' : 'bg-gray-300'}`}
               >
-                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${dbEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${dbEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
               </button>
             </div>
             {/* 刷新按钮 */}
-            <button
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               onClick={refreshAll}
-              className="px-3.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+              className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               刷新
-            </button>
+            </motion.button>
             {actionButtons.map(btn => (
-              <button
+              <motion.button
                 key={btn.label}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={btn.onClick}
-                className={`px-3.5 py-1.5 ${btn.color} ${btn.textColor} text-xs font-medium rounded-lg transition-all flex items-center gap-1.5`}
+                className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2"
               >
-                <btn.icon className="w-3.5 h-3.5" />
+                <btn.icon className="w-4 h-4" />
                 {btn.label}
-              </button>
+              </motion.button>
             ))}
           </div>
         </div>
@@ -529,94 +606,95 @@ export default function DatabaseManagement() {
           <div>
             {/* ===== 概览 Tab ===== */}
             {activeTab === 'overview' && (
-              <div className="space-y-2.5">
-                {/* 连接信息 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  <div className="bg-white rounded-xl p-4">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                      连接信息
-                    </h3>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-700 text-sm">服务器时间</span>
-                        <span className="text-gray-700 text-sm">{dbStatus?.serverTime ? formatDateTime(dbStatus.serverTime) : '—'}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* 连接信息 + 数据概览 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+                      <Server style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                      <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0, lineHeight: '1' }}>连接信息</h3>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>服务器时间</div>
+                        <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px' }}>{dbStatus?.serverTime ? formatDateTime(dbStatus.serverTime) : '—'}</div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-700 text-sm">连接池大小</span>
-                        <span className="text-gray-700 text-sm">{dbStatus?.poolSize ?? '—'}</span>
+                      <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>连接池大小</div>
+                        <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px' }}>{dbStatus?.poolSize ?? '—'}</div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-700 text-sm">空闲连接</span>
-                        <span className="text-gray-700 text-sm">{dbStatus?.idleCount ?? '—'}</span>
+                      <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>空闲连接</div>
+                        <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px' }}>{dbStatus?.idleCount ?? '—'}</div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-700 text-sm">等待队列</span>
-                        <span className={`font-medium text-sm text-gray-700`}>
-                          {dbStatus?.waitingCount ?? 0}
-                        </span>
+                      <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>等待队列</div>
+                        <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px' }}>{dbStatus?.waitingCount ?? 0}</div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-700 text-sm">活跃连接</span>
-                        <span className="text-gray-700 text-sm">{dbInfo?.activeConnections ?? '—'}</span>
+                      <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>活跃连接</div>
+                        <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px' }}>{dbInfo?.activeConnections ?? '—'}</div>
                       </div>
                     </div>
                   </div>
-                  <div className="bg-white rounded-xl p-4">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                      数据概览
-                    </h3>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-700 text-sm">总记录数</span>
-                        <span className="text-gray-700 font-medium text-sm">{totalRows.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-700 text-sm">软删除数</span>
-                        <span className="font-medium text-sm text-gray-700">{totalDeleted.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-700 text-sm">数据库版本</span>
-                        <span className="text-gray-700 text-sm">{extractPgVersion(dbInfo?.version)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-700 text-sm">数据库大小</span>
-                        <span className="text-gray-700 text-sm">{dbInfo?.size || '—'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                      <span className="text-gray-700 text-sm">运行时间</span>
-                      <span className="text-gray-700 text-sm">{formatUptime(dbInfo?.uptime)}</span>
+                  <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+                      <BarChart3 style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                      <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0, lineHeight: '1' }}>数据概览</h3>
                     </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>总记录数</div>
+                        <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px' }}>{totalRows.toLocaleString()}</div>
+                      </div>
+                      <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>软删除数</div>
+                        <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px' }}>{totalDeleted.toLocaleString()}</div>
+                      </div>
+                      <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>数据库版本</div>
+                        <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px' }}>{extractPgVersion(dbInfo?.version)}</div>
+                      </div>
+                      <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>数据库大小</div>
+                        <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px' }}>{dbInfo?.size || '—'}</div>
+                      </div>
+                      <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>运行时间</div>
+                        <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '14px' }}>{formatUptime(dbInfo?.uptime)}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 {/* 表详情列表 */}
-                <div className="bg-white rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-gray-700">
-                      数据表结构
-                    </h3>
-                    <span className="text-sm text-gray-900">
+                <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Layers style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                      <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0, lineHeight: '1' }}>数据库表</h3>
+                    </div>
+                    <span style={{ fontSize: '14px', color: '#0F1419', fontWeight: 'bold' }}>
                       共 {dbInfo?.tables?.length || 0} 个表
                     </span>
                   </div>
-                  <div className="border border-gray-100 rounded-xl overflow-hidden bg-white">
-                    <table className="w-full text-sm">
+                  <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', overflow: 'hidden', background: '#ffffff' }}>
+                    <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
                       <thead>
-                        <tr className="bg-gray-50">
-                          <th className="text-left px-4 py-2.5 text-sm font-medium text-gray-500">表名</th>
-                          <th className="text-left px-4 py-2.5 text-sm font-medium text-gray-500">中文注释</th>
-                          <th className="text-right px-4 py-2.5 text-sm font-medium text-gray-500">总记录</th>
-                          <th className="text-right px-4 py-2.5 text-sm font-medium text-gray-500">已删除</th>
+                        <tr style={{ background: '#f9fafb' }}>
+                          <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: '12px', fontWeight: '500', color: '#999', borderBottom: '1px solid #e5e7eb' }}>表名</th>
+                          <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: '12px', fontWeight: '500', color: '#999', borderBottom: '1px solid #e5e7eb' }}>中文注释</th>
+                          <th style={{ textAlign: 'right', padding: '10px 16px', fontSize: '12px', fontWeight: '500', color: '#999', borderBottom: '1px solid #e5e7eb' }}>总记录</th>
+                          <th style={{ textAlign: 'right', padding: '10px 16px', fontSize: '12px', fontWeight: '500', color: '#999', borderBottom: '1px solid #e5e7eb' }}>已删除</th>
                         </tr>
                       </thead>
                       <tbody>
                         {dbInfo?.tables?.map((table, idx) => (
-                          <tr key={table.name} className="border-t border-gray-50">
-                            <td className="px-4 py-2.5 font-mono text-sm text-gray-700">{table.name}</td>
-                            <td className="px-4 py-2.5 text-sm text-gray-600">{table.comment || '-'}</td>
-                            <td className="px-4 py-2.5 text-right font-medium text-gray-900">{table.totalRows.toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right font-medium text-gray-900">{table.deletedRows.toLocaleString()}</td>
+                          <tr key={table.name} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                            <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: '14px', color: '#333' }}>{table.name}</td>
+                            <td style={{ padding: '10px 16px', fontSize: '14px', color: '#666' }}>{table.comment || '-'}</td>
+                            <td style={{ padding: '10px 16px', textAlign: 'right', color: '#0F1419' }}>{table.totalRows.toLocaleString()}</td>
+                            <td style={{ padding: '10px 16px', textAlign: 'right', color: '#0F1419' }}>{table.deletedRows.toLocaleString()}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -628,58 +706,65 @@ export default function DatabaseManagement() {
 
             {/* ===== 备份管理 Tab ===== */}
             {activeTab === 'backup' && (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-700">备份列表</h3>
-                    <p className="text-xs text-gray-400 mt-0.5">手动备份数据库，支持恢复和删除</p>
-                  </div>
+              <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
+                {/* 标题行 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+                  <Zap style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                  <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0, lineHeight: '1' }}>备份管理</h3>
+                </div>
+
+                {/* 操作按钮 */}
+                <div style={{ marginBottom: '16px' }}>
                   <button
                     onClick={handleBackup}
-                    className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5"
+                    style={{ background: '#0F1419', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '14px', cursor: 'pointer', transition: 'opacity 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                    onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
                   >
-                    <Zap className="w-3.5 h-3.5" />
                     立即备份
                   </button>
                 </div>
 
                 {backups.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                    <FolderOpen className="w-12 h-12 mb-3 text-gray-200" />
-                    <p className="text-sm">暂无备份</p>
-                    <p className="text-xs mt-1">点击上方按钮创建第一个备份</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', color: '#d1d5db' }}>
+                    <FolderOpen style={{ width: '48px', height: '48px', marginBottom: '12px' }} />
+                    <p style={{ fontSize: '14px' }}>暂无备份</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {backups.map((backup, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors group">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-white rounded-lg shadow-sm">
-                            <FileText className="w-4 h-4 text-blue-500" />
+                      <div key={idx} style={{ padding: '14px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ padding: '8px', background: '#ffffff', borderRadius: '4px', border: '1px solid #e5e7eb' }}>
+                            <FileText style={{ width: '16px', height: '16px', color: '#0F1419' }} />
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-gray-800 font-mono">{backup.name}</p>
-                            <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
-                              <Calendar className="w-3 h-3" />
+                            <p style={{ fontSize: '14px', fontWeight: '600', color: '#0F1419', fontFamily: 'monospace', margin: 0 }}>{backup.name}</p>
+                            <p style={{ fontSize: '12px', color: '#999', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Calendar style={{ width: '12px', height: '12px' }} />
                               {formatDateTime(backup.created)}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-400 mr-2">{formatFileSize(backup.size)}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '12px', color: '#999', marginRight: '8px' }}>{formatFileSize(backup.size)}</span>
                           <button
                             onClick={() => handleRestore(backup.name)}
-                            className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                            style={{ padding: '6px', color: '#9ca3af', background: 'none', border: 'none', borderRadius: '6px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = '#059669'; e.currentTarget.style.background = '#ecfdf5' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.background = 'none' }}
                             title="从此备份恢复"
                           >
-                            <RotateCcw className="w-3.5 h-3.5" />
+                            <RotateCcw style={{ width: '14px', height: '14px' }} />
                           </button>
                           <button
                             onClick={() => handleDeleteBackup(backup.name)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                            style={{ padding: '6px', color: '#9ca3af', background: 'none', border: 'none', borderRadius: '6px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = '#dc2626'; e.currentTarget.style.background = '#fef2f2' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.background = 'none' }}
                             title="删除备份"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 style={{ width: '14px', height: '14px' }} />
                           </button>
                         </div>
                       </div>
@@ -691,89 +776,88 @@ export default function DatabaseManagement() {
 
             {/* ===== 数据清理 Tab ===== */}
             {activeTab === 'cleanup' && (
-              <div className="space-y-2.5">
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-1">数据清理</h3>
-                  <p className="text-xs text-gray-400 mb-4">清理不需要的数据以释放空间</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* 统计信息 */}
+                <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+                    <BarChart3 style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                    <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>清理统计</h3>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+                    <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                      <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>总记录数</div>
+                      <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>{totalRows.toLocaleString()}</div>
+                    </div>
+                    <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                      <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>活跃数据</div>
+                      <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>{(totalRows - totalDeleted).toLocaleString()}</div>
+                    </div>
+                    <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                      <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>软删除</div>
+                      <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>{totalDeleted.toLocaleString()}</div>
+                    </div>
+                    <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                      <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>删除占比</div>
+                      <div style={{ fontWeight: 'bold', color: '#0F1419', fontSize: '20px' }}>
+                        {totalRows > 0 ? ((totalDeleted / totalRows) * 100).toFixed(1) : 0}%
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* 软删除清理 */}
-                <div className="border border-amber-100 bg-amber-50/50 rounded-xl p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <AlertTriangle className="w-4 h-4 text-amber-500" />
-                        <h4 className="text-sm font-semibold text-amber-800">清理软删除数据</h4>
-                      </div>
-                      <p className="text-xs text-amber-600 mt-1">
-                        永久删除所有标记为软删除（deleted = true）的数据。当前共有 <span className="font-bold">{totalDeleted.toLocaleString()}</span> 条软删除数据。
+                <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+                    <AlertTriangle style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                    <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0, lineHeight: '1' }}>清理软删除数据</h3>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <p style={{ fontSize: '14px', color: '#666', margin: '0 0 4px 0' }}>
+                        永久删除所有标记为软删除（deleted = true）的数据。当前共有 <span style={{ fontWeight: 'bold' }}>{totalDeleted.toLocaleString()}</span> 条软删除数据。
                       </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-amber-500">影响表：</span>
-                        <span className="text-xs text-amber-600">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '12px', color: '#999' }}>影响表：</span>
+                        <span style={{ fontSize: '12px', color: '#666' }}>
                           {dbInfo?.tables?.filter(t => t.deletedRows > 0).map(t => t.name).join(', ') || '无'}
                         </span>
                       </div>
                     </div>
-                    <button
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
                       onClick={handleCleanupSoftDeleted}
-                      className="px-3 py-1.5 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 transition-colors ml-4 flex-shrink-0"
+                      style={{ background: '#0F1419', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '14px', cursor: 'pointer', flexShrink: 0, marginLeft: '16px' }}
                     >
                       清理
-                    </button>
+                    </motion.button>
                   </div>
                 </div>
 
                 {/* 清空所有数据 */}
-                <div className="border border-red-100 bg-red-50/50 rounded-xl p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                        <h4 className="text-sm font-semibold text-red-700">清空所有数据</h4>
-                      </div>
-                      <p className="text-xs text-red-500 mt-1">
+                <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+                    <Trash2 style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                    <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0, lineHeight: '1' }}>清空所有数据</h3>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <p style={{ fontSize: '14px', color: '#666', margin: '0 0 4px 0' }}>
                         删除数据库中所有表的全部数据（保留表结构）。此操作不可恢复，请务必备份后再操作！
                       </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-red-400">影响：</span>
-                        <span className="text-xs text-red-500">共 {totalRows.toLocaleString()} 条记录将被删除</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '12px', color: '#999' }}>影响：</span>
+                        <span style={{ fontSize: '12px', color: '#666' }}>共 {totalRows.toLocaleString()} 条记录将被删除</span>
                       </div>
                     </div>
-                    <button
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
                       onClick={handleCleanupAllData}
-                      className="px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-600 transition-colors ml-4 flex-shrink-0"
+                      style={{ background: '#0F1419', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '14px', cursor: 'pointer', flexShrink: 0, marginLeft: '16px' }}
                     >
                       清空
-                    </button>
-                  </div>
-                </div>
-
-                {/* 统计信息 */}
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4" />
-                    清理统计
-                  </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                    <div>
-                      <div className="text-xs text-gray-400">总记录数</div>
-                      <div className="text-lg font-bold text-gray-800">{totalRows.toLocaleString()}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-400">活跃数据</div>
-                      <div className="text-lg font-bold text-emerald-600">{(totalRows - totalDeleted).toLocaleString()}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-400">软删除</div>
-                      <div className="text-lg font-bold text-amber-600">{totalDeleted.toLocaleString()}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-400">删除占比</div>
-                      <div className="text-lg font-bold text-gray-800">
-                        {totalRows > 0 ? ((totalDeleted / totalRows) * 100).toFixed(1) : 0}%
-                      </div>
-                    </div>
+                    </motion.button>
                   </div>
                 </div>
               </div>
@@ -781,81 +865,83 @@ export default function DatabaseManagement() {
 
             {/* ===== 导入导出 Tab ===== */}
             {activeTab === 'import-export' && (
-              <div className="space-y-2.5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  {/* 导出 */}
-                  <div className="border border-gray-100 rounded-xl p-5 hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="p-2.5 bg-blue-50 rounded-xl">
-                        <Download className="w-5 h-5 text-blue-500" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-800">导出数据库</h3>
-                        <p className="text-xs text-gray-400 mt-0.5">导出所有活跃数据为 SQL 文件</p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* 导出 */}
+                <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+                    <Download style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                    <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0, lineHeight: '1' }}>导出数据库</h3>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
                       将数据库中所有未删除的数据（deleted = false）导出为 SQL 格式文件，保存到 backend/backups 目录。
                     </p>
                     <button
                       onClick={handleExport}
-                      className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                      style={{ background: '#0F1419', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '14px', cursor: 'pointer', flexShrink: 0, marginLeft: '16px', transition: 'opacity 0.2s' }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
                     >
-                      <Download className="w-4 h-4" />
-                      导出数据
-                    </button>
-                  </div>
-
-                  {/* 导入 */}
-                  <div className="border border-gray-100 rounded-xl p-5 hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="p-2.5 bg-emerald-50 rounded-xl">
-                        <Upload className="w-5 h-5 text-emerald-500" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-800">导入数据库</h3>
-                        <p className="text-xs text-gray-400 mt-0.5">从 SQL 文件恢复数据</p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-500 mb-4 leading-relaxed">
-                      从 backend/backups 目录中的 SQL 文件导入数据。请先将需要导入的文件放入该目录。
-                    </p>
-                    <button
-                      onClick={handleImport}
-                      className="w-full px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <Upload className="w-4 h-4" />
-                      选择文件导入
+                      导出
                     </button>
                   </div>
                 </div>
 
-                {/* 备份文件列表（也作为导入源） */}
+                {/* 导入 */}
+                <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+                    <Upload style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                    <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0, lineHeight: '1' }}>导入数据库</h3>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
+                      选择本地 SQL 文件进行导入，支持从备份文件恢复数据。
+                    </p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".sql,text/plain"
+                      onChange={handleFileSelect}
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      onClick={handleImport}
+                      style={{ background: '#0F1419', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '14px', cursor: 'pointer', flexShrink: 0, marginLeft: '16px', transition: 'opacity 0.2s' }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                    >
+                      选择文件
+                    </button>
+                  </div>
+                </div>
+
+                {/* 备份文件列表 */}
                 {backups.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                      <FolderOpen className="w-4 h-4" />
-                      可用文件 ({backups.length})
-                    </h3>
-                    <div className="space-y-2">
+                  <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+                      <FolderOpen style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                      <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>可用文件 ({backups.length})</h3>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {backups.map((backup, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors group">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-white rounded-lg shadow-sm">
-                              <FileText className="w-4 h-4 text-blue-500" />
+                        <div key={idx} style={{ padding: '14px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ padding: '8px', background: '#ffffff', borderRadius: '4px', border: '1px solid #e5e7eb' }}>
+                              <FileText style={{ width: '16px', height: '16px', color: '#0F1419' }} />
                             </div>
                             <div>
-                              <p className="text-sm font-medium text-gray-800 font-mono">{backup.name}</p>
-                              <p className="text-xs text-gray-400 mt-0.5">
+                              <p style={{ fontSize: '14px', fontWeight: '600', color: '#0F1419', fontFamily: 'monospace', margin: 0 }}>{backup.name}</p>
+                              <p style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>
                                 {formatDateTime(backup.created)} · {formatFileSize(backup.size)}
                               </p>
                             </div>
                           </div>
                           <button
                             onClick={() => handleRestore(backup.name)}
-                            className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:border-emerald-300 hover:text-emerald-600 transition-all flex items-center gap-1.5 opacity-0 group-hover:opacity-100"
+                            style={{ background: '#0F1419', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '14px', cursor: 'pointer', transition: 'opacity 0.2s' }}
+                            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
                           >
-                            <Upload className="w-3.5 h-3.5" />
                             导入
                           </button>
                         </div>
@@ -865,16 +951,16 @@ export default function DatabaseManagement() {
                 )}
 
                 {/* 使用说明 */}
-                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-                  <h4 className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
-                    <Activity className="w-4 h-4" />
-                    使用说明
-                  </h4>
-                  <div className="text-xs text-blue-600 space-y-1.5 leading-relaxed">
-                    <p>1. <strong>导出</strong>：将数据库中所有活跃数据导出为 SQL 文件，自动保存到 backend/backups 目录。</p>
-                    <p>2. <strong>导入</strong>：从 backups 目录中的 SQL 文件导入数据，覆盖现有数据。</p>
-                    <p>3. <strong>备份</strong>：在"备份管理"tab 中创建备份，备份包含所有数据（含已删除）。</p>
-                    <p>4. SQL 文件可以直接放入 backend/backups 目录，然后在此页面中选择导入。</p>
+                <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
+                    <Activity style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                    <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>使用说明</h3>
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#666', lineHeight: 1.8 }}>
+                    <p style={{ margin: '0 0 8px 0' }}>1. <strong>导出</strong>：将数据库中所有活跃数据导出为 SQL 文件，自动保存到 backend/backups 目录。</p>
+                    <p style={{ margin: '0 0 8px 0' }}>2. <strong>导入</strong>：点击"选择文件导入"按钮，从本地选择 SQL 文件进行导入。</p>
+                    <p style={{ margin: '0 0 8px 0' }}>3. <strong>备份</strong>：在"备份管理"tab 中创建备份，备份包含所有数据（含已删除）。</p>
+                    <p style={{ margin: 0 }}>4. 支持从备份列表中的文件直接导入，也可上传本地 SQL 文件。</p>
                   </div>
                 </div>
               </div>

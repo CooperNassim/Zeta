@@ -64,6 +64,87 @@ const safeError = (error) => {
   return { success: false, error: error.message };
 };
 
+// 智能分割 SQL 语句：感知字符串边界，避免截断包含分号的数据值
+const splitSqlStatements = (sql) => {
+  const statements = [];
+  let current = '';
+  let inString = false;
+  let stringChar = '';
+  let i = 0;
+
+  while (i < sql.length) {
+    const char = sql[i];
+    const nextChar = sql[i + 1];
+
+    // 处理转义字符
+    if (char === '\\' && inString) {
+      current += char + (nextChar || '');
+      i += 2;
+      continue;
+    }
+
+    // 处理字符串边界
+    if ((char === "'" || char === '"') && !inString) {
+      inString = true;
+      stringChar = char;
+      current += char;
+      i++;
+      continue;
+    }
+
+    if (inString && char === stringChar) {
+      inString = false;
+      stringChar = '';
+      current += char;
+      i++;
+      continue;
+    }
+
+    // 处理注释
+    if (!inString && char === '-' && nextChar === '-') {
+      // 单行注释，跳过到行尾
+      const lineEnd = sql.indexOf('\n', i);
+      if (lineEnd === -1) {
+        break;
+      }
+      i = lineEnd + 1;
+      continue;
+    }
+
+    if (!inString && char === '/' && nextChar === '*') {
+      // 多行注释，跳过到 */
+      const commentEnd = sql.indexOf('*/', i + 2);
+      if (commentEnd === -1) {
+        break;
+      }
+      i = commentEnd + 2;
+      continue;
+    }
+
+    // 处理分号（语句结束符）
+    if (!inString && char === ';') {
+      const trimmed = current.trim();
+      if (trimmed) {
+        statements.push(trimmed);
+      }
+      current = '';
+      i++;
+      continue;
+    }
+
+    current += char;
+    i++;
+  }
+
+  // 处理最后一条语句（可能没有分号结尾）
+  const trimmed = current.trim();
+  if (trimmed) {
+    statements.push(trimmed);
+  }
+
+  return statements;
+};
+
 // 特殊路由（必须在通用CRUD路由之前）
 
 // GET /api/test - 测试路由
@@ -72,8 +153,11 @@ router.get('/test', (req, res) => {
 });
 
 // GET /api/sync/all - 同步数据（从数据库获取所有数据）
-router.get('/sync/all', authenticateToken, requireDbEnabled, async (req, res) => {
+router.get('/sync/all', authenticateToken, async (req, res) => {
   try {
+    if (!dbEnabled) {
+      return res.json({ success: true, data: {} });
+    }
     const tables = [
       'account',
       'daily_work_data',
@@ -152,8 +236,11 @@ router.get('/sync/all', authenticateToken, requireDbEnabled, async (req, res) =>
 });
 
 // 心理测试结果专用路由 - 必须在通用 /:table 路由之前
-router.get('/psychological_test_results/by-date/:date', authenticateToken, requireDbEnabled, async (req, res) => {
+router.get('/psychological_test_results/by-date/:date', authenticateToken, async (req, res) => {
   try {
+    if (!dbEnabled) {
+      return res.json({ success: true, data: [] });
+    }
     const { date } = req.params;
     const result = await pool.query(
       'SELECT * FROM psychological_test_results WHERE test_date = $1',
@@ -270,8 +357,11 @@ router.post('/:table/bulk', authenticateToken, requireDbEnabled, async (req, res
 // ===================== 数据库管理专用路由 =====================
 
 // GET /api/database/info - 获取数据库基础信息
-router.get('/database/info', authenticateToken, requireRole('admin'), requireDbEnabled, async (req, res) => {
+router.get('/database/info', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
+    if (!dbEnabled) {
+      return res.json({ success: true, data: { tables: [], tableCount: 0, enabled: false } });
+    }
     const dbInfo = {};
     
     const version = await pool.query('SELECT version()');
@@ -282,10 +372,13 @@ router.get('/database/info', authenticateToken, requireRole('admin'), requireDbE
     `);
     dbInfo.size = size.rows[0].size;
 
+    // 排除系统表（用户、会话、迁移、日志），这些表的数据无法通过清理功能删除
+    const SYSTEM_TABLES = ['users', 'user_sessions', 'migrations', 'schema_migrations', 'login_logs'];
     const tables = await pool.query(`
       SELECT table_name 
       FROM information_schema.tables 
       WHERE table_schema = 'public' 
+      AND table_name NOT IN (${SYSTEM_TABLES.map(t => `'${t}'`).join(', ')})
       ORDER BY table_name
     `);
     dbInfo.tableCount = tables.rows.length;
@@ -371,7 +464,7 @@ router.post('/database/restart', authenticateToken, requireRole('admin'), requir
 });
 
 // GET /api/database/backups - 获取备份列表
-router.get('/database/backups', authenticateToken, requireRole('admin'), requireDbEnabled, async (req, res) => {
+router.get('/database/backups', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const backupDir = path.join(__dirname, '..', 'backups');
     if (!fs.existsSync(backupDir)) {
@@ -406,8 +499,12 @@ router.post('/database/backup', authenticateToken, requireRole('admin'), require
     const fileName = `backup_${timestamp}.sql`;
     const filePath = path.join(backupDir, fileName);
 
+    // 排除系统表（认证、会话、迁移、日志等），避免恢复时导致登录失效或外键约束错误
+    const SYSTEM_TABLES = ['users', 'user_sessions', 'migrations', 'schema_migrations', 'login_logs'];
     const tables = await pool.query(`
-      SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
+      SELECT table_name FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_name NOT IN (${SYSTEM_TABLES.map(t => `'${t}'`).join(', ')})
     `);
 
     let sql = `-- Zeta Trading System Database Backup\n-- Date: ${timestamp}\n\n`;
@@ -494,14 +591,41 @@ router.post('/database/restore', authenticateToken, requireRole('admin'), requir
       return res.status(404).json({ success: false, error: '备份文件不存在' });
     }
 
-    const sql = fs.readFileSync(filePath, 'utf8');
-    const statements = sql.split(';').filter(s => s.trim() && !s.trim().startsWith('--'));
+    let sql = fs.readFileSync(filePath, 'utf8');
+    
+    // 移除 UTF-8 BOM（如果存在）
+    if (sql.charCodeAt(0) === 0xFEFF) {
+      sql = sql.slice(1);
+    }
+    
+    // 智能分割 SQL 语句：感知字符串边界，避免截断包含分号的数据值
+    const statements = splitSqlStatements(sql);
 
-    // 验证语句类型，只允许 INSERT 和 UPDATE
-    const ALLOWED_STATEMENT_PREFIXES = ['INSERT', 'UPDATE'];
-    const DANGEROUS_PREFIXES = ['DROP', 'DELETE', 'ALTER', 'CREATE', 'TRUNCATE'];
+    // 排除系统表语句（认证、会话、迁移、日志等），避免恢复时导致登录失效或外键约束错误
+    const SYSTEM_TABLES = ['users', 'user_sessions', 'migrations', 'schema_migrations', 'login_logs'];
+    const filteredStatements = statements.filter(stmt => {
+      const upper = stmt.toUpperCase();
+      return !SYSTEM_TABLES.some(table => {
+        const tableName = table.toUpperCase();
+        // 检查是否包含系统表名（考虑各种格式）
+        // 1. 带引号的表名
+        if (upper.includes(`"${tableName}"`) || upper.includes(`'${tableName}'`)) {
+          return true;
+        }
+        // 2. 不带引号的表名（前后有空格或标点）
+        const pattern = new RegExp(`(^|\\s|[,;(])${tableName}(\\s|[,;)]|$)`, 'i');
+        if (pattern.test(stmt)) {
+          return true;
+        }
+        return false;
+      });
+    });
 
-    for (const stmt of statements) {
+    // 验证语句类型，只允许 INSERT、UPDATE 和 DELETE
+    const ALLOWED_STATEMENT_PREFIXES = ['INSERT', 'UPDATE', 'DELETE'];
+    const DANGEROUS_PREFIXES = ['DROP', 'ALTER', 'CREATE', 'TRUNCATE'];
+
+    for (const stmt of filteredStatements) {
       const trimmed = stmt.trim().toUpperCase();
       const firstWord = trimmed.split(/\s+/)[0];
 
@@ -518,7 +642,7 @@ router.post('/database/restore', authenticateToken, requireRole('admin'), requir
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      for (const stmt of statements) {
+      for (const stmt of filteredStatements) {
         await client.query(stmt.trim());
       }
       await client.query('COMMIT');
@@ -570,9 +694,11 @@ router.post('/database/cleanup', authenticateToken, requireRole('admin'), requir
         break;
       }
       case 'all-data': {
+        // 排除系统表（用户、会话、迁移、日志），避免清理后导致登录失效
+        const PROTECTED_TABLES = ['users', 'user_sessions', 'migrations', 'schema_migrations', 'login_logs'];
         const tables = await pool.query(`
           SELECT table_name FROM information_schema.tables 
-          WHERE table_schema = 'public' AND table_name NOT IN ('schema_migrations')
+          WHERE table_schema = 'public' AND table_name NOT IN (${PROTECTED_TABLES.map(t => `'${t}'`).join(', ')})
         `);
         for (const t of tables.rows) {
           await pool.query(`DELETE FROM "${t.table_name}"`);
@@ -597,6 +723,9 @@ router.post('/database/export', authenticateToken, requireRole('admin'), require
     const fileName = `export_${timestamp}.sql`;
     const backupDir = path.join(__dirname, '..', 'backups');
 
+    // 排除系统表（认证、会话、迁移、日志等）
+    const SYSTEM_TABLES = ['users', 'user_sessions', 'migrations', 'schema_migrations', 'login_logs'];
+
     const tables = await pool.query(`
       SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
     `);
@@ -604,6 +733,11 @@ router.post('/database/export', authenticateToken, requireRole('admin'), require
     let sql = `-- Zeta Trading System Database Export\n-- Date: ${timestamp}\n\n`;
 
     for (const t of tables.rows) {
+      // 跳过系统表
+      if (SYSTEM_TABLES.includes(t.table_name)) {
+        continue;
+      }
+
       const data = await pool.query(`SELECT * FROM "${t.table_name}" WHERE deleted = false`);
       if (data.rows.length === 0) continue;
 
@@ -658,13 +792,33 @@ router.post('/database/import', authenticateToken, requireRole('admin'), require
     }
 
     const sql = fs.readFileSync(filePath, 'utf8');
-    const statements = sql.split(';').filter(s => s.trim() && !s.trim().startsWith('--'));
+    const statements = splitSqlStatements(sql);
 
-    // 验证语句类型，只允许 INSERT 和 UPDATE
-    const ALLOWED_STATEMENT_PREFIXES = ['INSERT', 'UPDATE'];
-    const DANGEROUS_PREFIXES = ['DROP', 'DELETE', 'ALTER', 'CREATE', 'TRUNCATE'];
+    // 排除系统表（认证、会话、迁移、日志等），避免恢复时导致登录失效或外键约束错误
+    const SYSTEM_TABLES = ['users', 'user_sessions', 'migrations', 'schema_migrations', 'login_logs'];
+    const filteredStatements = statements.filter(stmt => {
+      const upper = stmt.toUpperCase();
+      return !SYSTEM_TABLES.some(table => {
+        const tableName = table.toUpperCase();
+        // 检查是否包含系统表名（考虑各种格式）
+        // 1. 带引号的表名
+        if (upper.includes(`"${tableName}"`) || upper.includes(`'${tableName}'`)) {
+          return true;
+        }
+        // 2. 不带引号的表名（前后有空格或标点）
+        const pattern = new RegExp(`(^|\\s|[,;(])${tableName}(\\s|[,;)]|$)`, 'i');
+        if (pattern.test(stmt)) {
+          return true;
+        }
+        return false;
+      });
+    });
 
-    for (const stmt of statements) {
+    // 验证语句类型，允许 INSERT、UPDATE 和 DELETE
+    const ALLOWED_STATEMENT_PREFIXES = ['INSERT', 'UPDATE', 'DELETE'];
+    const DANGEROUS_PREFIXES = ['DROP', 'ALTER', 'CREATE', 'TRUNCATE'];
+
+    for (const stmt of filteredStatements) {
       const trimmed = stmt.trim().toUpperCase();
       const firstWord = trimmed.split(/\s+/)[0];
 
@@ -675,6 +829,11 @@ router.post('/database/import', authenticateToken, requireRole('admin'), require
       if (!ALLOWED_STATEMENT_PREFIXES.includes(firstWord)) {
         return res.status(403).json({ success: false, error: `不允许执行的语句类型: ${firstWord}` });
       }
+
+      // DELETE 语句只允许清空表，不允许带 WHERE 条件
+      if (firstWord === 'DELETE' && /WHERE/i.test(trimmed)) {
+        return res.status(403).json({ success: false, error: 'DELETE 语句不允许带 WHERE 条件' });
+      }
     }
 
     // 使用事务包裹整个导入过程
@@ -682,7 +841,7 @@ router.post('/database/import', authenticateToken, requireRole('admin'), require
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      for (const stmt of statements) {
+      for (const stmt of filteredStatements) {
         const trimmed = stmt.trim();
         await client.query(trimmed);
         if (trimmed.toUpperCase().startsWith('INSERT')) {
@@ -722,14 +881,38 @@ router.post('/database/upload-import', authenticateToken, requireRole('admin'), 
       return res.status(400).json({ success: false, error: '请上传文件' });
     }
 
-    const sql = fs.readFileSync(req.file.path, 'utf8');
-    const statements = sql.split(';').filter(s => s.trim() && !s.trim().startsWith('--'));
+    let sql = fs.readFileSync(req.file.path, 'utf8');
+    
+    // 移除 UTF-8 BOM（如果存在）
+    if (sql.charCodeAt(0) === 0xFEFF) {
+      sql = sql.slice(1);
+    }
+    
+    // 智能分割 SQL 语句：感知字符串边界，避免截断包含分号的数据值
+    const statements = splitSqlStatements(sql);
 
-    // 验证语句类型，只允许 INSERT 和 UPDATE
-    const ALLOWED_STATEMENT_PREFIXES = ['INSERT', 'UPDATE'];
-    const DANGEROUS_PREFIXES = ['DROP', 'DELETE', 'ALTER', 'CREATE', 'TRUNCATE'];
+    // 排除系统表（认证、会话、迁移、日志等），避免恢复时导致登录失效或外键约束错误
+    const SYSTEM_TABLES = ['users', 'user_sessions', 'migrations', 'schema_migrations', 'login_logs'];
+    const filteredStatements = statements.filter(stmt => {
+      const upper = stmt.toUpperCase();
+      return !SYSTEM_TABLES.some(table => {
+        const tableName = table.toUpperCase();
+        // 检查是否包含系统表名（考虑引号和空格）
+        return upper.includes(`"${tableName}"`) ||
+               upper.includes(`'${tableName}'`) ||
+               upper.includes(` ${tableName} `) ||
+               upper.includes(` FROM ${tableName}`) ||
+               upper.includes(` INTO ${tableName}`) ||
+               upper.includes(` TABLE ${tableName}`) ||
+               upper.includes(` UPDATE ${tableName}`);
+      });
+    });
 
-    for (const stmt of statements) {
+    // 验证语句类型，只允许 INSERT、UPDATE 和 DELETE
+    const ALLOWED_STATEMENT_PREFIXES = ['INSERT', 'UPDATE', 'DELETE'];
+    const DANGEROUS_PREFIXES = ['DROP', 'ALTER', 'CREATE', 'TRUNCATE'];
+
+    for (const stmt of filteredStatements) {
       const trimmed = stmt.trim().toUpperCase();
       const firstWord = trimmed.split(/\s+/)[0];
 
@@ -750,7 +933,7 @@ router.post('/database/upload-import', authenticateToken, requireRole('admin'), 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      for (const stmt of statements) {
+      for (const stmt of filteredStatements) {
         const trimmed = stmt.trim();
         await client.query(trimmed);
         if (trimmed.toUpperCase().startsWith('INSERT')) {
@@ -986,8 +1169,11 @@ router.get('/market/kline', authenticateToken, async (req, res) => {
 // ========================================
 
 // GET /api/:table - 获取列表
-router.get('/:table', authenticateToken, requireDbEnabled, async (req, res) => {
+router.get('/:table', authenticateToken, async (req, res) => {
   try {
+    if (!dbEnabled) {
+      return res.json({ success: true, data: [] });
+    }
     const { table } = req.params;
     const { where, orderBy, limit, offset, includeDeleted } = req.query;
 
@@ -1021,8 +1207,11 @@ router.get('/:table', authenticateToken, requireDbEnabled, async (req, res) => {
 });
 
 // GET /api/:table/:id - 获取单条
-router.get('/:table/:id', authenticateToken, requireDbEnabled, async (req, res) => {
+router.get('/:table/:id', authenticateToken, async (req, res) => {
   try {
+    if (!dbEnabled) {
+      return res.json({ success: true, data: null });
+    }
     const { table, id } = req.params;
     let data = await findById(table, id);
     if (!data) {

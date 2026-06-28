@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import {
-  Database, Server, HardDrive, Activity, Clock, Power, RotateCcw, Play,
-  Download, Upload, Trash2, AlertTriangle, CheckCircle, X, RefreshCw,
+  Database, Server, HardDrive, Activity, Clock, RotateCcw, Play,
+  Download, Upload, Trash2, AlertTriangle, CheckCircle, X,
   FolderOpen, FileText, Calendar, BarChart3, Layers, Zap,
   ChevronDown, ChevronRight, Search, Wifi, WifiOff, Eye, EyeOff, Copy
 } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
+import ConfirmModal from '../components/ConfirmModal'
 
 // 格式化运行时间
 const formatUptime = (uptime) => {
@@ -115,47 +116,6 @@ const Toast = ({ message, type = 'success', onClose }) => {
   )
 }
 
-// 确认弹窗组件
-const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, type = 'warning' }) => {
-  if (!isOpen) return null
-  const typeConfig = {
-    warning: { icon: AlertTriangle, iconColor: 'text-amber-500', btnClass: 'bg-amber-600 hover:bg-amber-700' },
-    danger: { icon: Trash2, iconColor: 'text-red-500', btnClass: 'bg-red-600 hover:bg-red-700' },
-  }
-  const config = typeConfig[type] || typeConfig.warning
-  const Icon = config.icon
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="p-6">
-          <div className="flex items-center gap-4 mb-4">
-            <div className={`p-3 rounded-full bg-gray-50`}>
-              <Icon className={`w-6 h-6 ${config.iconColor}`} />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-          </div>
-          <p className="text-gray-600 text-sm mb-6 leading-relaxed">{message}</p>
-          <div className="flex gap-3 justify-end">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-            >
-              取消
-            </button>
-            <button
-              onClick={onConfirm}
-              className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${config.btnClass}`}
-            >
-              确认
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function DatabaseManagement() {
   const { showToast } = useToast()
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('db_active_tab') || 'overview')
@@ -163,9 +123,13 @@ export default function DatabaseManagement() {
   const [dbStatus, setDbStatus] = useState(null)
   const [backups, setBackups] = useState([])
   const [loading, setLoading] = useState(true)
-  const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', type: 'warning', onConfirm: null })
+  const [showRestoreModal, setShowRestoreModal] = useState(false)
+  const [restoreFilename, setRestoreFilename] = useState('')
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteBackupFilename, setDeleteBackupFilename] = useState('')
+  const [showCleanupSoftDeletedModal, setShowCleanupSoftDeletedModal] = useState(false)
+  const [showCleanupAllDataModal, setShowCleanupAllDataModal] = useState(false)
   const [expandedTable, setExpandedTable] = useState(null)
-  const [dbEnabled, setDbEnabled] = useState(true)
   const fileInputRef = React.useRef(null)
 
   // 获取认证头
@@ -205,7 +169,6 @@ export default function DatabaseManagement() {
       const result = await res.json()
       if (result.success) {
         setDbStatus(result.data)
-        if (result.data.enabled !== undefined) setDbEnabled(result.data.enabled)
       }
     } catch (e) {
       setDbStatus({ connected: false, error: '连接失败' })
@@ -265,32 +228,6 @@ export default function DatabaseManagement() {
     }
   }
 
-  const handleToggle = async () => {
-    try {
-      const res = await fetch('/api/database/toggle', { 
-        method: 'POST', 
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ enabled: !dbEnabled })
-      })
-      if (res.status === 401) {
-        localStorage.removeItem('auth_token')
-        localStorage.removeItem('auth_user')
-        window.location.href = '/login'
-        return
-      }
-      const result = await res.json()
-      if (result.success) {
-        setDbEnabled(result.enabled)
-        showToast(result.enabled ? '数据库已开启' : '数据库已关闭', 'success')
-        await refreshAll()
-      } else {
-        showToast(`切换失败: ${result.message || '未知错误'}`, 'error')
-      }
-    } catch (e) {
-      showToast('切换失败', 'error')
-    }
-  }
-
   const handleBackup = async () => {
     try {
       const res = await fetch('/api/database/backup', { method: 'POST', headers: getAuthHeaders() })
@@ -329,130 +266,112 @@ export default function DatabaseManagement() {
     }
   }
 
-  const handleRestore = async (filename) => {
-    setConfirmModal({
-      open: true,
-      title: '恢复数据库',
-      message: `确定要从备份 "${filename}" 恢复吗？这将覆盖当前数据库中的所有数据。`,
-      type: 'danger',
-      onConfirm: async () => {
-        setConfirmModal(prev => ({ ...prev, open: false }))
-        try {
-          const res = await fetch('/api/database/restore', {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: JSON.stringify({ filename })
-          })
-          if (res.status === 401) {
-            localStorage.removeItem('auth_token')
-            localStorage.removeItem('auth_user')
-            window.location.href = '/login'
-            return
-          }
-          const result = await res.json()
-          if (result.success) {
-            showToast('数据恢复成功', 'success')
-            await refreshAll()
-          } else {
-            showToast(`恢复失败：${result.error}`, 'error')
-          }
-        } catch (e) {
-          showToast('恢复失败', 'error')
-        }
-      }
-    })
+  const handleRestore = (filename) => {
+    setRestoreFilename(filename)
+    setShowRestoreModal(true)
   }
 
-  const handleDeleteBackup = async (filename) => {
-    setConfirmModal({
-      open: true,
-      title: '删除备份',
-      message: `确定要删除备份 "${filename}" 吗？此操作不可恢复。`,
-      type: 'warning',
-      onConfirm: async () => {
-        setConfirmModal(prev => ({ ...prev, open: false }))
-        try {
-          const res = await fetch(`/api/database/backup/${encodeURIComponent(filename)}`, { method: 'DELETE', headers: getAuthHeaders() })
-          if (res.status === 401) {
-            localStorage.removeItem('auth_token')
-            localStorage.removeItem('auth_user')
-            window.location.href = '/login'
-            return
-          }
-          const result = await res.json()
-          if (result.success) {
-            showToast('备份文件已删除', 'success')
-            await fetchBackups()
-          }
-        } catch (e) {
-          showToast('删除失败', 'error')
-        }
+  const confirmRestore = async () => {
+    setShowRestoreModal(false)
+    try {
+      const res = await fetch('/api/database/restore', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ filename: restoreFilename })
+      })
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
       }
-    })
+      const result = await res.json()
+      if (result.success) {
+        showToast('数据恢复成功', 'success')
+        await refreshAll()
+      } else {
+        showToast(`恢复失败：${result.error}`, 'error')
+      }
+    } catch (e) {
+      showToast('恢复失败', 'error')
+    }
   }
 
-  const handleCleanupSoftDeleted = async () => {
-    setConfirmModal({
-      open: true,
-      title: '清理软删除数据',
-      message: '将永久删除所有标记为已删除的数据（deleted = true）。此操作不可恢复，确定要继续吗？',
-      type: 'danger',
-      onConfirm: async () => {
-        setConfirmModal(prev => ({ ...prev, open: false }))
-        try {
-          const res = await fetch('/api/database/cleanup', {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: JSON.stringify({ type: 'soft-deleted' })
-          })
-          if (res.status === 401) {
-            localStorage.removeItem('auth_token')
-            localStorage.removeItem('auth_user')
-            window.location.href = '/login'
-            return
-          }
-          const result = await res.json()
-          if (result.success) {
-            showToast(`已清理 ${result.data.totalDeleted || 0} 条软删除数据`, 'success')
-            await refreshAll()
-          }
-        } catch (e) {
-          showToast('清理失败', 'error')
-        }
-      }
-    })
+  const handleDeleteBackup = (filename) => {
+    setDeleteBackupFilename(filename)
+    setShowDeleteModal(true)
   }
 
-  const handleCleanupAllData = async () => {
-    setConfirmModal({
-      open: true,
-      title: '清空所有数据',
-      message: '将清空数据库中所有表的数据（不含表结构）。此操作极度危险且不可恢复！',
-      type: 'danger',
-      onConfirm: async () => {
-        setConfirmModal(prev => ({ ...prev, open: false }))
-        try {
-          const res = await fetch('/api/database/cleanup', {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: JSON.stringify({ type: 'all-data' })
-          })
-          if (res.status === 401) {
-            localStorage.removeItem('auth_token')
-            localStorage.removeItem('auth_user')
-            window.location.href = '/login'
-            return
-          }
-          const result = await res.json()
-          if (result.success) {
-            showToast('所有数据已清空', 'success')
-            await refreshAll()
-          }
-        } catch (e) {
-          showToast('清理失败', 'error')
-        }
+  const confirmDeleteBackup = async () => {
+    setShowDeleteModal(false)
+    try {
+      const res = await fetch(`/api/database/backup/${encodeURIComponent(deleteBackupFilename)}`, { method: 'DELETE', headers: getAuthHeaders() })
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
       }
-    })
+      const result = await res.json()
+      if (result.success) {
+        showToast('备份文件已删除', 'success')
+        await fetchBackups()
+      }
+    } catch (e) {
+      showToast('删除失败', 'error')
+    }
+  }
+
+  const confirmCleanupSoftDeleted = async () => {
+    setShowCleanupSoftDeletedModal(false)
+    try {
+      const res = await fetch('/api/database/cleanup', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ type: 'soft-deleted' })
+      })
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
+      }
+      const result = await res.json()
+      if (result.success) {
+        showToast(`已清理 ${result.data.totalDeleted || 0} 条软删除数据`, 'success')
+        await refreshAll()
+      }
+    } catch (e) {
+      showToast('清理失败', 'error')
+    }
+  }
+
+  const handleCleanupAllData = () => {
+    setShowCleanupAllDataModal(true)
+  }
+
+  const confirmCleanupAllData = async () => {
+    setShowCleanupAllDataModal(false)
+    try {
+      const res = await fetch('/api/database/cleanup', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ type: 'all-data' })
+      })
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.href = '/login'
+        return
+      }
+      const result = await res.json()
+      if (result.success) {
+        showToast('所有数据已清空', 'success')
+        await refreshAll()
+      }
+    } catch (e) {
+      showToast('清理失败', 'error')
+    }
   }
 
   // 触发文件选择器
@@ -528,13 +447,40 @@ export default function DatabaseManagement() {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', paddingTop: '52px', paddingLeft: '166px', background: '#f7f8fa' }}>
+      {/* 删除备份确认弹窗 */}
       <ConfirmModal
-        isOpen={confirmModal.open}
-        onClose={() => setConfirmModal(prev => ({ ...prev, open: false }))}
-        onConfirm={confirmModal.onConfirm}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        type={confirmModal.type}
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={confirmDeleteBackup}
+        title="删除"
+        message={`确认删除备份 ${deleteBackupFilename} 吗？`}
+      />
+
+      {/* 恢复备份确认弹窗 */}
+      <ConfirmModal
+        isOpen={showRestoreModal}
+        onClose={() => setShowRestoreModal(false)}
+        onConfirm={confirmRestore}
+        title="恢复"
+        message={`确认从备份 ${restoreFilename} 恢复数据吗？`}
+      />
+
+      {/* 清理软删除数据确认弹窗 */}
+      <ConfirmModal
+        isOpen={showCleanupSoftDeletedModal}
+        onClose={() => setShowCleanupSoftDeletedModal(false)}
+        onConfirm={confirmCleanupSoftDeleted}
+        title="清理"
+        message="确认清理所有软删除的数据吗？"
+      />
+
+      {/* 清空所有数据确认弹窗 */}
+      <ConfirmModal
+        isOpen={showCleanupAllDataModal}
+        onClose={() => setShowCleanupAllDataModal(false)}
+        onConfirm={confirmCleanupAllData}
+        title="清空"
+        message="确认清空所有数据吗？此操作不可恢复！"
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', paddingLeft: '0px', paddingRight: '10px', paddingTop: '10px', position: 'relative', paddingBottom: '10px', overflow: 'auto' }}>
@@ -566,26 +512,6 @@ export default function DatabaseManagement() {
           </div>
           {/* 右侧操作区 */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* 数据库开关 */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">{dbEnabled ? '开启' : '关闭'}</span>
-              <button
-                onClick={handleToggle}
-                className={`w-10 h-5 rounded-full transition-colors duration-200 relative overflow-hidden ${dbEnabled ? 'bg-[#0F1419]' : 'bg-gray-300'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${dbEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
-              </button>
-            </div>
-            {/* 刷新按钮 */}
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={refreshAll}
-              className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-600 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm flex items-center gap-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              刷新
-            </motion.button>
             {actionButtons.map(btn => (
               <motion.button
                 key={btn.label}
@@ -709,8 +635,8 @@ export default function DatabaseManagement() {
               <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
                 {/* 标题行 */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
-                  <Zap style={{ width: '20px', height: '20px', color: '#0F1419' }} />
-                  <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0, lineHeight: '1' }}>备份管理</h3>
+                  <Database style={{ width: '20px', height: '20px', color: '#0F1419' }} />
+                  <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0, lineHeight: '1' }}>数据备份</h3>
                 </div>
 
                 {/* 操作按钮 */}
@@ -814,7 +740,7 @@ export default function DatabaseManagement() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
                       <p style={{ fontSize: '14px', color: '#666', margin: '0 0 4px 0' }}>
-                        永久删除所有标记为软删除（deleted = true）的数据。当前共有 <span style={{ fontWeight: 'bold' }}>{totalDeleted.toLocaleString()}</span> 条软删除数据。
+                        永久清理所有软删除数据，当前共有 <span style={{ fontWeight: 'bold' }}>{totalDeleted.toLocaleString()}</span> 条可清理。
                       </p>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontSize: '12px', color: '#999' }}>影响表：</span>
@@ -826,7 +752,7 @@ export default function DatabaseManagement() {
                     <motion.button
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      onClick={handleCleanupSoftDeleted}
+                      onClick={confirmCleanupSoftDeleted}
                       style={{ background: '#0F1419', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '14px', cursor: 'pointer', flexShrink: 0, marginLeft: '16px' }}
                     >
                       清理
@@ -920,7 +846,7 @@ export default function DatabaseManagement() {
                   <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '20px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
                       <FolderOpen style={{ width: '20px', height: '20px', color: '#0F1419' }} />
-                      <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>可用文件 ({backups.length})</h3>
+                      <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>可用文件</h3>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {backups.map((backup, idx) => (
@@ -957,10 +883,10 @@ export default function DatabaseManagement() {
                     <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#0F1419', margin: 0 }}>使用说明</h3>
                   </div>
                   <div style={{ fontSize: '14px', color: '#666', lineHeight: 1.8 }}>
-                    <p style={{ margin: '0 0 8px 0' }}>1. <strong>导出</strong>：将数据库中所有活跃数据导出为 SQL 文件，自动保存到 backend/backups 目录。</p>
-                    <p style={{ margin: '0 0 8px 0' }}>2. <strong>导入</strong>：点击"选择文件导入"按钮，从本地选择 SQL 文件进行导入。</p>
-                    <p style={{ margin: '0 0 8px 0' }}>3. <strong>备份</strong>：在"备份管理"tab 中创建备份，备份包含所有数据（含已删除）。</p>
-                    <p style={{ margin: 0 }}>4. 支持从备份列表中的文件直接导入，也可上传本地 SQL 文件。</p>
+                    <p style={{ margin: '0 0 8px 0' }}><strong>1. 导出：</strong>将数据库中所有活跃数据导出为 SQL 文件，自动保存到 backend/backups 目录。</p>
+                    <p style={{ margin: '0 0 8px 0' }}><strong>2. 导入：</strong>点击"选择文件导入"按钮，从本地选择 SQL 文件进行导入。</p>
+                    <p style={{ margin: '0 0 8px 0' }}><strong>3. 备份：</strong>在"备份管理" 中创建备份，备份包含所有数据（含已删除）。</p>
+                    <p style={{ margin: 0 }}><strong>4. 恢复说明：</strong>支持从备份列表中的文件直接导入，也可上传本地 SQL 文件。</p>
                   </div>
                 </div>
               </div>

@@ -376,12 +376,6 @@ const useStore = create(
 
         const activeData = dataList.filter(d => d.deleted !== true)
 
-        // 如果数据库返回空数组但当前有数据，不要清空
-        if (activeData.length === 0 && state.dailyWorkData && state.dailyWorkData.length > 0) {
-          console.log('[Store] importDailyWorkData 跳过空数据，保留当前', state.dailyWorkData.length, '条记录')
-          return state
-        }
-
         // 转换数据库字段名 (snake_case -> camelCase)
         const newData = activeData.map(d => {
           // 处理日期格式 - 正确处理时区
@@ -481,22 +475,31 @@ const useStore = create(
         console.log('[Store] 删除每日功课，接收到的ids:', ids)
 
         try {
-          // 按ID逐条删除
+          // 先从本地状态中移除数据（乐观更新）
+          set((state) => ({
+            dailyWorkData: state.dailyWorkData.filter(d => !ids.includes(d.id))
+          }))
+
+          // 按ID逐条删除（即使失败也不影响本地状态）
           const deleteResults = []
           for (const id of ids) {
             console.log('[Store] 删除ID:', id)
-            const result = await apiCall(`/api/daily_work_data/${id}`, 'DELETE')
-            deleteResults.push(result)
+            try {
+              const result = await apiCall(`/api/daily_work_data/${id}`, 'DELETE')
+              deleteResults.push(result)
+            } catch (err) {
+              console.warn('[Store] 删除ID', id, '失败:', err.message)
+              deleteResults.push({ success: false, error: err.message })
+            }
           }
 
           console.log('[Store] 所有删除结果:', deleteResults)
 
-          // 从数据库重新同步数据（确保删除已生效）
+          // 从数据库重新同步数据（确保数据一致性）
           const syncResponse = await apiCall('/api/sync/all')
           if (syncResponse.success && syncResponse.data && syncResponse.data.daily_work_data !== undefined) {
             const { daily_work_data } = syncResponse.data
             set((state) => {
-              // 使用 importDailyWorkData 来更新数据
               state.importDailyWorkData(daily_work_data)
               return {}
             })

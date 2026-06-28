@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "configure-ecc": {
+      "source": "affaan-m/ECC",
+      "sourceType": "github",
+      "skillPath": "skills/configure-ecc/SKILL.md",
+      "computedHash": "b82c9ccfc4c71496b00840f73094ebbd347fe42e66ef99cb185302841f761547"
+    },
+    "ecc-guide": {
+      "source": "affaan-m/ECC",
+      "sourceType": "github",
+      "skillPath": "skills/ecc-guide/SKILL.md",
+      "computedHash": "72174e45b6bf2a9eb29db2472fc126ea8a2d2249ec6121803b78b3ea47e75ab1"
+    },
+    "ecc-tools-cost-audit": {
+      "source": "affaan-m/ECC",
+      "sourceType": "github",
+      "skillPath": "skills/ecc-tools-cost-audit/SKILL.md",
+      "computedHash": "744e8bcfa8fcc38272be5b5b7572761e20388ce51c755bef318303dada6d45fc"
+    },
+    "error-handling": {
+      "source": "affaan-m/ECC",
+      "sourceType": "github",
+      "skillPath": "skills/error-handling/SKILL.md",
+      "computedHash": "a8365126f6a3250e6645d0533f94778cd6344a393150f7b1e21e633a3b7e863c"
+    },
+    "nodejs-keccak256": {
+      "source": "affaan-m/ECC",
+      "sourceType": "github",
+      "skillPath": "skills/nodejs-keccak256/SKILL.md",
+      "computedHash": "034ef551c349e1aec27d0691ed79cc0f1a884e0e35356e5c02e4ed12dde4ab19"
+    }
+  }
+}
